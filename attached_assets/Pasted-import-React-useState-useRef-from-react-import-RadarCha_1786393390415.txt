@@ -1,0 +1,1393 @@
+import React, { useState, useRef } from "react";
+import { RadarChart, PolarGrid, PolarAngleAxis, Radar, ResponsiveContainer } from "recharts";
+import { Check, X, Play, ChevronRight, TrendingUp, TrendingDown, Minus } from "lucide-react";
+
+/* =================================================================
+   BLACKBALL COACH — PURE ENGINE
+   No React/JSX here. This file is embedded verbatim into the JSX
+   artifact and also required directly by engine.test.js so the
+   tested logic and the shipped logic are provably identical.
+================================================================= */
+
+const CONFIG = {
+  kMin: 0.06,
+  kMax: 0.35,
+  difficultyMidpoint: 5,
+  difficultySensitivity: 0.05,
+  diffMultiplierMin: 0.6,
+  diffMultiplierMax: 1.5,
+  recencyWindowMs: 1000 * 60 * 60 * 24 * 21, // 21 days
+  meanGapThreshold: 8,
+  confidence: {
+    volumeCap: 15,
+    diversityCap: 4,
+    recentCap: 5,
+    weights: { volumeDiversity: 0.85, recency: 0.15 },
+    diversityFloor: 0.35,
+    tiers: { emerging: 0.22, established: 0.5, high: 0.75 },
+    assessmentWeight: 0.4, // hardening #11: assessment evidence counts less toward confidence
+  },
+  evidence: {
+    weights: { gap: 0.35, confidence: 0.2, recentError: 0.15, clearanceFail: 0.1, rootCause: 0.2 },
+    confirmedThreshold: 0.5,
+    provisionalThreshold: 0.28,
+  },
+  dataVersion: 2,
+};
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+/* ---------------------------------------------------------------
+   SKILLS
+--------------------------------------------------------------- */
+const SKILLS = [
+  { id: "potting", name: "Potting", type: "execution", priority: true },
+  { id: "cueBall", name: "Cue-Ball Control", type: "execution", priority: false },
+  { id: "speed", name: "Speed / Touch Control", type: "execution", priority: true },
+  { id: "positional", name: "Positional Execution", type: "execution", priority: true },
+  { id: "problemBallExec", name: "Problem-Ball Execution", type: "execution", priority: false },
+  { id: "breakExec", name: "Break & Post-Break Execution", type: "execution", priority: false },
+  { id: "blackBall", name: "Black-Ball Finishing", type: "execution", priority: false },
+  { id: "pattern", name: "Pattern Recognition & Clearance Planning", type: "decision", priority: true },
+  { id: "problemBallDec", name: "Problem-Ball Identification & Management", type: "decision", priority: false },
+  { id: "tactical", name: "Tactical / Safety Decision-Making", type: "decision", priority: true },
+];
+const SKILL_MAP = Object.fromEntries(SKILLS.map((s) => [s.id, s]));
+
+const SUPPORTING_LINKS = [
+  { source: "speed", target: "positional" },
+  { source: "cueBall", target: "positional" },
+  { source: "cueBall", target: "problemBallExec" },
+  { source: "pattern", target: "blackBall" },
+  { source: "problemBallDec", target: "pattern" },
+];
+
+// hardening #2: reported error code -> its most likely mechanism skill.
+// Diagnostic signal only — NEVER overrides which skill's rating an attempt updates.
+const ERROR_SKILL_MAP = {
+  MISS: "potting",
+  POSITION: "positional",
+  SPEED: "speed",
+  SPIN: "cueBall",
+  PATTERN: "pattern",
+  DECISION: "pattern",
+  SAFETY: "tactical",
+  OTHER: null,
+};
+
+// hardening #7: adaptation choice -> the decision skill it actually evidences
+const ADAPTATION_SKILL_MAP = {
+  "Re-plan clearance": "pattern",
+  "Continue original route": "pattern",
+  "Develop a problem ball": "problemBallDec",
+  "Play safe": "tactical",
+  Other: "tactical",
+};
+
+/* ---------------------------------------------------------------
+   DRILL LIBRARY
+--------------------------------------------------------------- */
+function execDrill(id, skill, diff, name, desc, opts = {}) {
+  return {
+    id, skillId: skill, primarySkill: skill, secondarySkills: opts.secondarySkills || [],
+    type: "execution", difficulty: diff, name, desc,
+    familyId: skill + "-fam", scoringMode: "binary",
+    clearanceStage: null, adaptationEligible: false,
+    assessmentEligible: !!opts.assessmentEligible,
+  };
+}
+function decDrill(id, skill, diff, name, desc, options, opts = {}) {
+  return {
+    id, skillId: skill, primarySkill: skill, secondarySkills: opts.secondarySkills || [],
+    type: "decision", difficulty: diff, name, desc, options,
+    familyId: skill + "-fam", scoringMode: "tiered",
+    clearanceStage: null, adaptationEligible: false,
+    assessmentEligible: !!opts.assessmentEligible,
+  };
+}
+
+// hardening #16: scenario-specific decision content (label/tier/rationale/risk) per drill
+function opt(label, tier, rationale, risk) {
+  return { key: label, label, tier, rationale, risk };
+}
+
+const DRILLS = [
+  execDrill("pot1", "potting", 2, "Straight Pot — Middle Pocket", "Set the object ball 1 diamond from a middle pocket, straight in.", { assessmentEligible: true }),
+  execDrill("pot2", "potting", 4, "Angled Pot — 30°", "Cut angle pot into a corner pocket."),
+  execDrill("pot3", "potting", 6, "Long Pot — Full Length", "Full-length straight pot, top rail to bottom rail."),
+  execDrill("pot4", "potting", 8, "Thin Cut Under Pressure", "Thin cut with a problem ball nearby restricting cue-ball path."),
+
+  execDrill("spd1", "speed", 2, "Stop-Ball Speed Gate", "Stun the cue ball dead in a large marked zone.", { assessmentEligible: true }),
+  execDrill("spd2", "speed", 4, "Two-Cushion Speed Control", "Land cue ball in a target zone after two cushions."),
+  execDrill("spd3", "speed", 6, "Soft Touch Safety Roll", "Roll the cue ball just past the object ball at minimal pace."),
+  execDrill("spd4", "speed", 8, "Precision Lag to Baulk", "Cue ball must finish within a tight zone tight to baulk cushion."),
+
+  execDrill("pos1", "positional", 2, "Simple Follow Route", "Pot and follow cue ball into an open zone.", { assessmentEligible: true }),
+  execDrill("pos2", "positional", 4, "Screw Round the Angle", "Pot and screw cue ball back around a cluster."),
+  execDrill("pos3", "positional", 6, "Side-Spin Route", "Use side spin to reach a tucked-away next ball."),
+  execDrill("pos4", "positional", 8, "Congested Cluster Route", "Navigate cue ball through a tight cluster to the next ball."),
+
+  execDrill("cue1", "cueBall", 2, "Basic Stun", "Play a clean stun shot, cue ball stops on contact line.", { assessmentEligible: true }),
+  execDrill("cue2", "cueBall", 4, "Screw Shot", "Basic screw back off the object ball."),
+  execDrill("cue3", "cueBall", 6, "Swerve Around a Blocker", "Use swerve to avoid a blocking ball."),
+
+  execDrill("pbe1", "problemBallExec", 2, "Simple Nudge", "Nudge a problem ball a few inches into open space.", { assessmentEligible: true }),
+  execDrill("pbe2", "problemBallExec", 4, "Cannon Off Two Balls", "Use a cannon to move two problem balls apart."),
+  execDrill("pbe3", "problemBallExec", 6, "Break-Out From a Cluster", "Break out a buried ball from a tight cluster."),
+
+  execDrill("brk1", "breakExec", 2, "Controlled Break", "Break with control, aim for a stable spread.", { assessmentEligible: true }),
+  execDrill("brk2", "breakExec", 4, "Break for a Pot", "Break attempting to pot a ball off the break."),
+  execDrill("brk3", "breakExec", 6, "Break Under Baulk Restriction", "Break within tighter baulk-area constraints."),
+
+  execDrill("blk1", "blackBall", 2, "Straight Black", "Simple straight black-ball pot.", { assessmentEligible: true }),
+  execDrill("blk2", "blackBall", 4, "Angled Black With Position", "Angled black, cue ball must finish clear of cushions."),
+  execDrill("blk3", "blackBall", 6, "Black Under Pressure", "Black-ball pot with a tight pocket angle."),
+
+  decDrill("pat1", "pattern", 2, "Choose the Ball Order", "You have a simple three-ball layout — which order keeps the pattern easiest?", [
+    opt("Take the nearest straight pot first, then reassess", "optimal", "Simplifies the table before committing to a full route.", "low"),
+    opt("Play the whole sequence exactly as it looks from here", "acceptable", "Workable, but slightly more speculative than playing it one ball at a time.", "low"),
+    opt("Attack the farthest ball first for value", "highrisk", "Higher difficulty for no real pattern benefit.", "high"),
+    opt("Play in the order the balls happen to be numbered", "poor", "Ignores the pattern entirely.", "high"),
+  ], { assessmentEligible: true }),
+  decDrill("pat2", "pattern", 4, "Two Viable Routes", "Two routes look reasonable — which keeps the black accessible?", [
+    opt("The route that finishes with an open angle on the black", "optimal", "Protects your access to the final ball, which is where most clearances are lost.", "low"),
+    opt("The route that's marginally easier on paper", "acceptable", "Fine technically, but risks a awkward black-ball angle.", "medium"),
+    opt("The route with the most spectacular pots", "highrisk", "Prioritises difficulty over control of the finish.", "high"),
+    opt("Whichever route is played first without comparing", "poor", "No comparison was actually made.", "high"),
+  ]),
+  decDrill("pat3", "pattern", 6, "Awkward Layout Planning", "A congested layout — plan the full clearance order.", [
+    opt("Clear the loose balls first, leave clusters for last", "optimal", "Reduces risk early and buys information before tackling clusters.", "low"),
+    opt("Take the clusters early while balance is still open", "acceptable", "Can work, but raises risk earlier than necessary.", "medium"),
+    opt("Ignore the clusters and hope they resolve themselves", "highrisk", "Defers a problem that will only get harder.", "high"),
+    opt("Play purely on which ball looks closest", "poor", "No real plan behind the order.", "high"),
+  ]),
+  decDrill("pat4", "pattern", 8, "When to Abandon the Plan", "Your planned route has just become unviable — what now?", [
+    opt("Reassess the whole table and build a new route", "optimal", "Treats the new position as a fresh problem rather than forcing the old plan.", "low"),
+    opt("Adjust the next shot only, keep the rest of the old plan", "acceptable", "Reasonable short-term fix, but may not hold up two shots later.", "medium"),
+    opt("Push on with the original plan regardless", "poor", "Ignores that the position has genuinely changed.", "high"),
+    opt("Play safe immediately without checking for a route", "highrisk", "Safe, but may throw away a clearance that was still there.", "medium"),
+  ]),
+
+  decDrill("pbd1", "problemBallDec", 2, "Spot the Problem Ball", "Which ball on this table is the real problem?", [
+    opt("The ball tucked against the cushion with no clear angle", "optimal", "That's the ball that will get harder the longer it's left.", "low"),
+    opt("The ball that's simply farthest away", "acceptable", "Distance alone isn't the best signal, but it's not unreasonable.", "medium"),
+    opt("The ball nearest the cue ball right now", "highrisk", "Proximity to the cue ball doesn't make a ball a problem.", "high"),
+    opt("Whichever ball is a different colour group", "poor", "Not a real diagnostic reason.", "high"),
+  ], { assessmentEligible: true }),
+  decDrill("pbd2", "problemBallDec", 4, "When to Develop", "Should you develop this ball now, or leave it?", [
+    opt("Develop it now while you still have a safe route to it", "optimal", "Waiting risks losing the safe angle needed to move it.", "low"),
+    opt("Leave it and hope a later shot naturally opens it up", "acceptable", "Sometimes true, but relies on luck rather than a plan.", "medium"),
+    opt("Attack it directly as a full pot attempt", "highrisk", "High difficulty with little reward if it's genuinely awkward.", "high"),
+    opt("Ignore it completely for the rest of the clearance", "poor", "It will still need addressing eventually, likely on worse terms.", "high"),
+  ]),
+  decDrill("pbd3", "problemBallDec", 6, "Late Development Risk", "Developing a ball late in the clearance — worth it?", [
+    opt("Only if a safe, low-risk route to it still exists", "optimal", "Late development is fine as long as the risk stays low.", "low"),
+    opt("Yes, regardless of risk, since it must be dealt with", "highrisk", "Necessity doesn't remove the risk of a late-clearance error.", "high"),
+    opt("No, play safe and concede this frame's clearance", "acceptable", "Conservative, but reasonable once real risk appears.", "low"),
+    opt("Leave it and hope it isn't needed", "poor", "Avoids the decision rather than making it.", "high"),
+  ]),
+
+  decDrill("tac1", "tactical", 2, "Attack or Safety", "A straightforward attack-vs-safety decision.", [
+    opt("Attack — the pot is genuinely straightforward", "optimal", "When the shot is clearly on, taking it is correct.", "low"),
+    opt("Play safe to stay in control of the frame", "acceptable", "Reasonable if you're not fully confident, but gives up value here.", "low"),
+    opt("Attack anyway despite it being a low-percentage shot", "highrisk", "Risk isn't matched by the reward on offer.", "high"),
+    opt("Play a random contact with no clear intention", "poor", "Not a real decision.", "high"),
+  ], { assessmentEligible: true }),
+  decDrill("tac2", "tactical", 4, "Create a Snooker", "Is a snooker the stronger option here?", [
+    opt("Yes — a clean snooker is available and no pot is realistic", "optimal", "Best use of the position when nothing better is on.", "low"),
+    opt("Play a simple safety shot instead of a full snooker", "acceptable", "Safer to execute, slightly lower tactical value.", "low"),
+    opt("Attempt the pot anyway even though it's not really on", "highrisk", "Low-percentage shot when a stronger option exists.", "high"),
+    opt("Hit the cue ball with no plan at all", "poor", "Wastes the tactical opportunity entirely.", "high"),
+  ]),
+  decDrill("tac3", "tactical", 6, "Finish Onto the Black", "Choosing the right finishing position for the black.", [
+    opt("Leave the cue ball with a straightforward angle on the black", "optimal", "The whole clearance is only as good as its finish.", "low"),
+    opt("Leave it playable but at a tougher angle", "acceptable", "Still gives a chance, just harder than it needed to be.", "medium"),
+    opt("Prioritise an easier second-to-last pot over the black position", "highrisk", "Solves the wrong problem — the black is what matters most.", "high"),
+    opt("Don't think about the black at all this shot", "poor", "Ignores the actual objective of the clearance.", "high"),
+  ]),
+  decDrill("tac4", "tactical", 8, "Match-Situation Pressure Call", "Deciding frame — attack or contain?", [
+    opt("Take the safe, high-percentage route given the situation", "optimal", "Deciding-frame pressure rewards reducing risk, not adding to it.", "low"),
+    opt("Attack, since a clearance would end it outright", "acceptable", "Understandable, but raises risk more than the situation calls for.", "medium"),
+    opt("Attack the hardest ball on the table for maximum reward", "highrisk", "Needlessly raises risk in a situation that punishes mistakes heavily.", "high"),
+    opt("Play without any regard for the match situation", "poor", "Ignores the context entirely.", "high"),
+  ]),
+];
+
+const ASSESSMENT_ITEMS = DRILLS.filter((d) => d.assessmentEligible);
+
+/* ---------------------------------------------------------------
+   CLEARANCES — unique ball identities, route metadata,
+   per-drill failure behaviour (hardening #4, #5, #14, #15)
+--------------------------------------------------------------- */
+const CLEARANCES = [
+  {
+    id: "clr2", name: "2-Ball Positional Sequence", type: "combined", difficulty: 3,
+    familyId: "clearance", clearanceStage: 2, assessmentEligible: false,
+    planEligible: false, adaptationEligible: false, failureMode: "reset_shot",
+    balls: [
+      { id: "Y1", group: "yellow", label: "Yellow", execSkill: "potting" },
+      { id: "R1", group: "red", label: "Red", execSkill: "positional" },
+    ],
+    preferredRoute: ["Y1", "R1"], acceptableRoutes: [], preferredAdaptation: null,
+  },
+  {
+    id: "clr3", name: "3-Ball Pattern", type: "combined", difficulty: 4,
+    familyId: "clearance", clearanceStage: 3, assessmentEligible: true,
+    planEligible: true, adaptationEligible: false, failureMode: "continue_from_position",
+    balls: [
+      { id: "Y1", group: "yellow", label: "Yellow", execSkill: "potting" },
+      { id: "R1", group: "red", label: "Red", execSkill: "positional" },
+      { id: "Y2", group: "yellow", label: "Yellow", execSkill: "speed" },
+    ],
+    preferredRoute: ["Y1", "R1", "Y2"], acceptableRoutes: [["R1", "Y1", "Y2"]], preferredAdaptation: null,
+  },
+  {
+    id: "clr4", name: "4-Ball Structured Clearance", type: "combined", difficulty: 5,
+    familyId: "clearance", clearanceStage: 4, assessmentEligible: false,
+    planEligible: true, adaptationEligible: false, failureMode: "end_clearance",
+    balls: [
+      { id: "Y1", group: "yellow", label: "Yellow", execSkill: "potting" },
+      { id: "R1", group: "red", label: "Red", execSkill: "positional" },
+      { id: "Y2", group: "yellow", label: "Yellow", execSkill: "speed" },
+      { id: "BLK", group: "black", label: "Black", execSkill: "blackBall" },
+    ],
+    preferredRoute: ["Y1", "R1", "Y2", "BLK"], acceptableRoutes: [["R1", "Y1", "Y2", "BLK"]], preferredAdaptation: null,
+  },
+  {
+    id: "clr5", name: "4–5 Ball Random-Layout Clearance", type: "combined", difficulty: 7,
+    familyId: "clearance", clearanceStage: 7, assessmentEligible: false,
+    planEligible: true, adaptationEligible: true, failureMode: "end_clearance",
+    balls: [
+      { id: "R1", group: "red", label: "Red", execSkill: "potting" },
+      { id: "Y1", group: "yellow", label: "Yellow", execSkill: "positional" },
+      { id: "R2", group: "red", label: "Red", execSkill: "problemBallExec" },
+      { id: "Y2", group: "yellow", label: "Yellow", execSkill: "speed" },
+      { id: "BLK", group: "black", label: "Black", execSkill: "blackBall" },
+    ],
+    preferredRoute: ["R1", "Y1", "R2", "Y2", "BLK"], acceptableRoutes: [["Y1", "R1", "R2", "Y2", "BLK"]],
+    preferredAdaptation: "Re-plan clearance",
+  },
+  {
+    id: "clrT", name: "Tactical-to-Clearance Situation", type: "combined", difficulty: 6,
+    familyId: "clearance", clearanceStage: 8, assessmentEligible: false,
+    planEligible: true, adaptationEligible: true, failureMode: "end_clearance",
+    balls: [
+      { id: "R1", group: "red", label: "Red", execSkill: "cueBall" },
+      { id: "Y1", group: "yellow", label: "Yellow", execSkill: "potting" },
+      { id: "R2", group: "red", label: "Red", execSkill: "positional" },
+      { id: "BLK", group: "black", label: "Black", execSkill: "blackBall" },
+    ],
+    preferredRoute: ["R1", "Y1", "R2", "BLK"], acceptableRoutes: [], preferredAdaptation: "Play safe",
+  },
+];
+const ASSESSMENT_CLEARANCE = CLEARANCES.find((c) => c.assessmentEligible);
+
+const ERROR_CODES = ["MISS", "POSITION", "SPEED", "SPIN", "PATTERN", "DECISION", "SAFETY", "OTHER"];
+
+/* ---------------------------------------------------------------
+   RATING / CONFIDENCE ENGINE
+--------------------------------------------------------------- */
+function newSkillState() {
+  return { rating: 30, attempts: [] };
+}
+function newProfile() {
+  const skills = {};
+  SKILLS.forEach((s) => (skills[s.id] = newSkillState()));
+  return { dataVersion: CONFIG.dataVersion, assessmentComplete: false, skills, ratingHistory: {}, rootCauseTally: {}, sessions: [] };
+}
+function migrateProfile(raw) {
+  if (!raw.dataVersion) raw.dataVersion = CONFIG.dataVersion;
+  if (!raw.ratingHistory) raw.ratingHistory = {};
+  if (!raw.rootCauseTally) raw.rootCauseTally = {};
+  return raw;
+}
+
+function computeConfidence(attempts) {
+  if (attempts.length === 0) return { score: 0, tier: "Low" };
+  const cfg = CONFIG.confidence;
+  const weightedN = attempts.reduce((sum, a) => sum + (a.source === "assessment" ? cfg.assessmentWeight : 1), 0);
+  const distinctDrills = new Set(attempts.map((a) => a.drillId)).size;
+  const now = Date.now();
+  const recentCount = attempts.filter((a) => now - a.ts < CONFIG.recencyWindowMs).length;
+  const volumeScore = Math.min(1, weightedN / cfg.volumeCap);
+  const diversityScore = Math.min(1, distinctDrills / cfg.diversityCap);
+  const recencyScore = Math.min(1, recentCount / cfg.recentCap);
+  const gatedVolume = volumeScore * (cfg.diversityFloor + (1 - cfg.diversityFloor) * diversityScore);
+  const score = clamp(gatedVolume * cfg.weights.volumeDiversity + recencyScore * cfg.weights.recency, 0, 1);
+  let tier = "Low";
+  if (score >= cfg.tiers.high) tier = "High";
+  else if (score >= cfg.tiers.established) tier = "Established";
+  else if (score >= cfg.tiers.emerging) tier = "Emerging";
+  return { score, tier };
+}
+function isStale(skillState) {
+  if (skillState.attempts.length === 0) return false;
+  const last = skillState.attempts[skillState.attempts.length - 1];
+  return Date.now() - last.ts > CONFIG.recencyWindowMs * 2;
+}
+function displayTier(tier, stale) {
+  if (!stale) return tier;
+  const downgrade = { High: "Established", Established: "Emerging", Emerging: "Low", Low: "Low" };
+  return downgrade[tier];
+}
+function confidenceLabel(tier, stale) {
+  const t = displayTier(tier, stale);
+  if (t === "Low") return stale ? "Uncertain — hasn't been tested recently" : "Still learning your game";
+  if (t === "Emerging") return "Getting a clearer picture";
+  return "Strong evidence";
+}
+
+// Raw execution evidence ALWAYS updates the observed (task) skill — hardening #1.
+// Root-cause inference never redirects this; it only feeds diagnosis (see evidenceForSkill/rootCauseTally).
+function applySkillUpdate(profile, skillId, value, meta = {}) {
+  const s = profile.skills[skillId];
+  const now = Date.now();
+  const difficulty = meta.difficulty ?? 5;
+  const conf = computeConfidence(s.attempts);
+  const kBase = CONFIG.kMax - (CONFIG.kMax - CONFIG.kMin) * conf.score;
+  const diffOffset = (difficulty - CONFIG.difficultyMidpoint) * CONFIG.difficultySensitivity;
+  let diffMultiplier = value >= 0.7 ? 1 + diffOffset : 1 - diffOffset;
+  diffMultiplier = clamp(diffMultiplier, CONFIG.diffMultiplierMin, CONFIG.diffMultiplierMax);
+  const effectiveK = clamp(kBase * diffMultiplier, CONFIG.kMin * 0.5, CONFIG.kMax * 1.5);
+  const rating = clamp(s.rating + effectiveK * (value * 100 - s.rating), 0, 100);
+  const attempt = { ts: now, value, difficulty, ...meta };
+  return { ...profile, skills: { ...profile.skills, [skillId]: { rating, attempts: [...s.attempts, attempt] } } };
+}
+function bumpRootCauseTally(profile, skillId) {
+  const tally = { ...(profile.rootCauseTally || {}) };
+  tally[skillId] = (tally[skillId] || 0) + 1;
+  return { ...profile, rootCauseTally: tally };
+}
+
+function resultValue(execResult) {
+  if (execResult === "success") return 1;
+  if (execResult === "partial") return 0.5;
+  return 0;
+}
+function decisionValue(tier) {
+  if (tier === "optimal") return 1;
+  if (tier === "acceptable") return 0.7;
+  if (tier === "highrisk") return 0.4;
+  return 0;
+}
+
+function composite(profile, type) {
+  const ids = SKILLS.filter((s) => s.type === type).map((s) => s.id);
+  const vals = ids.map((id) => profile.skills[id].rating);
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+function overallMean(profile) {
+  const vals = SKILLS.map((s) => profile.skills[s.id].rating);
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
+}
+
+function evidenceForSkill(profile, skillId) {
+  const st = profile.skills[skillId];
+  const mean = overallMean(profile);
+  const gap = mean - st.rating;
+  const conf = computeConfidence(st.attempts);
+  const now = Date.now();
+  const recent = st.attempts.filter((a) => now - a.ts < CONFIG.recencyWindowMs);
+  const recentFails = recent.filter((a) => a.value < 0.5).length;
+  const recentErrorRate = recent.length ? recentFails / recent.length : 0;
+  const clearanceFails = st.attempts.filter((a) => a.clearance && a.value < 0.5).length;
+  const rootCauseCount = (profile.rootCauseTally || {})[skillId] || 0;
+  const rootCauseScore = Math.min(1, rootCauseCount / 3);
+  const w = CONFIG.evidence.weights;
+  const score =
+    clamp(gap / 25, 0, 1) * w.gap +
+    conf.score * w.confidence +
+    recentErrorRate * w.recentError +
+    Math.min(1, clearanceFails / 3) * w.clearanceFail +
+    rootCauseScore * w.rootCause;
+  let status = "none";
+  // A skill can qualify either through its own weak rating OR through repeated root-cause evidence
+  // even if its own execution attempts look fine (e.g. rarely attempted directly but frequently implicated).
+  const qualifies = conf.tier !== "Low" && (gap > CONFIG.meanGapThreshold || rootCauseCount >= 2);
+  if (qualifies) {
+    if (score >= CONFIG.evidence.confirmedThreshold) status = "confirmed";
+    else if (score >= CONFIG.evidence.provisionalThreshold) status = "provisional";
+  }
+  return { rating: st.rating, gap, confidence: conf, score, status, rootCauseCount };
+}
+function limitingFactor(profile) {
+  const scored = SKILLS.map((s) => ({ ...s, ...evidenceForSkill(profile, s.id) })).filter((s) => s.status !== "none");
+  if (scored.length === 0) return { primary: null, secondary: null, status: "insufficient" };
+  scored.sort((a, b) => b.score - a.score);
+  return { primary: scored[0], secondary: scored[1] || null, status: scored[0].status };
+}
+function sessionWeighting(profile) {
+  const exec = composite(profile, "execution");
+  const dec = composite(profile, "decision");
+  const gap = dec - exec;
+  const execWeight = clamp(50 + gap * 0.6, 25, 75);
+  return { execWeight: Math.round(execWeight), decWeight: Math.round(100 - execWeight), exec, dec };
+}
+function difficultyForSkill(profile, skillId) {
+  const rating = profile.skills[skillId].rating;
+  return clamp(Math.round(rating / 12), 1, 8);
+}
+function nearestDrill(pool, targetDiff) {
+  return pool.slice().sort((a, b) => Math.abs(a.difficulty - targetDiff) - Math.abs(b.difficulty - targetDiff))[0];
+}
+
+/* ---------------------------------------------------------------
+   ERROR-EVIDENCE LAYER — raw evidence preserved, diagnosis layered
+   on top (hardening #1, #2, #3)
+--------------------------------------------------------------- */
+// shotEntries: prior shots in this clearance, each { observedSkill, value, reportedError, ballId }
+function inferLikelyCause(shotEntriesBefore, currentObservedSkill, currentReportedError) {
+  const prev1 = shotEntriesBefore[shotEntriesBefore.length - 1];
+  const prev2 = shotEntriesBefore[shotEntriesBefore.length - 2];
+
+  if (currentReportedError === "MISS" && prev1?.reportedError === "POSITION" && prev2?.reportedError === "SPEED") {
+    return { skill: "speed", pattern: "B", confidence: "Emerging", note: "Traced back to a speed-control error that produced the poor position." };
+  }
+  if (currentReportedError === "MISS" && prev1?.reportedError === "POSITION") {
+    return { skill: "positional", pattern: "A", confidence: "Emerging", note: "Traced to a poor position left by the previous shot." };
+  }
+  if (currentReportedError === "MISS" && (prev1?.reportedError === "PATTERN" || prev1?.reportedError === "DECISION")) {
+    return { skill: "pattern", pattern: "C", confidence: "Emerging", note: "Traced to an earlier pattern/decision choice that forced a difficult recovery." };
+  }
+  return { skill: currentObservedSkill, pattern: "D", confidence: "Low", note: "No clear upstream cause found — treated as a direct execution issue." };
+}
+
+// Distinguishes immediate / contributing / root without ever touching the raw skillId of any attempt.
+function classifyErrorChain(shotEntries) {
+  const failed = shotEntries.filter((e) => e.value === 0);
+  if (failed.length === 0) return null;
+  const last = failed[failed.length - 1];
+  const lastIdx = shotEntries.indexOf(last);
+  const cause = inferLikelyCause(shotEntries.slice(0, lastIdx), last.observedSkill, last.reportedError);
+  const immediateSkill = last.observedSkill;
+  const rootSkill = cause.skill;
+  const contributingSkill = rootSkill !== immediateSkill && failed.length > 1 ? failed[failed.length - 2].observedSkill : null;
+  return { immediateSkill, contributingSkill, rootSkill, rootCauseConfidence: cause.confidence, pattern: cause.pattern };
+}
+
+function buildErrorChainNarrative(chain) {
+  if (!chain || chain.rootSkill === chain.immediateSkill) return null;
+  return `Although the clearance ended on a ${SKILL_MAP[chain.immediateSkill]?.name.toLowerCase()} failure, the sequence first broke down through ${SKILL_MAP[chain.rootSkill]?.name.toLowerCase()}.`;
+}
+
+// hardening #6/#9: only real decision evidence (live plan/adaptation events, or an explicit
+// PATTERN/DECISION report) may move a decision skill — a bare execution failure never does.
+function computeClearanceDecisionScore(entries) {
+  const hasLiveDecisionEvidence = entries.some((e) => e.type === "planDecision" || e.type === "adaptation");
+  if (hasLiveDecisionEvidence) return null;
+  const flaggedPoor = entries.some((e) => e.reportedError === "PATTERN" || e.reportedError === "DECISION");
+  if (flaggedPoor) return { tier: "poor", value: decisionValue("poor"), skillId: "pattern" };
+  return null;
+}
+
+// hardening #5: compare a route against preferred/acceptable routes for a clearance
+function routeTier(route, clearance) {
+  const key = route.join(",");
+  if (key === clearance.preferredRoute.join(",")) return "optimal";
+  if ((clearance.acceptableRoutes || []).some((r) => r.join(",") === key)) return "acceptable";
+  const matches = route.filter((id, i) => id === clearance.preferredRoute[i]).length;
+  const frac = clearance.preferredRoute.length ? matches / clearance.preferredRoute.length : 0;
+  return frac >= 0.5 ? "highrisk" : "poor";
+}
+
+function resolveFailureMode(clearance, errorCode) {
+  if (errorCode === "POSITION" && clearance.adaptationEligible) return "continue_from_position";
+  return clearance.failureMode;
+}
+
+/* ---------------------------------------------------------------
+   SESSION GENERATION (hardening #8, #9, #10, #11)
+--------------------------------------------------------------- */
+const SESSION_LENGTHS = { 15: 3, 30: 5, 45: 7, 60: 9, 90: 13 };
+
+function reasonForDrill(drill, ctx) {
+  if (drill.skillId === ctx.calibrationId) return `Calibration — we still need more evidence about ${SKILL_MAP[drill.skillId].name.toLowerCase()}.`;
+  if (drill.skillId === ctx.maintenanceId) return `Maintenance — your ${SKILL_MAP[drill.skillId].name.toLowerCase()} is strong but hasn't been tested recently.`;
+  if (ctx.focusSkillIds.includes(drill.skillId)) return `${SKILL_MAP[drill.skillId].name} is currently your main training focus.`;
+  if (drill.skillId === ctx.supportingSlot) return `${SKILL_MAP[drill.skillId].name} supports the skill you're focusing on today.`;
+  return "Rounding out today's session.";
+}
+
+// hardening #9: repair pass run after all substitutions
+function validateSessionComposition(selected, profile, lf) {
+  let result = [...selected];
+  const seen = new Set();
+  result = result.map((d) => {
+    if (d.type === "combined") return d;
+    if (seen.has(d.id)) {
+      const altPool = DRILLS.filter((x) => x.type === d.type && x.skillId === d.skillId && !seen.has(x.id));
+      const replacement = altPool.length ? nearestDrill(altPool, d.difficulty) : d;
+      seen.add(replacement.id);
+      return replacement;
+    }
+    seen.add(d.id);
+    return d;
+  });
+
+  const hasExec = result.some((d) => d.type === "execution");
+  const hasDec = result.some((d) => d.type === "decision");
+  if (!hasExec && result.length > 1) {
+    const pool = DRILLS.filter((d) => d.type === "execution");
+    result[0] = nearestDrill(pool, difficultyForSkill(profile, pool[0].skillId));
+  }
+  if (!hasDec && result.length > 1) {
+    const pool = DRILLS.filter((d) => d.type === "decision");
+    result[result.length - 1] = nearestDrill(pool, difficultyForSkill(profile, pool[0].skillId));
+  }
+  if (lf.primary) {
+    const hasFocus = result.some((d) => d.skillId === lf.primary.id);
+    if (!hasFocus) {
+      const pool = DRILLS.filter((d) => d.skillId === lf.primary.id);
+      if (pool.length) result[0] = nearestDrill(pool, difficultyForSkill(profile, lf.primary.id));
+    }
+  }
+  return result;
+}
+
+function generateSession(profile, minutes) {
+  const count = SESSION_LENGTHS[minutes] || 5;
+  const lf = limitingFactor(profile);
+  const weighting = sessionWeighting(profile);
+  let execCount = clamp(Math.round((count * weighting.execWeight) / 100), 1, count - 1);
+  let decCount = count - execCount;
+
+  const focusSkillIds = [lf.primary?.id, lf.secondary?.id].filter(Boolean);
+  const supportingCandidates = focusSkillIds.flatMap((id) => SUPPORTING_LINKS.filter((l) => l.target === id).map((l) => l.source));
+  const supportingSlot = supportingCandidates[0] || null;
+
+  const execFocus = focusSkillIds.filter((id) => SKILL_MAP[id].type === "execution");
+  const decFocus = focusSkillIds.filter((id) => SKILL_MAP[id].type === "decision");
+  const execPool = execFocus.length ? execFocus : SKILLS.filter((s) => s.type === "execution").map((s) => s.id);
+  const decPool = decFocus.length ? decFocus : SKILLS.filter((s) => s.type === "decision").map((s) => s.id);
+
+  const usedIds = new Set();
+  function pick(type, n, skillIds) {
+    const chosen = [];
+    for (let i = 0; i < n; i++) {
+      const skillId = skillIds[i % skillIds.length];
+      const targetDiff = difficultyForSkill(profile, skillId);
+      const preferred = DRILLS.filter((d) => d.type === type && d.skillId === skillId && !usedIds.has(d.id));
+      const anyUnused = DRILLS.filter((d) => d.type === type && !usedIds.has(d.id));
+      const source = preferred.length ? preferred : anyUnused.length ? anyUnused : DRILLS.filter((d) => d.type === type);
+      const drill = nearestDrill(source, targetDiff);
+      usedIds.add(drill.id);
+      chosen.push(drill);
+    }
+    return chosen;
+  }
+
+  let execSelected = pick("execution", execCount, execPool);
+  let decSelected = pick("decision", decCount, decPool);
+
+  // hardening #8: supporting skill may be execution OR decision — no longer execution-only
+  if (supportingSlot) {
+    const supType = SKILL_MAP[supportingSlot].type;
+    const targetArr = supType === "execution" ? execSelected : decSelected;
+    if (targetArr.length) {
+      const pool = DRILLS.filter((d) => d.type === supType && d.skillId === supportingSlot && !usedIds.has(d.id));
+      if (pool.length) {
+        const idx = targetArr.length - 1;
+        targetArr[idx] = nearestDrill(pool, difficultyForSkill(profile, supportingSlot));
+        usedIds.add(targetArr[idx].id);
+      }
+    }
+  }
+
+  let selected = [...execSelected, ...decSelected];
+
+  let maintenanceId = null;
+  if (count >= 4) {
+    const strongest = SKILLS.map((s) => ({ ...s, st: profile.skills[s.id] }))
+      .filter((s) => computeConfidence(s.st.attempts).tier !== "Low")
+      .sort((a, b) => b.st.rating - a.st.rating)[0];
+    if (strongest) {
+      const pool = DRILLS.filter((d) => d.skillId === strongest.id);
+      if (pool.length && selected.length) {
+        selected[0] = nearestDrill(pool, difficultyForSkill(profile, strongest.id));
+        maintenanceId = strongest.id;
+      }
+    }
+  }
+
+  let calibrationId = null;
+  if (count >= 6) {
+    const leastObserved = SKILLS.map((s) => ({ ...s, n: profile.skills[s.id].attempts.length, tier: computeConfidence(profile.skills[s.id].attempts).tier }))
+      .filter((s) => s.tier === "Low" && !focusSkillIds.includes(s.id))
+      .sort((a, b) => a.n - b.n)[0];
+    if (leastObserved) {
+      const pool = DRILLS.filter((d) => d.skillId === leastObserved.id);
+      const idx = selected.length > 1 ? 1 : 0;
+      if (pool.length) {
+        selected[idx] = nearestDrill(pool, difficultyForSkill(profile, leastObserved.id));
+        calibrationId = leastObserved.id;
+      }
+    }
+  }
+
+  if (count >= 5) {
+    const clearance = weighting.execWeight >= 50 ? CLEARANCES.find((c) => c.id === "clr4") : CLEARANCES.find((c) => c.id === "clr5");
+    selected = [...selected, { ...clearance, reason: "Clearance work — combines everything today's session is targeting." }];
+  }
+
+  // hardening #9: final repair pass
+  selected = validateSessionComposition(selected, profile, lf);
+
+  const ctx = { focusSkillIds, supportingSlot, maintenanceId, calibrationId };
+  selected = selected.map((d) => (d.reason ? d : { ...d, reason: reasonForDrill(d, ctx) }));
+
+  const startingRatings = Object.fromEntries(SKILLS.map((s) => [s.id, profile.skills[s.id].rating]));
+
+  return { drills: selected, lf, weighting, focusSkillIds, startingRatings };
+}
+
+/* ---------------------------------------------------------------
+   PROGRESS HISTORY
+--------------------------------------------------------------- */
+function appendRatingSnapshots(profile) {
+  const history = { ...(profile.ratingHistory || {}) };
+  SKILLS.forEach((s) => {
+    const arr = history[s.id] ? [...history[s.id]] : [];
+    const last = arr[arr.length - 1];
+    const current = profile.skills[s.id].rating;
+    if (!last || Math.round(last.rating) !== Math.round(current)) arr.push({ ts: Date.now(), rating: current });
+    history[s.id] = arr.slice(-20);
+  });
+  return history;
+}
+function trendFor(history, skillId) {
+  const arr = history?.[skillId];
+  if (!arr || arr.length < 2) return "stable";
+  const delta = arr[arr.length - 1].rating - arr[arr.length - 2].rating;
+  if (delta > 1.5) return "up";
+  if (delta < -1.5) return "down";
+  return "stable";
+}
+
+/* ---------------------------------------------------------------
+   SESSION SUMMARY — session-only tally vs long-term profile
+   (hardening #12, #13)
+--------------------------------------------------------------- */
+function buildSummary(log, sessionState, finalProfile) {
+  const skillDeltas = {};
+  log.forEach((e) => {
+    if (!e.skillId) return;
+    skillDeltas[e.skillId] = skillDeltas[e.skillId] || { good: 0, bad: 0 };
+    if (e.value >= 0.7) skillDeltas[e.skillId].good++;
+    else skillDeltas[e.skillId].bad++;
+  });
+  const todayWentWell = Object.entries(skillDeltas).filter(([, v]) => v.good > v.bad).map(([id]) => SKILL_MAP[id].name);
+  const todayLimited = Object.entries(skillDeltas).filter(([, v]) => v.bad > v.good).map(([id]) => SKILL_MAP[id].name);
+
+  const chainNarratives = log.filter((e) => e.chainNarrative).map((e) => e.chainNarrative);
+  const adaptations = log.filter((e) => e.type === "adaptation");
+
+  const startingLf = sessionState.lf;
+  const newLf = limitingFactor(finalProfile);
+  const startingRatings = sessionState.startingRatings || {};
+
+  let changeNote;
+  const priorPrimaryId = startingLf.primary?.id;
+  const priorImproved = priorPrimaryId && finalProfile.skills[priorPrimaryId].rating > (startingRatings[priorPrimaryId] ?? 0) + 3;
+  const shifted = priorPrimaryId && newLf.primary && newLf.primary.id !== priorPrimaryId;
+
+  if (priorPrimaryId && priorImproved && shifted) {
+    changeNote = `${SKILL_MAP[priorPrimaryId].name} improved again today and is no longer your clearest weakness. Recent data now points to ${newLf.primary.name} as the main focus, so your next session shifts toward that while ${SKILL_MAP[priorPrimaryId].name.toLowerCase()} moves into maintenance.`;
+  } else if (newLf.primary) {
+    changeNote = `Your next session will continue focusing on ${newLf.primary.name}${newLf.secondary ? ` alongside some ${newLf.secondary.name}` : ""}.`;
+  } else {
+    changeNote = "Your next session will keep sampling broadly while confidence builds.";
+  }
+
+  return { todayWentWell, todayLimited, chainNarratives, adaptations, startingLf, newLf, changeNote, log };
+}
+
+/* =================================================================
+   VISUAL TOKENS
+================================================================= */
+const T = {
+  bg: "#0E1A15", panel: "#16261E", panel2: "#1D3025", line: "#2A4436",
+  ink: "#EDEAE1", inkDim: "#9FB3A8", brass: "#C9A15A", chalk: "#6FA8C9",
+  rust: "#B5533C", green: "#4E8B6B",
+};
+const fontImport = `
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');
+`;
+
+function TrendIcon({ trend }) {
+  const style = { width: 14, height: 14 };
+  if (trend === "up") return <TrendingUp style={{ ...style, color: T.green }} />;
+  if (trend === "down") return <TrendingDown style={{ ...style, color: T.rust }} />;
+  return <Minus style={{ ...style, color: T.inkDim }} />;
+}
+function TableDiagram({ balls = [], size = 60 }) {
+  return (
+    <svg width={size * 1.7} height={size} viewBox="0 0 170 100">
+      <rect x="4" y="4" width="162" height="92" rx="6" fill={T.panel2} stroke={T.brass} strokeWidth="2" />
+      {[[6, 6], [83, 3], [160, 6], [6, 90], [83, 96], [160, 90]].map((p, i) => (
+        <circle key={i} cx={p[0]} cy={p[1]} r="6" fill="#0a1310" />
+      ))}
+      {balls.map((b, i) => (
+        <circle key={i} cx={20 + i * 32} cy={50} r="9" fill={b.color || T.chalk} stroke="#0a1310" strokeWidth="1.5" />
+      ))}
+    </svg>
+  );
+}
+function Card({ children, style }) {
+  return <div style={{ background: T.panel, border: `1px solid ${T.line}`, borderRadius: 14, padding: 18, ...style }}>{children}</div>;
+}
+function Btn({ children, onClick, kind = "default", style, disabled }) {
+  const base = { padding: "14px 18px", borderRadius: 10, fontFamily: "'Inter', sans-serif", fontWeight: 600, fontSize: 15, border: "none", cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, transition: "transform 0.05s ease" };
+  const variants = {
+    default: { background: T.panel2, color: T.ink, border: `1px solid ${T.line}` },
+    primary: { background: T.brass, color: "#0E1A15" },
+    success: { background: "#245C3E", color: T.ink },
+    fail: { background: "#5C2F26", color: T.ink },
+    ghost: { background: "transparent", color: T.inkDim },
+  };
+  return (
+    <button disabled={disabled} onClick={onClick}
+      onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
+      onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+      style={{ ...base, ...variants[kind], ...style }}>
+      {children}
+    </button>
+  );
+}
+function Label({ children }) {
+  return <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1, textTransform: "uppercase", color: T.inkDim, marginBottom: 6 }}>{children}</div>;
+}
+function WhyThisDrill({ reason }) {
+  if (!reason) return null;
+  return (
+    <details style={{ marginBottom: 14 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, color: T.inkDim, fontFamily: "'IBM Plex Mono', monospace" }}>Why this drill?</summary>
+      <div style={{ fontSize: 13, color: T.inkDim, marginTop: 6 }}>{reason}</div>
+    </details>
+  );
+}
+function shortName(n) {
+  return n.split(" ")[0] === "Pattern" ? "Pattern" : n.split("/")[0].split("&")[0].trim().slice(0, 14);
+}
+
+/* =================================================================
+   MAIN APP
+================================================================= */
+export default function BlackballCoach() {
+  const [profile, setProfile] = useState(newProfile());
+  const [loaded, setLoaded] = useState(false);
+  const [view, setView] = useState("dashboard");
+  const [sessionState, setSessionState] = useState(null);
+  const [assessmentIdx, setAssessmentIdx] = useState(0);
+  const [lastSummary, setLastSummary] = useState(null);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const res = await window.storage.get("blackball_profile_v2");
+        if (res && res.value) setProfile(migrateProfile(JSON.parse(res.value)));
+      } catch (e) {}
+      setLoaded(true);
+    })();
+  }, []);
+  React.useEffect(() => {
+    if (!loaded) return;
+    (async () => { try { await window.storage.set("blackball_profile_v2", JSON.stringify(profile)); } catch (e) {} })();
+  }, [profile, loaded]);
+  React.useEffect(() => { if (loaded && !profile.assessmentComplete) setView("assessment"); }, [loaded]);
+
+  if (!loaded) {
+    return <div style={{ background: T.bg, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: T.inkDim }}>Loading…</div>;
+  }
+
+  return (
+    <div style={{ background: T.bg, minHeight: "100vh", fontFamily: "'Inter', sans-serif", color: T.ink }}>
+      <style>{fontImport}</style>
+      <div style={{ maxWidth: 480, margin: "0 auto", minHeight: "100vh", display: "flex", flexDirection: "column" }}>
+        <Header view={view} />
+        <div style={{ flex: 1, padding: 16, paddingBottom: 90 }}>
+          {view === "assessment" && (
+            <Assessment idx={assessmentIdx} setIdx={setAssessmentIdx} profile={profile}
+              onDone={(finalProfile) => { setProfile({ ...finalProfile, assessmentComplete: true }); setView("provisional"); }} />
+          )}
+          {view === "provisional" && <Provisional profile={profile} onContinue={() => setView("dashboard")} />}
+          {view === "dashboard" && <Dashboard profile={profile} onStart={() => setView("pickTime")} onNav={setView} />}
+          {view === "pickTime" && (
+            <PickTime onPick={(mins) => {
+              const gen = generateSession(profile, mins);
+              setSessionState({ ...gen, minutes: mins, stepIdx: 0, log: [] });
+              setView("session");
+            }} />
+          )}
+          {view === "session" && sessionState && (
+            <SessionRunner profile={profile} sessionState={sessionState} setSessionState={setSessionState}
+              onFinish={(summary, finalProfile) => {
+                const withHistory = { ...finalProfile, ratingHistory: appendRatingSnapshots(finalProfile) };
+                const withSession = { ...withHistory, sessions: [...withHistory.sessions, { ts: Date.now(), minutes: sessionState.minutes, summary }] };
+                setLastSummary(summary);
+                setProfile(withSession);
+                setView("summary");
+              }} />
+          )}
+          {view === "summary" && lastSummary && <SessionSummary summary={lastSummary} onDone={() => setView("dashboard")} />}
+          {view === "progress" && <Progress profile={profile} />}
+          {view === "library" && <Library />}
+        </div>
+        {view !== "assessment" && view !== "provisional" && view !== "session" && <NavBar view={view} onNav={setView} />}
+      </div>
+    </div>
+  );
+}
+
+function Header({ view }) {
+  const titles = { dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", assessment: "Initial Assessment", provisional: "Your Starting Profile" };
+  return (
+    <div style={{ padding: "18px 16px 10px", borderBottom: `1px solid ${T.line}` }}>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, letterSpacing: 1, color: T.brass }}>BLACKBALL COACH</div>
+      <div style={{ fontSize: 13, color: T.inkDim, marginTop: 2 }}>{titles[view] || ""}</div>
+    </div>
+  );
+}
+function NavBar({ view, onNav }) {
+  const items = [{ id: "dashboard", label: "Today" }, { id: "library", label: "Library" }, { id: "progress", label: "Progress" }];
+  return (
+    <div style={{ position: "sticky", bottom: 0, display: "flex", borderTop: `1px solid ${T.line}`, background: T.panel }}>
+      {items.map((it) => (
+        <button key={it.id} onClick={() => onNav(it.id)} style={{ flex: 1, padding: "14px 0", background: "transparent", border: "none", color: view === it.id ? T.brass : T.inkDim, fontWeight: view === it.id ? 700 : 500, fontSize: 13, fontFamily: "'Inter', sans-serif" }}>{it.label}</button>
+      ))}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   ASSESSMENT — accumulates every item's update via a ref
+--------------------------------------------------------------- */
+function Assessment({ idx, setIdx, profile, onDone }) {
+  const totalItems = ASSESSMENT_ITEMS.length + 1;
+  const isClearance = idx === ASSESSMENT_ITEMS.length;
+  const accumRef = useRef(profile);
+
+  function advance(updatedProfile) {
+    accumRef.current = updatedProfile;
+    if (idx + 1 >= totalItems) onDone(accumRef.current);
+    else setIdx(idx + 1);
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 14 }}>
+        <Label>Step {idx + 1} of {totalItems}</Label>
+        <div style={{ height: 6, background: T.panel2, borderRadius: 4, overflow: "hidden" }}>
+          <div style={{ height: "100%", width: `${(idx / totalItems) * 100}%`, background: T.brass }} />
+        </div>
+      </div>
+      {!isClearance ? (
+        <DrillRunnerItem key={ASSESSMENT_ITEMS[idx].id} drill={ASSESSMENT_ITEMS[idx]} profile={accumRef.current} source="assessment" onComplete={(p) => advance(p)} />
+      ) : (
+        <ClearanceRunner key="assessment-clearance" clearance={ASSESSMENT_CLEARANCE} profile={accumRef.current} source="assessment" onComplete={(p) => advance(p)} />
+      )}
+    </div>
+  );
+}
+
+function Provisional({ profile, onContinue }) {
+  const mean = overallMean(profile);
+  const strengths = SKILLS.filter((s) => profile.skills[s.id].rating >= mean + 5).map((s) => s.name);
+  const focus = SKILLS.filter((s) => profile.skills[s.id].rating < mean - 5).sort((a, b) => profile.skills[a.id].rating - profile.skills[b.id].rating).map((s) => s.name);
+  const radarData = SKILLS.map((s) => ({ skill: shortName(s.name), value: profile.skills[s.id].rating }));
+  return (
+    <div>
+      <Card style={{ marginBottom: 14 }}>
+        <p style={{ margin: 0, lineHeight: 1.5 }}>
+          Here's your starting picture.{" "}
+          {strengths.length > 0 && <><strong style={{ color: T.brass }}>{strengths.slice(0, 2).join(" and ")}</strong> look like early strengths. </>}
+          {focus.length > 0 && <><strong style={{ color: T.chalk }}>{focus.slice(0, 2).join(" and ")}</strong> are the best places to start. </>}
+          This is still a rough sketch — confidence will sharpen fast over your next few sessions.
+        </p>
+      </Card>
+      <Card style={{ marginBottom: 14, height: 300 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={radarData} outerRadius="70%">
+            <PolarGrid stroke={T.line} />
+            <PolarAngleAxis dataKey="skill" tick={{ fill: T.inkDim, fontSize: 9 }} />
+            <Radar dataKey="value" stroke={T.brass} fill={T.brass} fillOpacity={0.25} strokeDasharray="4 3" />
+          </RadarChart>
+        </ResponsiveContainer>
+      </Card>
+      <Btn kind="primary" style={{ width: "100%" }} onClick={onContinue}>Start Your First Training Session</Btn>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   DASHBOARD
+--------------------------------------------------------------- */
+function Dashboard({ profile, onStart, onNav }) {
+  const lf = limitingFactor(profile);
+  const w = sessionWeighting(profile);
+  const recent = profile.sessions.slice(-3);
+  return (
+    <div>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Today's Training</Label>
+        <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+          {lf.primary ? `${lf.primary.name}${lf.secondary ? ` + ${lf.secondary.name}` : ""}` : "Balanced Session"}
+        </div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 14 }}>
+          {lf.status === "insufficient" ? "Still gathering evidence — today's session samples broadly across your game." : `Execution ${w.execWeight}% · Decision ${w.decWeight}%${lf.status === "provisional" ? " · provisional focus" : ""}`}
+        </div>
+        <Btn kind="primary" style={{ width: "100%" }} onClick={onStart}>
+          <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Play size={16} /> Start Training</span>
+        </Btn>
+      </Card>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Main Focus</Label>
+        <div style={{ marginBottom: 8 }}>{lf.primary ? lf.primary.name : "Insufficient evidence for a confirmed limiting factor yet"}</div>
+        {lf.secondary && (<><Label>Also Worth Attention</Label><div>{lf.secondary.name}</div></>)}
+      </Card>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Recent Progress</Label>
+        {recent.length === 0 && <div style={{ color: T.inkDim, fontSize: 13 }}>No sessions yet.</div>}
+        {recent.map((s, i) => (
+          <div key={i} style={{ fontSize: 13, color: T.inkDim, marginBottom: 4 }}>{new Date(s.ts).toLocaleDateString()} — {s.summary?.changeNote ? s.summary.changeNote.slice(0, 70) + "…" : "Session completed"}</div>
+        ))}
+      </Card>
+      <Btn style={{ width: "100%" }} onClick={() => onNav("progress")}>View Full Skill Profile <ChevronRight size={14} style={{ verticalAlign: "middle" }} /></Btn>
+    </div>
+  );
+}
+function PickTime({ onPick }) {
+  return (
+    <Card>
+      <Label>How much time do you have?</Label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginTop: 10 }}>
+        {[15, 30, 45, 60, 90].map((m) => <Btn key={m} onClick={() => onPick(m)} style={{ padding: "20px 0", fontSize: 18 }}>{m} min</Btn>)}
+      </div>
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------
+   SESSION RUNNER
+--------------------------------------------------------------- */
+function SessionRunner({ profile, sessionState, setSessionState, onFinish }) {
+  const { drills, stepIdx } = sessionState;
+  const current = drills[stepIdx];
+  const logRef = useRef(sessionState.log || []);
+  const profileRef = useRef(profile);
+
+  function handleComplete(updatedProfile, entryOrEntries) {
+    const newEntries = Array.isArray(entryOrEntries) ? entryOrEntries : [entryOrEntries];
+    logRef.current = [...logRef.current, ...newEntries];
+    profileRef.current = updatedProfile;
+    if (stepIdx + 1 >= drills.length) {
+      const summary = buildSummary(logRef.current, sessionState, updatedProfile);
+      onFinish(summary, updatedProfile);
+    } else {
+      setSessionState((s) => ({ ...s, stepIdx: s.stepIdx + 1, log: logRef.current }));
+    }
+  }
+
+  return (
+    <div>
+      <Label>Drill {stepIdx + 1} of {drills.length}</Label>
+      <div style={{ height: 6, background: T.panel2, borderRadius: 4, overflow: "hidden", marginBottom: 14 }}>
+        <div style={{ height: "100%", width: `${(stepIdx / drills.length) * 100}%`, background: T.chalk }} />
+      </div>
+      {current.type === "combined" ? (
+        <ClearanceRunner key={`${current.id}-${stepIdx}`} clearance={current} profile={profileRef.current} source="training" onComplete={(p, entries) => handleComplete(p, entries)} />
+      ) : (
+        <DrillRunnerItem key={`${current.id}-${stepIdx}`} drill={current} profile={profileRef.current} source="training" onComplete={(p, entry) => handleComplete(p, entry)} />
+      )}
+    </div>
+  );
+}
+
+function SessionSummary({ summary, onDone }) {
+  return (
+    <div>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Today's Session</Label>
+        <p style={{ margin: "0 0 10px", lineHeight: 1.5 }}>
+          {summary.todayWentWell.length ? `Your ${summary.todayWentWell.join(" and ")} held up well today.` : "A mixed session across several skills."}
+        </p>
+        <p style={{ margin: 0, lineHeight: 1.5, color: T.inkDim, fontSize: 13 }}>
+          {summary.todayLimited.length ? `Most of today's difficulty traced back to ${summary.todayLimited.join(" and ")} — this is just today's snapshot, not a change to your long-term profile.` : "Nothing stood out as a clear limiter in today's session specifically."}
+        </p>
+      </Card>
+      {summary.chainNarratives.length > 0 && (
+        <Card style={{ marginBottom: 14 }}>
+          <Label>Error-Chain Note</Label>
+          {summary.chainNarratives.map((n, i) => <p key={i} style={{ margin: i === 0 ? 0 : "8px 0 0", lineHeight: 1.5, color: T.chalk }}>{n}</p>)}
+        </Card>
+      )}
+      {summary.adaptations.length > 0 && (
+        <Card style={{ marginBottom: 14 }}>
+          <Label>Adaptation</Label>
+          <p style={{ margin: 0, lineHeight: 1.5, color: T.brass }}>When position was lost mid-clearance, you recognised it and made a call — that decision is credited on its own merits, separate from any later execution result.</p>
+        </Card>
+      )}
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Your Current Focus</Label>
+        <p style={{ margin: 0, lineHeight: 1.5 }}>{summary.newLf.primary ? summary.newLf.primary.name : "Still insufficient evidence for a confirmed limiting factor"}</p>
+      </Card>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>What Changes Next</Label>
+        <p style={{ margin: 0, lineHeight: 1.5 }}>{summary.changeNote}</p>
+      </Card>
+      <Btn kind="primary" style={{ width: "100%" }} onClick={onDone}>Done</Btn>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   DRILL RUNNER (pure execution / decision)
+--------------------------------------------------------------- */
+function DrillRunnerItem({ drill, profile, source = "training", onComplete }) {
+  const [showErrorGrid, setShowErrorGrid] = useState(false);
+  const [feedback, setFeedback] = useState(null); // { opt, updatedProfile }
+
+  if (drill.type === "execution") {
+    return (
+      <Card>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: T.chalk }, { color: "#D9C089" }]} /></div>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>{drill.name}</div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 6 }}>{drill.desc}</div>
+        <div style={{ fontSize: 11, color: T.inkDim, marginBottom: 12 }}>Difficulty {drill.difficulty}/10</div>
+        <WhyThisDrill reason={drill.reason} />
+        {!showErrorGrid ? (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <Btn kind="success" style={{ padding: "22px 0" }} onClick={() => {
+              const updated = applySkillUpdate(profile, drill.skillId, 1, { drillId: drill.id, difficulty: drill.difficulty, source });
+              onComplete(updated, { skillId: drill.skillId, value: 1 });
+            }}><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Check size={20} /> Success</span></Btn>
+            <Btn kind="fail" style={{ padding: "22px 0" }} onClick={() => setShowErrorGrid(true)}>
+              <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><X size={20} /> Failed</span></Btn>
+          </div>
+        ) : (
+          <ErrorGrid onPick={(code) => {
+            const updated = applySkillUpdate(profile, drill.skillId, 0, { drillId: drill.id, difficulty: drill.difficulty, reportedError: code, source });
+            onComplete(updated, { skillId: drill.skillId, value: 0, reportedError: code });
+          }} />
+        )}
+      </Card>
+    );
+  }
+
+  // decision drill — scenario-specific options with rationale feedback
+  if (!feedback) {
+    return (
+      <Card>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: "#D9C089" }, { color: T.chalk }, { color: T.rust }]} /></div>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>{drill.name}</div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 12 }}>{drill.desc}</div>
+        <WhyThisDrill reason={drill.reason} />
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {drill.options.map((option) => (
+            <Btn key={option.key} style={{ textAlign: "left" }} onClick={() => {
+              const val = decisionValue(option.tier);
+              const updated = applySkillUpdate(profile, drill.skillId, val, { drillId: drill.id, difficulty: drill.difficulty, tier: option.tier, source });
+              setFeedback({ option, updatedProfile: updated, value: val });
+            }}>{option.label}</Btn>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+  return (
+    <Card>
+      <Label>{feedback.option.tier === "optimal" ? "Strong choice" : feedback.option.tier === "acceptable" ? "Reasonable choice" : feedback.option.tier === "highrisk" ? "High risk" : "Not the best option"}</Label>
+      <p style={{ margin: "0 0 16px", lineHeight: 1.5 }}>{feedback.option.rationale}</p>
+      <Btn kind="primary" style={{ width: "100%" }} onClick={() => onComplete(feedback.updatedProfile, { skillId: drill.skillId, value: feedback.value, tier: feedback.option.tier })}>Continue</Btn>
+    </Card>
+  );
+}
+function ErrorGrid({ onPick }) {
+  return (
+    <div>
+      <Label>What went wrong?</Label>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {ERROR_CODES.map((code) => <Btn key={code} onClick={() => onPick(code)}>{code}</Btn>)}
+      </div>
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------------
+   CLEARANCE RUNNER — unique-ID balls, real planned-vs-actual route,
+   per-drill failure behaviour, decision evidence from real choices
+--------------------------------------------------------------- */
+function ClearanceRunner({ clearance, profile, source = "training", onComplete }) {
+  const stateRef = useRef({
+    profile, entries: [], remaining: clearance.balls.map((b) => b.id),
+    actualRoute: [], plannedRoute: null, currentBallId: null,
+  });
+  const [, setTick] = useState(0);
+  const rerender = () => setTick((t) => t + 1);
+  const [showErrorGrid, setShowErrorGrid] = useState(false);
+  const [showAdaptation, setShowAdaptation] = useState(false);
+  const [planningPhase, setPlanningPhase] = useState(clearance.planEligible ? "choose" : "done");
+  const [plannedOrder, setPlannedOrder] = useState(clearance.balls.map((b) => b.id));
+
+  const st = stateRef.current;
+  const ballById = Object.fromEntries(clearance.balls.map((b) => [b.id, b]));
+
+  function shotEntries() {
+    return st.entries.filter((e) => e.observedSkill);
+  }
+
+  function finishClearance() {
+    const decisionResult = computeClearanceDecisionScore(st.entries);
+    let finalProfile = st.profile;
+    let finalEntries = st.entries;
+    if (decisionResult) {
+      finalProfile = applySkillUpdate(finalProfile, decisionResult.skillId, decisionResult.value, { drillId: clearance.id, difficulty: clearance.difficulty, tier: decisionResult.tier, clearance: true, source });
+      finalEntries = [...finalEntries, { skillId: decisionResult.skillId, value: decisionResult.value, tier: decisionResult.tier, clearance: true }];
+    }
+    const chain = classifyErrorChain(shotEntries());
+    if (chain && chain.rootSkill !== chain.immediateSkill) {
+      finalProfile = bumpRootCauseTally(finalProfile, chain.rootSkill);
+    }
+    const narrative = buildErrorChainNarrative(chain);
+    finalEntries = [...finalEntries, { meta: true, chainNarrative: narrative, plannedRoute: st.plannedRoute, actualRoute: st.actualRoute, errorChain: chain }];
+    onComplete(finalProfile, finalEntries);
+  }
+
+  function afterShotContinue() {
+    if (st.remaining.length === 0) finishClearance();
+    else rerender();
+  }
+
+  function handleSelectBall(ballId) {
+    st.currentBallId = ballId;
+    rerender();
+  }
+
+  function handleResult(success) {
+    const ball = ballById[st.currentBallId];
+    if (success) {
+      const updated = applySkillUpdate(st.profile, ball.execSkill, 1, { drillId: clearance.id, difficulty: clearance.difficulty, source, clearance: true, ballId: ball.id });
+      st.profile = updated;
+      st.entries = [...st.entries, { observedSkill: ball.execSkill, value: 1, ballId: ball.id }];
+      st.actualRoute = [...st.actualRoute, ball.id];
+      st.remaining = st.remaining.filter((id) => id !== ball.id);
+      st.currentBallId = null;
+      afterShotContinue();
+    } else {
+      setShowErrorGrid(true);
+    }
+  }
+
+  function handleErrorPick(code) {
+    setShowErrorGrid(false);
+    const ball = ballById[st.currentBallId];
+    // hardening #1: raw evidence ALWAYS updates the observed (task) skill — never redirected
+    const updated = applySkillUpdate(st.profile, ball.execSkill, 0, {
+      drillId: clearance.id, difficulty: clearance.difficulty, source, clearance: true, ballId: ball.id,
+      reportedError: code, reportedMechanismSkill: ERROR_SKILL_MAP[code] || null,
+    });
+    st.profile = updated;
+    st.entries = [...st.entries, { observedSkill: ball.execSkill, value: 0, ballId: ball.id, reportedError: code, reportedMechanismSkill: ERROR_SKILL_MAP[code] || null }];
+    st.actualRoute = [...st.actualRoute, ball.id];
+
+    const mode = resolveFailureMode(clearance, code);
+    if (mode === "end_clearance") {
+      st.currentBallId = null;
+      finishClearance();
+      return;
+    }
+    // ball stays available (reset_shot / continue_from_position / recovery_mode)
+    st.currentBallId = null;
+    if (code === "POSITION" && clearance.adaptationEligible) {
+      setShowAdaptation(true);
+    } else {
+      afterShotContinue();
+    }
+  }
+
+  function handleAdaptationChoice(choice) {
+    setShowAdaptation(false);
+    const preferred = clearance.preferredAdaptation;
+    let tier = "acceptable";
+    if (preferred && choice === preferred) tier = "optimal";
+    else if (choice === "Continue original route" && preferred && preferred !== choice) tier = "poor";
+    else if (choice === "Other") tier = "highrisk";
+    const skillId = ADAPTATION_SKILL_MAP[choice] || "pattern";
+    const value = decisionValue(tier);
+    const updated = applySkillUpdate(st.profile, skillId, value, { drillId: clearance.id, difficulty: clearance.difficulty, tier, source: "adaptation" });
+    st.profile = updated;
+    st.entries = [...st.entries, { type: "adaptation", skillId, positionLost: true, recognised: true, choice, decisionTier: tier, value }];
+    afterShotContinue();
+  }
+
+  if (planningPhase === "choose") {
+    return (
+      <Card>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>{clearance.name}</div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 16 }}>Would you like to plan this clearance first, or just play?</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <Btn kind="primary" onClick={() => setPlanningPhase("planning")}>Plan the clearance</Btn>
+          <Btn onClick={() => { st.plannedRoute = null; setPlanningPhase("done"); }}>Just play</Btn>
+        </div>
+      </Card>
+    );
+  }
+  if (planningPhase === "planning") {
+    return (
+      <Card>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>Plan Your Order</div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 14 }}>Reorder if needed, then confirm.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {plannedOrder.map((ballId, i) => (
+            <div key={ballId} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: T.panel2, borderRadius: 8, padding: "10px 12px" }}>
+              <span>{i + 1}. {ballById[ballId].label}</span>
+              <div style={{ display: "flex", gap: 6 }}>
+                <Btn kind="ghost" style={{ padding: "4px 10px" }} onClick={() => { if (i === 0) return; const copy = [...plannedOrder]; [copy[i - 1], copy[i]] = [copy[i], copy[i - 1]]; setPlannedOrder(copy); }}>↑</Btn>
+                <Btn kind="ghost" style={{ padding: "4px 10px" }} onClick={() => { if (i === plannedOrder.length - 1) return; const copy = [...plannedOrder]; [copy[i + 1], copy[i]] = [copy[i], copy[i + 1]]; setPlannedOrder(copy); }}>↓</Btn>
+              </div>
+            </div>
+          ))}
+        </div>
+        <Btn kind="primary" style={{ width: "100%" }} onClick={() => {
+          st.plannedRoute = plannedOrder;
+          const tier = routeTier(plannedOrder, clearance);
+          const value = decisionValue(tier);
+          const updated = applySkillUpdate(st.profile, "pattern", value, { drillId: clearance.id, difficulty: clearance.difficulty, tier, source: "planDecision" });
+          st.profile = updated;
+          st.entries = [...st.entries, { type: "planDecision", skillId: "pattern", value, tier }];
+          setPlanningPhase("done");
+        }}>Confirm Plan</Btn>
+      </Card>
+    );
+  }
+  if (showAdaptation) {
+    return (
+      <Card>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>Position lost</div>
+        <div style={{ fontSize: 13, color: T.inkDim, marginBottom: 16 }}>What's your plan?</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {["Re-plan clearance", "Continue original route", "Develop a problem ball", "Play safe", "Other"].map((c) => (
+            <Btn key={c} onClick={() => handleAdaptationChoice(c)} style={{ textAlign: "left" }}>{c}</Btn>
+          ))}
+        </div>
+      </Card>
+    );
+  }
+
+  // ball-selection / shot phase
+  if (!st.currentBallId) {
+    if (st.remaining.length === 1) { st.currentBallId = st.remaining[0]; }
+    else {
+      return (
+        <Card>
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+            <TableDiagram balls={clearance.balls.map((b) => ({ color: st.remaining.includes(b.id) ? (b.group === "black" ? "#222" : b.group === "red" ? T.rust : "#D9C089") : T.panel2 }))} />
+          </div>
+          <div style={{ fontSize: 12, color: T.inkDim, marginBottom: 4 }}>{clearance.name}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 12 }}>Which ball are you playing?</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {st.remaining.map((id) => <Btn key={id} onClick={() => handleSelectBall(id)} style={{ textAlign: "left" }}>{ballById[id].label}</Btn>)}
+          </div>
+        </Card>
+      );
+    }
+  }
+
+  const ball = ballById[st.currentBallId];
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
+        <TableDiagram balls={clearance.balls.map((b) => ({ color: b.id === ball.id ? T.brass : st.remaining.includes(b.id) ? T.panel2 : T.green }))} />
+      </div>
+      <div style={{ fontSize: 12, color: T.inkDim, marginBottom: 4 }}>{clearance.name}</div>
+      <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>Pot the {ball.label}</div>
+      <div style={{ fontSize: 12, color: T.inkDim, marginBottom: 12 }}>Skill in focus: {SKILL_MAP[ball.execSkill].name}</div>
+      <WhyThisDrill reason={clearance.reason} />
+      {!showErrorGrid ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+          <Btn kind="success" style={{ padding: "22px 0" }} onClick={() => handleResult(true)}><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><Check size={20} /> Success</span></Btn>
+          <Btn kind="fail" style={{ padding: "22px 0" }} onClick={() => handleResult(false)}><span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><X size={20} /> Failed</span></Btn>
+        </div>
+      ) : (
+        <ErrorGrid onPick={handleErrorPick} />
+      )}
+    </Card>
+  );
+}
+
+/* ---------------------------------------------------------------
+   PROGRESS / SKILL PROFILE
+--------------------------------------------------------------- */
+function Progress({ profile }) {
+  const lf = limitingFactor(profile);
+  const w = sessionWeighting(profile);
+  const radarData = SKILLS.map((s) => ({ skill: shortName(s.name), value: profile.skills[s.id].rating }));
+  return (
+    <div>
+      <Card style={{ marginBottom: 14, height: 280 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <RadarChart data={radarData} outerRadius="70%">
+            <PolarGrid stroke={T.line} />
+            <PolarAngleAxis dataKey="skill" tick={{ fill: T.inkDim, fontSize: 9 }} />
+            <Radar dataKey="value" stroke={T.chalk} fill={T.chalk} fillOpacity={0.25} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </Card>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Shot-Making vs Table-Reading</Label>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={{ fontSize: 12, width: 70 }}>Execution</div>
+          <div style={{ flex: 1, height: 8, background: T.panel2, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${w.exec}%`, height: "100%", background: T.chalk }} /></div>
+          <div style={{ fontSize: 12, width: 30, textAlign: "right" }}>{Math.round(w.exec)}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 12, width: 70 }}>Decision</div>
+          <div style={{ flex: 1, height: 8, background: T.panel2, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${w.dec}%`, height: "100%", background: T.brass }} /></div>
+          <div style={{ fontSize: 12, width: 30, textAlign: "right" }}>{Math.round(w.dec)}</div>
+        </div>
+      </Card>
+      <Card style={{ marginBottom: 14 }}>
+        <Label>Current Focus</Label>
+        <div style={{ fontSize: 14, marginBottom: 4 }}>{lf.primary ? `${lf.primary.name}${lf.status === "provisional" ? " (provisional)" : ""}` : "Insufficient evidence for a confirmed limiting factor yet"}</div>
+        {lf.secondary && <div style={{ fontSize: 13, color: T.inkDim }}>Also: {lf.secondary.name}</div>}
+      </Card>
+      <Card>
+        <Label>All Skills</Label>
+        {SKILLS.map((s) => {
+          const st = profile.skills[s.id];
+          const conf = computeConfidence(st.attempts);
+          const stale = isStale(st);
+          const trend = trendFor(profile.ratingHistory, s.id);
+          return (
+            <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${T.line}` }}>
+              <div>
+                <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>{s.name} <TrendIcon trend={trend} /></div>
+                <div style={{ fontSize: 11, color: T.inkDim }}>{confidenceLabel(conf.tier, stale)} · {st.attempts.length} attempts</div>
+              </div>
+              <div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 15, color: T.brass }}>{Math.round(st.rating)}</div>
+            </div>
+          );
+        })}
+      </Card>
+    </div>
+  );
+}
+
+function Library() {
+  const grouped = SKILLS.map((s) => ({ skill: s, drills: DRILLS.filter((d) => d.skillId === s.id) }));
+  return (
+    <div>
+      {grouped.map(({ skill, drills }) => (
+        <Card key={skill.id} style={{ marginBottom: 12 }}>
+          <Label>{skill.name} {skill.priority && <span style={{ color: T.brass }}>· Priority</span>}</Label>
+          {drills.map((d) => <div key={d.id} style={{ fontSize: 13, padding: "4px 0", color: T.inkDim }}>{d.name} <span style={{ color: T.line, fontFamily: "'IBM Plex Mono', monospace" }}>· diff {d.difficulty}</span></div>)}
+        </Card>
+      ))}
+      <Card>
+        <Label>Clearances</Label>
+        {CLEARANCES.map((c) => <div key={c.id} style={{ fontSize: 13, padding: "4px 0", color: T.inkDim }}>{c.name} <span style={{ color: T.line, fontFamily: "'IBM Plex Mono', monospace" }}>· diff {c.difficulty}</span></div>)}
+      </Card>
+    </div>
+  );
+}
