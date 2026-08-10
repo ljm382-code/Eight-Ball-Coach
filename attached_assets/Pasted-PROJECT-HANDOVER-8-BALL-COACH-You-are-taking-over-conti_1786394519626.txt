@@ -1,0 +1,857 @@
+PROJECT HANDOVER — 8-BALL COACH
+================================
+
+You are taking over continued development of an EXISTING application called:
+
+8-Ball Coach
+
+IMPORTANT:
+This application already exists in this Replit project.
+
+It has also been connected to GitHub for source control.
+
+DO NOT create a new project.
+DO NOT replace the existing application with a new generated application.
+DO NOT unnecessarily redesign, simplify, remove, or rewrite working features.
+
+Your job is to inspect what currently exists, preserve the working application, and continue developing it according to the specification below.
+
+BEFORE CHANGING ANYTHING:
+
+1. Inspect every existing project file.
+2. Understand the current architecture and technology stack.
+3. Run the application.
+4. Run build/type checks.
+5. Identify what is already implemented.
+6. Identify incomplete or broken functionality.
+7. Fix existing build/type/import errors first.
+8. Preserve working code wherever practical.
+9. Confirm the current project is safely committed/synchronised with GitHub.
+10. Only then continue development.
+
+==================================================
+1. PRODUCT NAME
+==================================================
+
+8-Ball Coach
+
+The app must NOT be branded specifically as a "Blackball Coach".
+
+8-Ball Coach is intended to support multiple 8-ball rule systems.
+
+The two primary rule sets currently required are:
+
+• Blackball Rules
+• International Rules
+
+The architecture must allow additional rule sets to be added later without rebuilding the coaching engine.
+
+Where game advice depends upon the selected rules, the coaching logic must take the active ruleset into account.
+
+==================================================
+2. CORE PRODUCT CONCEPT
+==================================================
+
+8-Ball Coach is an adaptive pool coaching and training application.
+
+It is NOT simply:
+
+• a drill library
+• a rules reference
+• a score tracker
+• a generic training-plan generator
+
+The central concept is:
+
+THE APP LEARNS THE PLAYER'S GAME.
+
+The player records information about:
+
+• matches
+• frames
+• mistakes
+• successes
+• shot types
+• positional problems
+• tactical decisions
+• recurring weaknesses
+• training results
+
+The coaching engine uses this information to build an evolving player profile.
+
+Its central question should be:
+
+"What is currently costing this player the most frames?"
+
+Training should then be prioritised around those weaknesses.
+
+As the player improves, the training priorities should change.
+
+The fundamental feedback loop is:
+
+PLAY
+↓
+RECORD
+↓
+ANALYSE
+↓
+IDENTIFY WEAKNESSES
+↓
+TRAIN
+↓
+REASSESS
+↓
+ADAPT TRAINING
+
+This adaptive loop is the heart of 8-Ball Coach.
+
+==================================================
+3. PLAYER ONBOARDING
+==================================================
+
+A new user should be introduced to the app and asked which rules they normally play.
+
+At minimum:
+
+BLACKBALL
+
+INTERNATIONAL RULES
+
+The user must be able to change their preferred/default rules later.
+
+The selected ruleset must influence relevant:
+
+• terminology
+• tactical coaching
+• rules advice
+• match analysis
+• scenarios
+• training recommendations
+
+Welcome messaging should communicate something similar to:
+
+"8-Ball Coach learns your game and adapts your training to fix the weaknesses that matter most."
+
+Do not make onboarding unnecessarily long.
+
+==================================================
+4. PLAYER PROFILE
+==================================================
+
+Maintain an evolving player profile based on actual recorded performance rather than arbitrary labels.
+
+Possible tracked dimensions include:
+
+• potting
+• cue-ball control
+• positional play
+• shot selection
+• tactical play
+• safety play
+• break
+• finishing
+• pressure performance
+• consistency
+• decision making
+• pace/control
+• recovery after mistakes
+
+The engine should also track more specific weaknesses underneath these broader categories.
+
+Examples include:
+
+• long pots
+• thin cuts
+• stun shots
+• screw/backspin
+• follow
+• side spin
+• speed control
+• positional routes
+• escaping snookers
+• safety selection
+• containing safeties
+• attacking at the wrong time
+• failed clearances
+• poor first-shot selection
+• poor break development
+• difficult black-ball finishes
+
+Do NOT treat all weaknesses equally.
+
+The engine must consider the effect each weakness has on actual frame outcomes.
+
+==================================================
+5. ADAPTIVE COACHING ENGINE
+==================================================
+
+The coaching engine should continuously update the player's training priorities.
+
+A weakness should become more important when factors such as these increase:
+
+• frequency
+• severity
+• recency
+• frame impact
+• match impact
+• persistence over time
+
+The engine must distinguish between:
+
+A player missing something once
+
+and
+
+A recurring weakness that repeatedly costs frames.
+
+Training recommendations must NOT simply be based on raw mistake counts.
+
+Recent and high-impact problems should generally matter more.
+
+Historical data should still contribute, but older performance should gradually carry less influence than recent performance.
+
+However, do NOT make the system so reactive that one bad frame or one unusually bad match completely changes the player's established training profile.
+
+==================================================
+6. FRAME IMPACT
+==================================================
+
+This is a central design principle:
+
+NOT ALL ERRORS ARE EQUALLY IMPORTANT.
+
+For example:
+
+Missing a difficult low-percentage shot while already losing a frame should not necessarily receive the same weighting as:
+
+• missing a straightforward frame-winning black
+• losing position during a routine clearance
+• making a tactical decision that gives the opponent an easy finish
+• failing to complete a high-probability clearance
+
+The engine should therefore support impact/severity weighting.
+
+The question is not simply:
+
+"What does the player do wrong most often?"
+
+It is:
+
+"What weaknesses are actually costing this player frames?"
+
+==================================================
+7. TRAINING PRIORITIES
+==================================================
+
+The app should create ranked training priorities.
+
+Example:
+
+1. Cue-ball speed control
+2. Long pot consistency
+3. Positional route selection
+4. Safety play
+
+The user should understand WHY something has become a priority.
+
+Where practical, display explanations such as:
+
+"Your speed-control errors contributed to 4 lost frames in your last 3 matches."
+
+The app should feel like a coach analysing the player's game rather than an algorithm producing unexplained scores.
+
+==================================================
+8. TRAINING SESSIONS
+==================================================
+
+Training sessions should be generated from the player's current needs.
+
+Sessions may contain several drills.
+
+The app should avoid repeatedly serving exactly the same training session.
+
+Training should combine:
+
+• high-priority weakness work
+• reinforcement
+• maintenance of existing strengths
+• variation
+
+A session should have a clear purpose.
+
+Example:
+
+TODAY'S FOCUS
+Cue-ball speed control
+
+WHY
+This is currently your highest-impact weakness.
+
+The player should be able to record training performance so the engine can determine whether improvement is occurring.
+
+==================================================
+9. DRILL SYSTEM
+==================================================
+
+Drills should have structured metadata rather than existing only as text.
+
+Each drill should be capable of containing:
+
+• ID
+• title
+• description
+• category
+• skill tags
+• difficulty
+• setup
+• repetitions/attempts
+• success criteria
+• coaching tips
+• ruleset relevance where applicable
+
+Difficulty should adapt where appropriate.
+
+If a player repeatedly succeeds, training should become harder.
+
+If the player repeatedly struggles, the app should avoid endlessly giving drills beyond the player's current ability.
+
+Training performance must feed back into the player model.
+
+==================================================
+10. MATCH / FRAME LOGGING
+==================================================
+
+Logging must be quick enough that players will realistically use it.
+
+DO NOT require excessive data entry after every frame.
+
+The system should allow useful information to be captured with relatively few taps.
+
+Information may include:
+
+• win/loss
+• opponent
+• competition/practice
+• selected ruleset
+• break result
+• key mistake
+• shot category
+• tactical error
+• clearance opportunity
+• clearance success/failure
+• reason frame was lost
+• notes
+
+Not every field needs to be mandatory.
+
+The purpose of logging is to provide useful coaching data — not to force the player to complete a lengthy form.
+
+==================================================
+11. RULE SYSTEM
+==================================================
+
+Rules must be modular.
+
+DO NOT hard-code Blackball assumptions throughout the application.
+
+Use a structure where coaching logic can reference the active ruleset.
+
+Required initially:
+
+BLACKBALL
+
+INTERNATIONAL RULES
+
+Rules-dependent tactical advice must be capable of differing between them.
+
+Future rule sets should be addable through additional rule definitions/modules rather than major rewrites.
+
+==================================================
+12. RULES REFERENCE
+==================================================
+
+The app may include a rules reference section.
+
+Users should be able to select:
+
+Blackball
+International Rules
+
+and view relevant guidance.
+
+However:
+
+THE RULES REFERENCE IS SECONDARY TO THE ADAPTIVE COACHING FUNCTIONALITY.
+
+Do not turn 8-Ball Coach primarily into a rules encyclopedia.
+
+==================================================
+13. DASHBOARD
+==================================================
+
+The main dashboard should immediately tell the player something useful.
+
+Priority information includes:
+
+• current training focus
+• biggest weakness
+• recent performance
+• improvement
+• next recommended training session
+
+Avoid filling the dashboard with meaningless statistics.
+
+Every prominent statistic should help answer:
+
+"How am I playing and what should I work on?"
+
+==================================================
+14. PROGRESS
+==================================================
+
+The player should be able to see changes over time.
+
+Useful concepts include:
+
+• weakness trends
+• skill trends
+• training results
+• match performance
+• frame conversion
+• recurring errors
+• improvement areas
+
+Where appropriate distinguish:
+
+IMPROVING
+STABLE
+DECLINING
+
+Do not falsely imply statistical certainty when there is very little data.
+
+For new users, communicate naturally that:
+
+"8-Ball Coach is still learning your game."
+
+==================================================
+15. STRENGTHS
+==================================================
+
+The coaching engine should identify strengths as well as weaknesses.
+
+This prevents the experience from becoming relentlessly negative.
+
+Training should predominantly target weaknesses but should occasionally reinforce strengths.
+
+The player should also be able to see what parts of their game are improving or already performing well.
+
+==================================================
+16. DATA CONFIDENCE
+==================================================
+
+The engine should understand that five frames provide less reliable information than fifty frames.
+
+Recommendations should therefore consider the amount of evidence available.
+
+The UI can communicate this naturally without exposing complicated statistics.
+
+For example:
+
+"8-Ball Coach is still learning your game."
+
+or
+
+"We're becoming more confident that speed control is an area worth targeting."
+
+Do not overwhelm the user with statistical terminology.
+
+==================================================
+17. COACHING LANGUAGE
+==================================================
+
+Use practical pool-player language.
+
+Avoid unnecessarily technical analytics language in the UI.
+
+Instead of:
+
+"Your weighted error coefficient increased by 14%"
+
+prefer:
+
+"Speed control has been costing you more frames recently."
+
+The underlying engine can be sophisticated.
+
+The player-facing experience should remain simple and understandable.
+
+==================================================
+18. VISUAL IDENTITY
+==================================================
+
+PRESERVE THE ESTABLISHED VISUAL DIRECTION OF THE EXISTING PROJECT.
+
+The current application uses a:
+
+• dark
+• premium
+• serious pool aesthetic
+
+with green and gold/accent elements.
+
+DO NOT replace this with:
+
+• generic SaaS styling
+• bright white corporate dashboards
+• cartoon styling
+• excessive gradients
+• an unrelated visual redesign
+
+It should feel like a serious modern coaching tool.
+
+It should work especially well on:
+
+• phones
+• tablets
+
+Responsive design is required.
+
+Do not undertake a major visual redesign unless specifically requested.
+
+==================================================
+19. TECHNICAL ARCHITECTURE
+==================================================
+
+PRESERVE THE EXISTING TECHNOLOGY STACK.
+
+Do not change frameworks simply because another framework is preferred.
+
+Keep the code modular.
+
+Separate concerns such as:
+
+• types
+• player data
+• rules
+• drills
+• match data
+• scoring/analysis
+• recommendation engine
+• persistence
+• UI components
+
+Do not put the entire application into one enormous component.
+
+Before changing architecture, inspect what already exists.
+
+==================================================
+20. DATA PERSISTENCE
+==================================================
+
+During early development, local persistence is acceptable.
+
+The architecture should nevertheless allow proper accounts/cloud persistence to be added later.
+
+Do NOT make:
+
+• authentication
+• paid databases
+• paid APIs
+• paid backend services
+
+a prerequisite for getting the core product working.
+
+The immediate priority is:
+
+A FUNCTIONAL ADAPTIVE COACHING PRODUCT.
+
+==================================================
+21. DEVELOPMENT PRIORITY
+==================================================
+
+Work in this order:
+
+PHASE 1
+Make the EXISTING application build and run reliably.
+
+PHASE 2
+Audit what functionality already exists.
+
+PHASE 3
+Complete/refine the adaptive coaching engine.
+
+PHASE 4
+Ensure both Blackball and International Rules are properly supported.
+
+PHASE 5
+Complete/refine match and frame logging.
+
+PHASE 6
+Complete adaptive training generation.
+
+PHASE 7
+Complete progress/analytics.
+
+PHASE 8
+Polish responsive UI and UX.
+
+DO NOT spend large amounts of development time or AI credits on cosmetic changes while core functionality remains incomplete.
+
+==================================================
+22. REQUIRED ENGINE TEST SCENARIOS
+==================================================
+
+The adaptive system must eventually be tested with simulated player histories.
+
+Test at minimum:
+
+A. Brand-new player with no history.
+
+B. Player with very little data.
+
+C. Player repeatedly missing long pots.
+
+D. Player repeatedly losing position through poor speed control.
+
+E. Player making tactical errors.
+
+F. Player whose weakness occurs frequently but rarely costs frames.
+
+G. Player with an infrequent mistake that repeatedly costs frames.
+
+H. Player improving rapidly in their former biggest weakness.
+
+I. Player whose previous weakness has disappeared.
+
+J. Player developing a new weakness.
+
+K. Player with several similarly weighted weaknesses.
+
+L. Player who performs well in practice but poorly in matches.
+
+M. Player with inconsistent results.
+
+N. Player on a long winning run.
+
+O. Player on a losing run.
+
+P. Player switching between Blackball and International Rules.
+
+Q. Player recording an unusually bad single match.
+
+R. Player returning after a long period without data.
+
+S. Player with large amounts of historical data.
+
+T. Player repeatedly completing a drill successfully.
+
+U. Player repeatedly failing a drill.
+
+V. Player with strong potting but weak positional play.
+
+W. Player with weak potting but excellent tactical play.
+
+X. Player with insufficient evidence for a confident recommendation.
+
+The engine should behave sensibly in every case.
+
+Do NOT tune the system so aggressively that one abnormal match destroys the established player profile.
+
+==================================================
+23. CORE UX PRINCIPLE
+==================================================
+
+The player should NOT need to understand the algorithm.
+
+The desired experience is:
+
+"I play.
+
+I tell 8-Ball Coach what happened.
+
+It spots patterns I hadn't noticed.
+
+It tells me what is costing me frames.
+
+It gives me the right things to practise.
+
+It sees whether the training is working.
+
+It changes the training as I improve."
+
+THAT is the product.
+
+==================================================
+24. LONG-TERM PRODUCT DIRECTION
+==================================================
+
+Build foundations that could eventually support:
+
+• coach/player accounts
+• clubs
+• team analysis
+• video analysis
+• AI shot analysis
+• tournament preparation
+• opponent scouting
+• competition-specific preparation
+• richer performance analytics
+• additional rule sets
+
+DO NOT implement all of these now.
+
+They are future possibilities.
+
+Simply avoid architectural decisions that would make future expansion unnecessarily difficult.
+
+==================================================
+25. GITHUB / SOURCE CONTROL — CRITICAL
+==================================================
+
+This Replit project is now connected to GitHub.
+
+GitHub must be treated as the independent source-controlled copy of the project.
+
+This is important because the project was previously developed in another AI development environment where extracting the source became difficult.
+
+We do NOT want vendor lock-in again.
+
+Therefore:
+
+1. Preserve the GitHub connection.
+2. Ensure the complete source remains committed.
+3. Commit meaningful development milestones.
+4. Never commit passwords, API keys or secrets.
+5. Do not delete the repository or replace its history.
+6. Before substantial architectural changes, ensure the current working state is committed.
+7. Keep the project portable so another development environment can clone and run it if necessary.
+
+The application must never depend on Replit being the only location containing the current source code.
+
+==================================================
+26. AI DEVELOPMENT / CREDIT EFFICIENCY
+==================================================
+
+Development resources and AI credits are limited.
+
+Work efficiently.
+
+DO NOT:
+
+• regenerate functioning components unnecessarily
+• repeatedly redesign the UI
+• rewrite large sections merely for stylistic preference
+• add unnecessary packages
+• create functionality already present
+• spend significant effort on speculative future features
+
+Prefer:
+
+INSPECT → PRESERVE → FIX → EXTEND
+
+rather than:
+
+REGENERATE → REPLACE
+
+==================================================
+27. CRITICAL DO-NOT-CHANGE REQUIREMENTS
+==================================================
+
+DO NOT:
+
+• rename the product away from "8-Ball Coach"
+• make the product Blackball-only
+• remove International Rules support
+• turn it into a generic pool drill app
+• replace the adaptive engine with random drill selection
+• redesign working screens unnecessarily
+• delete functioning features because rewriting them is easier
+• introduce paid APIs unnecessarily
+• introduce a backend before required
+• make logging cumbersome
+• prioritise cosmetic work over coaching logic
+• overwrite the existing application with a newly generated template
+• disconnect or compromise GitHub source control
+
+DO:
+
+• inspect first
+• preserve existing work
+• repair before rewriting
+• keep code modular
+• support both primary rulesets
+• make recommendations explainable
+• use frame impact when assessing weaknesses
+• consider recency without overreacting
+• adapt training as performance changes
+• track strengths as well as weaknesses
+• consider data confidence
+• keep the app simple for the player
+• preserve source through GitHub
+
+==================================================
+28. YOUR FIRST TASK — DO THIS BEFORE DEVELOPMENT
+==================================================
+
+DO NOT immediately start implementing all of the features above.
+
+FIRST perform an audit of the CURRENT EXISTING PROJECT.
+
+1. Inspect the complete codebase.
+
+2. Run the application.
+
+3. Run the build and relevant type checks/tests.
+
+4. Fix ONLY anything necessary to get the existing application running reliably.
+
+5. Inspect the existing GitHub/source-control state.
+
+6. Determine what functionality from this specification already exists.
+
+7. Report back to me with a concise audit containing:
+
+CURRENTLY WORKING
+• What works now?
+
+PARTIALLY IMPLEMENTED
+• What exists but needs completion?
+
+MISSING
+• What important functionality has not yet been implemented?
+
+TECHNICAL ISSUES
+• Are there build, TypeScript, dependency, persistence or architecture problems?
+
+ADAPTIVE ENGINE
+• Does one already exist?
+• Where is it?
+• What does it currently calculate?
+• What needs improvement?
+
+RULESETS
+• Is Blackball implemented?
+• Are International Rules implemented?
+• Is the rules architecture genuinely modular?
+
+TRAINING
+• Are drills structured?
+• Is training generated adaptively?
+• Does training performance feed back into recommendations?
+
+MATCH/FRAME LOGGING
+• What information can currently be recorded?
+• Does it feed the coaching engine?
+
+PERSISTENCE
+• What data is currently persisted?
+• How?
+
+GITHUB
+• Is the current working source safely committed/synchronised?
+
+8. Then give me a SHORT proposed implementation sequence based on what is ACTUALLY missing.
+
+STOP AFTER THE AUDIT AND REPORT.
+
+Do NOT begin a major rebuild or feature implementation until I have reviewed the audit and approved the next development phase.
