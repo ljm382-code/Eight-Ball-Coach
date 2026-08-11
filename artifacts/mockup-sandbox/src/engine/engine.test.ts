@@ -4,11 +4,13 @@
  */
 import assert from "node:assert/strict";
 import {
-  CLEARANCES, DRILLS,
-  applySkillUpdate, classifyErrorChain, computeConfidence, computeRulesetConfidence,
-  decisionValue, generateSession, limitingFactor, mixedRulesetSplit,
-  newProfile, sessionWeighting,
-  type Attempt, type Profile, type RuleSetId, type SkillId,
+  ADAPTATION_SKILL_MAP, CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
+  applySkillUpdate, applyClearanceBallResult, classifyErrorChain, computeConfidence,
+  computeRulesetConfidence, decayRootCauseScore, decisionValue, evaluatePlannedRoute,
+  generateSession, limitingFactor, mixedRulesetSplit, newProfile, selectMaintenanceSkill,
+  sessionWeighting,
+  type Attempt, type ClearanceRouteState, type LimitingFactors, type Profile,
+  type RootCauseEvent, type RuleSetId, type SkillId,
 } from "./index";
 import {
   getLegalBalls, isEightBallLegal, resolveFoulConsequences, getCueBallPlacement,
@@ -564,4 +566,251 @@ function makeTableState(opts: Partial<TableState> = {}): TableState {
   assert.ok(!intLegal.some((b) => b.group === "red"),    "GL-4: INT — opponent group must not be returned");
 }
 
-console.log("engine tests A–O, P–X, Y–AD, and rules helpers all passed ✓");
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 2.1 — Integrity tests AE–AV
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── AE: Missed ball stays in remaining ───────────────────────────────────────
+
+{
+  const initState: ClearanceRouteState = { plannedRoute: null, attemptedRoute: [], pottedRoute: [], remaining: ["Y1", "Y2", "Y3"] };
+  const { state, ended } = applyClearanceBallResult(initState, "Y1", 0, "continue_from_position");
+  assert.ok(state.remaining.includes("Y1"),       "AE: missed ball must stay in remaining");
+  assert.ok(state.attemptedRoute.includes("Y1"),  "AE: missed ball must be recorded in attemptedRoute");
+  assert.ok(!state.pottedRoute.includes("Y1"),    "AE: missed ball must NOT be in pottedRoute");
+  assert.equal(ended, false,                      "AE: continue_from_position does not end clearance");
+}
+
+// ── AF: Successful retry records two attempts, one potted ────────────────────
+
+{
+  const initState: ClearanceRouteState = { plannedRoute: null, attemptedRoute: [], pottedRoute: [], remaining: ["Y1", "Y2", "Y3"] };
+  const after1 = applyClearanceBallResult(initState, "Y1", 0, "continue_from_position").state;
+  const { state: after2 } = applyClearanceBallResult(after1, "Y1", 1, "continue_from_position");
+  assert.equal(after2.attemptedRoute.filter((id) => id === "Y1").length, 2, "AF: two entries in attemptedRoute after miss+pot");
+  assert.equal(after2.pottedRoute.filter((id)   => id === "Y1").length, 1, "AF: exactly one entry in pottedRoute after successful retry");
+  assert.ok(!after2.remaining.includes("Y1"),                                "AF: ball removed from remaining after successful retry");
+}
+
+// ── AG: Poor planned route is not awarded optimal or acceptable ───────────────
+
+{
+  const clr = CLEARANCES.find((c) => c.id === "clr3")!; // preferredRoute: [Y1,Y2,Y3]; acceptable: [[Y2,Y1,Y3]]
+  const result = evaluatePlannedRoute(["Y3", "Y2", "Y1"], clr);
+  assert.notEqual(result.tier, "optimal",    "AG: reversed route must not receive optimal tier");
+  assert.notEqual(result.tier, "acceptable", "AG: reversed route must not receive acceptable tier");
+}
+
+// ── AH: Known acceptable route receives acceptable tier ──────────────────────
+
+{
+  const clr = CLEARANCES.find((c) => c.id === "clr3")!;
+  const result = evaluatePlannedRoute(["Y2", "Y1", "Y3"], clr);
+  assert.equal(result.tier, "acceptable", "AH: documented acceptable route must receive acceptable tier");
+}
+
+// ── AI: Adaptation choices route to the correct decision skill ───────────────
+
+{
+  assert.equal(ADAPTATION_SKILL_MAP["Play safe"],               "tactical",       "AI: 'Play safe' → tactical");
+  assert.equal(ADAPTATION_SKILL_MAP["Develop a problem ball"],  "problemBallDec", "AI: 'Develop a problem ball' → problemBallDec");
+  assert.equal(ADAPTATION_SKILL_MAP["Re-plan clearance"],       "pattern",        "AI: 'Re-plan clearance' → pattern");
+  assert.equal(ADAPTATION_SKILL_MAP["Continue original route"], "pattern",        "AI: 'Continue original route' → pattern");
+}
+
+// ── AJ: Clearance in Mixed mode gets a concrete (non-null) ruleset tag ───────
+
+{
+  const p = newProfile("mixed");
+  const session = generateSession(p, 45); // 7 drills — likely to include a clearance
+  const clearanceIdx = session.drills.findIndex((d) => d.type === "combined");
+  if (clearanceIdx >= 0) {
+    const tag = session.drillRulesets[clearanceIdx];
+    assert.ok(
+      tag === "blackball" || tag === "international",
+      `AJ: clearance in mixed mode must have a concrete ruleset tag; got ${String(tag)}`
+    );
+  }
+  // If no clearance appears (probabilistic), that is fine for this assertion
+}
+
+// ── AK: Confirmed decision LF shifts exec weight down by lfConfirmedShift ────
+
+{
+  const p = newProfile("blackball"); // equal composites → baseExecWeight = 50; no LF from zero attempts
+  const baseW = sessionWeighting(p);
+  const mockLF: LimitingFactors = {
+    primary:   { ...SKILL_MAP["tactical"], rating: 25, gap: 10, confidence: { score: 0.8, tier: "High" }, score: 0.55, status: "confirmed", rootCauseScore: 0.4 },
+    secondary: null,
+    status: "confirmed",
+  };
+  const withLF = sessionWeighting(p, mockLF);
+  assert.equal(
+    baseW.execWeight - withLF.execWeight,
+    CONFIG.session.lfConfirmedShift,
+    `AK: confirmed decision LF must reduce execWeight by lfConfirmedShift (${CONFIG.session.lfConfirmedShift}pp)`
+  );
+}
+
+// ── AL: Stale strong skill selected for maintenance over recently-trained one ─
+
+{
+  // One day ago — recent
+  const YESTERDAY = NOW - 1000 * 60 * 60 * 24;
+  // 14 days ago — stale enough
+  const FOURTEEN_DAYS_AGO = NOW - 1000 * 60 * 60 * 24 * 14;
+
+  let p = newProfile("blackball");
+  // "positional" trained recently (yesterday), high rating → should NOT be selected first
+  for (let i = 0; i < 12; i++)
+    p = applySkillUpdate(p, "positional", 1, { drillId: `pos${i}`, difficulty: 7 }, FOURTEEN_DAYS_AGO - i * 1000);
+  // Train it again yesterday so it has recent data
+  p = applySkillUpdate(p, "positional", 1, { drillId: "posRecent", difficulty: 7 }, YESTERDAY);
+
+  // "speed" trained 14 days ago, same high rating → should be selected (more stale)
+  for (let i = 0; i < 12; i++)
+    p = applySkillUpdate(p, "speed", 1, { drillId: `spd${i}`, difficulty: 7 }, FOURTEEN_DAYS_AGO - 1000 * 60 * 60 * 24 * 7 - i * 1000);
+
+  const selected = selectMaintenanceSkill(p, NOW, []);
+  // speed should be selected (more stale); positional trained yesterday so < minAgeDays
+  if (selected !== null) {
+    assert.notEqual(selected.id, "positional", "AL: recently-trained skill must not be prioritised over more stale skill");
+  } else {
+    // Neither qualifies — check positional explicitly doesn't qualify (too recent)
+    const posLast = p.skills["positional"].attempts.slice(-1)[0]?.ts ?? 0;
+    const daysSince = (NOW - posLast) / (1000 * 60 * 60 * 24);
+    assert.ok(daysSince < CONFIG.session.maintenanceMinAgeDays, "AL: positional trained too recently to qualify for maintenance");
+  }
+}
+
+// ── AM: No forced maintenance when no skill is due ────────────────────────────
+
+{
+  const p = newProfile("blackball"); // no attempts → nothing qualifies
+  const selected = selectMaintenanceSkill(p, NOW, []);
+  assert.equal(selected, null, "AM: selectMaintenanceSkill must return null when no skill has sufficient evidence");
+}
+
+// ── AN: Generated activity count matches SESSION_LENGTHS for every duration ──
+
+{
+  const p = newProfile("blackball");
+  const cases: [number, number][] = [[15, 3], [30, 5], [45, 7], [60, 9], [90, 13]];
+  for (const [minutes, expected] of cases) {
+    const session = generateSession(p, minutes);
+    assert.equal(session.drills.length, expected, `AN: ${minutes}-min session must have ${expected} activities; got ${session.drills.length}`);
+  }
+}
+
+// ── AO: Meaningful session (30 min) contains both exec and decision work ──────
+
+{
+  let p = newProfile("blackball");
+  p = withAttempts(p, "potting", [0, 0, 0]);
+  p = withAttempts(p, "tactical", [0, 0, 0]);
+  const session = generateSession(p, 30);
+  const types = session.drills.map((d) => d.type);
+  assert.ok(types.includes("execution"),  "AO: 30-min session must include at least one execution drill");
+  assert.ok(types.some((t) => t === "decision" || t === "combined"), "AO: 30-min session must include decision or clearance work");
+  assert.equal(session.drills.length, 5,  "AO: 30-min session must have exactly 5 activities");
+}
+
+// ── AP: Recent root-cause evidence contributes more than old ──────────────────
+
+{
+  const halfLife = CONFIG.rootCause.halfLifeMs;
+  const oldEvent: RootCauseEvent[]   = [{ skillId: "tactical", ts: NOW - halfLife, confidence: 0.8, ruleset: null }];
+  const freshEvent: RootCauseEvent[] = [{ skillId: "tactical", ts: NOW,            confidence: 0.8, ruleset: null }];
+  const oldScore   = decayRootCauseScore(oldEvent,   "tactical", NOW);
+  const freshScore = decayRootCauseScore(freshEvent, "tactical", NOW);
+  assert.ok(freshScore > oldScore, "AP: recent event must contribute more than same-confidence event that is one half-life old");
+  // After exactly one half-life, score should be ~0.5 × confidence
+  assert.ok(Math.abs(oldScore - 0.4) < 0.05, `AP: score after one half-life should be ~0.4; got ${oldScore.toFixed(3)}`);
+}
+
+// ── AQ: High-confidence event contributes more than low-confidence ────────────
+
+{
+  const highConf: RootCauseEvent[] = [{ skillId: "pattern", ts: NOW, confidence: ROOT_CAUSE_CONFIDENCE_MAP["High"], ruleset: null }];
+  const lowConf:  RootCauseEvent[] = [{ skillId: "pattern", ts: NOW, confidence: ROOT_CAUSE_CONFIDENCE_MAP["Low"],  ruleset: null }];
+  const highScore = decayRootCauseScore(highConf, "pattern", NOW);
+  const lowScore  = decayRootCauseScore(lowConf,  "pattern", NOW);
+  assert.ok(highScore > lowScore, `AQ: High-confidence event (${highScore.toFixed(3)}) must outweigh Low-confidence event (${lowScore.toFixed(3)}) of the same age`);
+}
+
+// ── AR: Old stale evidence doesn't dominate over fresh moderate evidence ──────
+
+{
+  const halfLife = CONFIG.rootCause.halfLifeMs;
+  // High-confidence event from 3 half-lives ago (very stale)
+  const stale:   RootCauseEvent[] = [{ skillId: "positional", ts: NOW - halfLife * 3, confidence: ROOT_CAUSE_CONFIDENCE_MAP["High"], ruleset: null }];
+  // Moderate-confidence event from half a half-life ago (fresh)
+  const fresh:   RootCauseEvent[] = [{ skillId: "tactical",   ts: NOW - halfLife * 0.5, confidence: ROOT_CAUSE_CONFIDENCE_MAP["Emerging"], ruleset: null }];
+  const staleScore = decayRootCauseScore(stale, "positional", NOW);
+  const freshScore = decayRootCauseScore(fresh, "tactical",   NOW);
+  assert.ok(freshScore > staleScore, `AR: fresh moderate-confidence event (${freshScore.toFixed(3)}) must outweigh stale high-confidence event (${staleScore.toFixed(3)})`);
+}
+
+// ── AS: Weaker INT performance gets more allocation when both rulesets adequate
+
+{
+  let p = newProfile("mixed");
+  const decSkills: SkillId[] = ["tactical", "pattern", "problemBallDec"];
+  // BB: adequate evidence, good performance
+  for (let i = 0; i < 8; i++)
+    for (const sk of decSkills)
+      p = applySkillUpdate(p, sk, 1, { drillId: `bb_${sk}_${i}`, source: "training", difficulty: 5, ruleset: "blackball" }, NOW + i);
+  // INT: adequate evidence, poor performance
+  for (let i = 0; i < 8; i++)
+    for (const sk of decSkills)
+      p = applySkillUpdate(p, sk, 0, { drillId: `int_${sk}_${i}`, source: "training", difficulty: 5, ruleset: "international" }, NOW + 1000 + i);
+  const split = mixedRulesetSplit(p, NOW + 2000);
+  assert.ok(split.international > split.blackball, "AS: weaker INT performance must receive more allocation when both rulesets have adequate evidence");
+  assert.ok(split.blackball >= CONFIG.mixed.minRulesetFloor, "AS: BB must not fall below minRulesetFloor");
+}
+
+// ── AT: Low INT confidence triggers calibration priority ─────────────────────
+
+{
+  let p = newProfile("mixed");
+  const decSkills: SkillId[] = ["tactical", "pattern", "problemBallDec"];
+  // BB has adequate evidence with good performance
+  for (let i = 0; i < 8; i++)
+    for (const sk of decSkills)
+      p = applySkillUpdate(p, sk, 1, { drillId: `bb_${sk}_${i}`, source: "training", difficulty: 5, ruleset: "blackball" }, NOW + i);
+  // INT has NO evidence — should be prioritised for calibration
+  const split = mixedRulesetSplit(p, NOW + 100);
+  assert.ok(split.international > split.blackball, "AT: zero INT confidence must trigger calibration priority (more INT allocation)");
+  assert.ok(split.blackball >= CONFIG.mixed.minRulesetFloor, "AT: BB must not fall below minRulesetFloor during INT calibration");
+}
+
+// ── AU: Shared execution attempts (ruleset=null) don't inflate ruleset confidence
+
+{
+  let p = newProfile("mixed");
+  // Tag attempts as shared (ruleset=null) — simulates pure execution drills
+  for (let i = 0; i < 12; i++)
+    p = applySkillUpdate(p, "potting", 1, { drillId: `pot_${i}`, source: "training", difficulty: 5, ruleset: null }, NOW + i);
+  const bbConf  = computeRulesetConfidence(p, "potting", "blackball");
+  const intConf = computeRulesetConfidence(p, "potting", "international");
+  assert.equal(bbConf.tier,  "Low", "AU: shared (ruleset=null) execution attempts must not inflate BB-specific confidence");
+  assert.equal(intConf.tier, "Low", "AU: shared (ruleset=null) execution attempts must not inflate INT-specific confidence");
+}
+
+// ── AV: BB and INT rule-source accuracy against authoritative definitions ─────
+
+{
+  // Blackball: foul = free shot + cue ball from baulk (WPA Rule 4.3 territory)
+  const bbFoul = blackballFoulConsequence(false);
+  assert.equal(bbFoul.cueBallPlacement, "baulk",    "AV-1: Blackball foul must place cue ball in baulk");
+  assert.equal(bbFoul.freeShotGranted,  true,        "AV-2: Blackball foul must grant a free shot");
+  // International: foul = ball in hand anywhere, no free shot
+  const intFoul = internationalFoulConsequence(false);
+  assert.equal(intFoul.cueBallPlacement, "anywhere", "AV-3: International foul must grant ball in hand anywhere");
+  assert.equal(intFoul.freeShotGranted,  false,       "AV-4: International foul must NOT grant a free shot");
+  // Unified dispatch must match the per-ruleset helpers
+  assert.equal(getCueBallPlacement("blackball"),     "baulk",    "AV-5: Unified getCueBallPlacement must match Blackball helper");
+  assert.equal(getCueBallPlacement("international"), "anywhere", "AV-6: Unified getCueBallPlacement must match International helper");
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, and Phase 2.1 AE–AV all passed ✓");

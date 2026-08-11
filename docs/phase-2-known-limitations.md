@@ -46,14 +46,16 @@ This is the one genuine tactical difference that is fully modelled and used in t
 
 ## 3. Break rules — PARTIALLY MODELLED
 
-### Blackball (modelled)
+### Blackball (rule captured, not exposed as training scenario)
 - ≥2 balls must pass the middle pockets from the break, or ≥1 ball potted.
-- 8-ball potted on break: respot + free shot from baulk for incoming player.
+- 8-ball potted on break (WPA Rule 4.3): the ball is respotted and the incoming player receives a free shot with the cue ball from baulk. This consequence is correctly computed by `blackballBreakOutcome()` and the data is available to callers.
+- **However**, there is currently no drill or scenario in the training library that specifically practises or tests this edge case. The rule is captured in the engine but is not exposed as a training scenario.
 - Group is NOT assigned on the break regardless of what is potted.
 
-### International (modelled)
+### International (rule captured, not exposed as training scenario)
 - ≥4 object balls must reach a cushion, or ≥1 ball potted.
-- 8-ball potted on break: respot, breaker does NOT receive a penalty; incoming player does NOT get ball-in-hand (modelled as respot-only).
+- 8-ball potted on break: the ball is respotted; the breaker does not receive a penalty and the incoming player does not receive ball-in-hand. This is correctly computed by `internationalBreakOutcome()`.
+- As with Blackball, there is no specific training scenario for this edge case — the rule data is available but not surfaced in session generation.
 
 ### Not modelled (both rulesets)
 - Break is evaluated via caller-supplied `cushionContactCount` / `ballsOverMiddle` flags — there is no real ball-tracking physics.

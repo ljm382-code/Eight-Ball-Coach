@@ -1,0 +1,571 @@
+PHASE 2.1 — ADAPTIVE / RULESET INTEGRITY FIXES
+
+Phase 2 has been implemented and committed as the current baseline.
+
+Do NOT rebuild the app.
+Do NOT redesign the UI.
+Do NOT add match/frame logging.
+Do NOT add a backend, database, authentication, cloud persistence, or premium visual redesign.
+
+This phase is a targeted integrity pass only.
+
+The goal is:
+
+FIX THE REMAINING LOGIC DEFECTS IN CLEARANCE HANDLING, RULESET EVIDENCE, SESSION GENERATION, ROOT-CAUSE DECAY, AND MIXED-MODE ALLOCATION.
+
+Preserve all working Phase 1 and Phase 2 behaviour unless a change is explicitly required below.
+
+==================================================
+1. PRESERVE THE CURRENT BASELINE
+==================================================
+
+Before making changes:
+
+1. Confirm the current Phase 2 commit exists on origin/main.
+2. Confirm the working tree state.
+3. Preserve any unrelated local changes.
+4. Do not weaken or remove existing tests.
+5. Do not simplify the adaptive engine.
+
+==================================================
+2. CRITICAL — FAILED BALLS MUST NOT BE TREATED AS POTTED
+==================================================
+
+The current clearance runner must distinguish clearly between:
+
+- balls attempted
+- balls successfully potted
+- balls still available
+
+A failed shot must NOT:
+
+- be added to pottedRoute
+- be removed from remaining balls
+- be treated as cleared
+
+unless the active drill failure mode explicitly ends or resets the clearance.
+
+Required concepts:
+
+plannedRoute
+attemptedRoute
+pottedRoute
+
+Example:
+
+Planned:
+Y1 → Y2 → Y3 → EIGHT
+
+Attempts:
+Y1 → Y2 → Y2 → Y3 → EIGHT
+
+Potted:
+Y1 → Y2 → Y3 → EIGHT
+
+A miss on Y2 belongs only in attemptedRoute until Y2 is actually potted.
+
+==================================================
+3. IMPLEMENT CLEAR ROUTE DATA STRUCTURES
+==================================================
+
+Replace ambiguous route recording with explicit fields:
+
+plannedRoute: string[] | null
+attemptedRoute: string[]
+pottedRoute: string[]
+
+Preserve unique ball IDs.
+
+Do not infer pottedRoute from attemptedRoute.
+
+Update any summary/meta structures and tests accordingly.
+
+==================================================
+4. PLAN QUALITY MUST NOT BE AUTO-OPTIMAL
+==================================================
+
+The current plan-confirm flow must NOT automatically award:
+
+tier: "optimal"
+value: 1
+
+simply because the player confirmed a route.
+
+Evaluate the player's planned route against authored route metadata.
+
+At minimum support:
+
+preferredRoute
+acceptableRoutes
+
+and derive:
+
+optimal
+acceptable
+highrisk
+poor
+
+Use a pure helper such as:
+
+evaluatePlannedRoute(route, clearance)
+
+or equivalent.
+
+Execution outcome must not influence initial plan quality.
+
+==================================================
+5. ADAPTATION CHOICES MUST UPDATE THE CORRECT DECISION SKILL
+==================================================
+
+Do not route every adaptation choice to Pattern Recognition.
+
+Use context-aware mapping.
+
+Examples:
+
+Re-plan clearance
+→ Pattern Recognition & Clearance Planning
+
+Continue original route
+→ Pattern Recognition & Clearance Planning
+
+Develop a problem ball
+→ Problem-Ball Identification & Management
+
+Play safe
+→ Tactical / Safety Decision-Making
+
+Other
+→ contextual/fallback decision skill
+
+Store:
+
+- decision skill
+- choice
+- tier
+- value
+- active ruleset where rules-sensitive
+
+Do not penalize or reward execution skills from the adaptation decision itself.
+
+==================================================
+6. RULES-SENSITIVE CLEARANCES MUST HAVE AN EXPLICIT RULESET
+==================================================
+
+Every clearance whose legality or tactical interpretation depends on rules must run under exactly one real ruleset:
+
+blackball
+or
+international
+
+Mixed Training is NOT a ruleset.
+
+In mixed mode, the session generator must assign a concrete ruleset to each rules-sensitive clearance.
+
+Store that ruleset on:
+
+- clearance activity
+- plan decisions
+- ball-selection decisions
+- adaptation decisions
+- rules-sensitive clearance attempts
+
+Do NOT store rules-sensitive clearance evidence as ruleset: null.
+
+Rule-neutral execution evidence may remain shared/null where genuinely appropriate.
+
+==================================================
+7. CLEARANCE DECISION EVIDENCE MUST REMAIN SEPARATE FROM EXECUTION
+==================================================
+
+For clearance decisions:
+
+Poor choice + successful pot:
+Decision decreases
+Execution improves
+
+Optimal choice + miss:
+Decision improves
+Execution decreases
+
+Do not allow clearance outcome to silently overwrite decision quality.
+
+Preserve the Decision / Execution / Outcome separation.
+
+==================================================
+8. LIMITING FACTOR MUST INFLUENCE SESSION WEIGHTING
+==================================================
+
+The current execution/decision split must not rely only on composite difference.
+
+Implement:
+
+1. Base weighting from Execution vs Decision composites.
+2. Apply an adjustment based on the current limiting factor.
+3. Clamp to 25–75%.
+
+Suggested configurable behaviour:
+
+Confirmed execution limiting factor:
+meaningful move toward Execution
+
+Confirmed decision limiting factor:
+meaningful move toward Decision
+
+Provisional limiting factor:
+smaller adjustment
+
+Insufficient evidence:
+no limiting-factor override
+
+Do not hard-code values outside the existing config system.
+
+==================================================
+9. MAINTENANCE MUST BE ACTUALLY DUE
+==================================================
+
+Do not select maintenance merely because a skill is strong.
+
+Maintenance eligibility must consider at least:
+
+- skill strength
+- confidence
+- time since last trained
+- recent representation in sessions
+
+A strong skill trained recently should not consume a maintenance slot.
+
+If no skill is genuinely due, do not force maintenance.
+
+Create a pure selector such as:
+
+selectMaintenanceSkill(profile)
+
+or equivalent.
+
+==================================================
+10. SESSION SIZE MUST RESPECT THE REQUESTED TARGET
+==================================================
+
+Do not generate the normal target count and then append a clearance.
+
+If the session target is:
+
+15 min → 3 activities
+30 min → 5 activities
+45 min → 7 activities
+60 min → 9 activities
+90 min → 13 activities
+
+and one clearance is included, reserve one of those slots.
+
+Example:
+
+30-minute target = 5
+
+4 normal activities
++ 1 clearance
+= 5 total
+
+Do not silently create 6.
+
+==================================================
+11. FINAL SESSION VALIDATION
+==================================================
+
+After all selection/substitution steps, run a final composition validator.
+
+Guarantees where session length permits:
+
+- requested total activity count respected
+- at least one execution activity
+- at least one decision activity
+- primary limiting factor represented when one exists
+- no avoidable duplicate drill IDs
+- supporting skills do not dominate
+- maintenance does not dominate
+- calibration does not displace the primary focus excessively
+- every rules-sensitive activity has a concrete ruleset
+- mixed mode does not accidentally evaluate content under the wrong ruleset
+
+==================================================
+12. REPLACE PERMANENT ROOT-CAUSE TALLY
+==================================================
+
+Remove or deprecate permanent cumulative:
+
+rootCauseTally
+
+Replace with timestamped root-cause evidence/events.
+
+Conceptually:
+
+rootCauseEvents: [
+  {
+    skillId,
+    ts,
+    confidence,
+    sourceAttemptId?,
+    ruleset?
+  }
+]
+
+Do not require sourceAttemptId if the current architecture does not have a stable ID system yet.
+
+Limiting-factor evidence should use:
+
+recency × diagnostic confidence
+
+Old root-cause evidence should gradually matter less.
+
+A weakness fixed months ago must not continue dominating forever.
+
+Use the existing recency philosophy/config where practical.
+
+==================================================
+13. NUMERIC ROOT-CAUSE CONFIDENCE
+==================================================
+
+Root-cause inference should produce a numeric internal confidence value, for example:
+
+0.3
+0.6
+0.9
+
+Player-facing UI does not need to show the raw number.
+
+Root-cause contribution should scale with confidence.
+
+Do not count a low-confidence inference the same as a repeated high-confidence pattern.
+
+==================================================
+14. MIXED MODE — ADD PERFORMANCE TO ALLOCATION
+==================================================
+
+Current mixed allocation uses confidence/calibration heavily.
+
+Keep that behaviour for low-evidence situations.
+
+But once both rulesets have adequate evidence, Mixed Training should also consider ruleset-specific performance/weakness.
+
+For rules-sensitive decision skills, derive a simple ruleset performance signal.
+
+Example:
+
+Blackball Tactical:
+72
+
+International Tactical:
+54
+
+with adequate confidence in both
+
+→ allocate more rules-sensitive work to International.
+
+Preserve a configurable minimum floor for both rulesets, e.g. 25%.
+
+Do not make one ruleset disappear when the player has explicitly selected Mixed Training.
+
+==================================================
+15. MIXED MODE PRIORITY ORDER
+==================================================
+
+When deciding mixed ruleset allocation:
+
+1. If one ruleset has low confidence:
+   prioritize calibration for that ruleset.
+2. If both have adequate confidence:
+   prioritize the weaker ruleset.
+3. Preserve minimum exposure to both.
+4. Keep shared execution drills rule-neutral where appropriate.
+
+Do not duplicate shared physical ratings.
+
+==================================================
+16. BLACKBALL RULE-SOURCE CONTRADICTION
+==================================================
+
+There is currently a contradiction between repository documentation and code around Blackball break / 8-ball-on-break handling.
+
+Resolve this using the current authoritative WPA Blackball rules only.
+
+Do NOT use secondary summaries when the primary rulebook is available.
+
+If the exact rule is not required by the current MVP interactions, do not guess.
+
+Instead:
+
+- correct any false documentation
+- document the unsupported edge case
+- add a test only for behaviour actually implemented
+
+Also recheck that foul/free-shot wording implemented in blackball.ts matches the current official rule text used by the current scenarios.
+
+==================================================
+17. INTERNATIONAL RULES SOURCE ACCURACY
+==================================================
+
+Likewise, reverify the International Rules logic used by the app against the current IEPF International Rules primary source.
+
+Only encode rule differences actually needed by current scenarios.
+
+Do not expand scope into a full referee engine.
+
+==================================================
+18. TESTS — KEEP EVERYTHING EXISTING PASSING
+==================================================
+
+All existing tests must continue to pass.
+
+Do not weaken tests to make changes pass.
+
+Keep:
+
+A–O
+P–X
+Y–AD
+rules-helper tests
+
+green.
+
+==================================================
+19. ADD PHASE 2.1 REGRESSION TESTS
+==================================================
+
+Add these deterministic tests:
+
+AE. Missed ball stays available
+A failed clearance shot is added to attemptedRoute but not pottedRoute and remains available unless the failure mode ends/resets the clearance.
+
+AF. Successful retry
+After a miss, retrying and potting the same ball records two attempts but one potted entry.
+
+AG. Plan quality
+A poor planned route does not receive Optimal decision credit.
+
+AH. Acceptable route
+An authored acceptable alternative receives Acceptable rather than Optimal or Poor.
+
+AI. Adaptation skill mapping
+"Play safe" updates Tactical Decision-Making, "Develop a problem ball" updates Problem-Ball Decision, and "Re-plan clearance" updates Pattern Recognition.
+
+AJ. Clearance ruleset tagging
+A rules-sensitive clearance in Mixed mode has exactly one active real ruleset and stores it on rules-sensitive decision evidence.
+
+AK. Confirmed limiting-factor weighting
+A confirmed decision limiting factor shifts the session materially toward Decision even when composites are close.
+
+AL. Maintenance due
+A strong skill practiced recently is not selected for maintenance over an equally strong stale skill.
+
+AM. No forced maintenance
+If no strong skill is due, session generation does not invent maintenance.
+
+AN. Session size
+Generated activity count matches the target for 15/30/45/60/90-minute sessions after clearance insertion.
+
+AO. Final composition
+A meaningful-length session still contains both execution and decision activities after maintenance/calibration/supporting substitutions.
+
+AP. Root-cause decay
+Recent root-cause evidence contributes more than old root-cause evidence.
+
+AQ. Root-cause confidence
+High-confidence root-cause evidence contributes more than low-confidence evidence of the same age.
+
+AR. Root-cause shift
+Old evidence from a previously fixed weakness no longer dominates once newer evidence points elsewhere.
+
+AS. Mixed performance allocation
+With adequate confidence in both rulesets, weaker International decision performance produces more International rules-sensitive work than Blackball while preserving the minimum Blackball floor.
+
+AT. Mixed calibration precedence
+If International confidence is low but Blackball confidence is high, International receives extra calibration even before a stable performance comparison exists.
+
+AU. Shared execution neutrality
+Shared execution attempts still do not inflate Blackball- or International-specific tactical confidence.
+
+AV. Rules source consistency
+Implemented Blackball and International helper behaviour used by current scenarios matches the authoritative rule definitions encoded in the modules.
+
+==================================================
+20. BUILD / QUALITY GATE
+==================================================
+
+Phase 2.1 is complete only when:
+
+- TypeScript passes
+- production build passes
+- all existing tests pass
+- AE–AV pass
+- rules-helper tests pass
+- runtime works
+- clearance retry behaviour works
+- planned/attempted/potted routes are distinct
+- plan decisions are scored from authored route quality
+- adaptation updates the correct skill
+- rules-sensitive clearances carry a real ruleset
+- confirmed limiting factors affect session weighting
+- maintenance is due-based
+- session target counts are respected
+- root-cause evidence decays
+- mixed allocation considers both confidence and performance
+- current rules documentation matches implemented primary-source behaviour
+
+==================================================
+21. NO VISUAL REDESIGN
+==================================================
+
+Only make UI changes required to reflect corrected behaviour.
+
+Do NOT start the premium visual redesign.
+
+Do NOT add new major screens.
+
+==================================================
+22. SOURCE CONTROL
+==================================================
+
+Before changes, preserve the current Phase 2 baseline.
+
+After all checks pass:
+
+commit and push to origin/main with:
+
+"Fix Phase 2 adaptive and ruleset integrity"
+
+Verify the remote branch contains the milestone.
+
+==================================================
+23. FINAL REPORT
+==================================================
+
+Report only:
+
+- Clearance route/failure fixes
+- Plan-quality scoring status
+- Adaptation-skill mapping status
+- Clearance ruleset tagging status
+- Limiting-factor weighting status
+- Maintenance-due logic status
+- Session-size validation status
+- Root-cause decay status
+- Mixed-mode performance allocation status
+- Blackball rule-source consistency status
+- International Rules source consistency status
+- Existing test suite result
+- Tests AE–AV result
+- Typecheck result
+- Build result
+- Runtime result
+- Git commit hash
+- GitHub push/sync status
+- Any remaining known limitations
+
+STOP after the Phase 2.1 milestone.
+
+Do NOT begin Phase 3.
+Do NOT add match/frame logging.
+Do NOT add a database.
+Do NOT add authentication.
+Do NOT begin the visual redesign.
