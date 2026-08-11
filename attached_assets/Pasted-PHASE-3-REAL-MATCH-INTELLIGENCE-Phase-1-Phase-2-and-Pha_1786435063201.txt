@@ -1,0 +1,1043 @@
+PHASE 3 — REAL-MATCH INTELLIGENCE
+
+Phase 1, Phase 2 and Phase 2.1 are complete.
+
+The adaptive/rules core is now considered FROZEN unless a genuine regression test exposes a defect.
+
+Current baseline includes:
+
+- 8-Ball Coach product identity
+- Blackball Rules support
+- International Rules support
+- Mixed Training mode
+- shared execution profile
+- ruleset-specific decision evidence/confidence
+- adaptive training generation
+- limiting-factor detection
+- due-based maintenance
+- root-cause decay
+- clearance legality
+- planned / attempted / potted route separation
+- decision / execution / outcome separation
+- deterministic tests A–AV passing
+- local persistence
+- GitHub source control
+
+DO NOT redesign or rewrite the adaptive core.
+
+The only objective of Phase 3 is:
+
+ADD REAL MATCH / FRAME DATA SO 8-BALL COACH CAN LEARN FROM WHAT ACTUALLY COSTS THE PLAYER FRAMES.
+
+Do NOT start the premium visual redesign.
+Do NOT add authentication.
+Do NOT add cloud persistence.
+Do NOT add a paid backend.
+Do NOT add video analysis.
+Do NOT add AI computer vision.
+Do NOT add opponent scouting.
+Do NOT add tournament management.
+
+==================================================
+1. CORE PHASE 3 PRINCIPLE
+==================================================
+
+Training performance tells us:
+
+"What can the player execute in practice?"
+
+Match data tells us:
+
+"What actually breaks down when it matters?"
+
+The app must combine both without confusing them.
+
+Do NOT simply merge match and training attempts into one undifferentiated stream.
+
+Preserve context.
+
+Every relevant observation should be identifiable as:
+
+source:
+- "training"
+- "assessment"
+- "match"
+
+and where applicable:
+
+environment:
+- "practice"
+- "competition"
+
+==================================================
+2. MATCH / FRAME DATA MODEL
+==================================================
+
+Add lightweight local data structures for:
+
+MATCH
+
+FRAME
+
+FRAME EVENT / KEY MOMENT
+
+Do not introduce a database in this phase.
+
+Use the existing persistence abstraction/localStorage.
+
+Suggested conceptual structure:
+
+Match {
+  id
+  startedAt
+  completedAt
+  opponent?
+  format?
+  competitionType
+  ruleset
+  frames
+  notes?
+}
+
+Frame {
+  id
+  matchId
+  frameNumber
+  result
+  breakPlayer?
+  breakOutcome?
+  clearanceOpportunity?
+  frameLossReason?
+  keyEvents[]
+}
+
+FrameEvent {
+  id
+  frameId
+  type
+  skillId?
+  decisionSkillId?
+  executionSkillId?
+  reportedError?
+  severity
+  frameImpact
+  ruleset
+  ts
+  notes?
+}
+
+Exact types may differ.
+
+Keep them simple and serialisable.
+
+==================================================
+3. FAST LOGGING IS MANDATORY
+==================================================
+
+The player must be able to log a frame in a few taps.
+
+Do NOT create a long post-frame questionnaire.
+
+Default flow should be compact.
+
+At minimum allow:
+
+Frame result:
+- Won
+- Lost
+
+Then optionally:
+
+What decided the frame?
+
+Quick categories such as:
+
+- Potting
+- Position
+- Speed
+- Spin
+- Pattern / route
+- Tactical decision
+- Safety
+- Break
+- 8-ball finish
+- Opponent simply cleared
+- Other
+
+If the player won, allow:
+
+"What went well?"
+
+but keep it optional.
+
+The user should be able to skip detail.
+
+==================================================
+4. MATCH SETUP
+==================================================
+
+Starting a match should ask only what is useful.
+
+Required:
+
+Ruleset:
+- Blackball
+- International Rules
+
+Match/practice context:
+- Practice
+- Competition
+
+Optional:
+
+- opponent name
+- race / format
+- event name
+- notes
+
+If the user is in Mixed Training mode, match logging must still require one real ruleset per match.
+
+"Mixed" is never a match ruleset.
+
+==================================================
+5. FRAME RESULT
+==================================================
+
+Each frame must record at minimum:
+
+- won / lost
+- ruleset inherited from match
+- frame number
+- timestamp/order
+
+Optional context may include:
+
+- break status
+- clearance opportunity
+- key error
+- frame-loss reason
+- match pressure state later
+
+Do not require all optional fields.
+
+==================================================
+6. FRAME IMPACT MODEL
+==================================================
+
+Not all errors have equal coaching value.
+
+Create a configurable frame-impact scale.
+
+Suggested internal levels:
+
+LOW
+MEDIUM
+HIGH
+DECISIVE
+
+or numeric equivalents.
+
+Examples:
+
+LOW:
+missed difficult low-percentage attempt with little consequence
+
+MEDIUM:
+error ceded initiative but frame remained competitive
+
+HIGH:
+error directly gave opponent a strong clearance opportunity
+
+DECISIVE:
+error directly lost a very likely frame or missed a frame-winning ball
+
+Do not make the user rate this numerically.
+
+Infer impact from quick context choices where possible.
+
+==================================================
+7. IMPACT SHOULD AFFECT PRIORITY, NOT RAW EXECUTION TRUTH
+==================================================
+
+If a player misses a pot:
+
+Raw execution evidence:
+Potting fail
+
+Frame-impact evidence:
+How costly that miss was
+
+Do NOT change the shot's raw execution meaning because the frame impact was high.
+
+Instead:
+
+raw skill evidence
++
+match impact weighting
+=
+priority evidence
+
+This is the same architecture principle:
+
+WHAT HAPPENED
+≠
+WHY IT MATTERED
+≠
+WHAT SHOULD BE TRAINED NEXT
+
+==================================================
+8. MATCH EVIDENCE MUST NOT OVERREACT
+==================================================
+
+One awful match must not destroy a stable player profile.
+
+Match-derived evidence should be important but confidence-gated and recency-aware.
+
+Use configurable weighting.
+
+Suggested principle:
+
+- training data = technical baseline
+- match data = high-value contextual evidence
+- repeated match breakdowns = strong coaching signal
+
+Do not let one decisive error instantly collapse a high-confidence skill rating.
+
+Prefer using match evidence strongly in:
+
+- limiting-factor ranking
+- context-specific confidence
+- training priority
+
+rather than aggressively rewriting long-term skill ratings.
+
+==================================================
+9. MATCH-SPECIFIC LIMITING FACTOR EVIDENCE
+==================================================
+
+Extend limiting-factor evidence with real-match contribution.
+
+At minimum consider:
+
+- frequency of match errors
+- frame impact
+- recency
+- repeated root cause
+- ruleset
+- match vs practice context
+- confidence
+
+A weakness that repeatedly costs frames should outrank a technically weaker skill that rarely affects outcomes.
+
+Example:
+
+Speed Control rating:
+62
+
+Long Potting rating:
+55
+
+But:
+
+Speed errors caused 4 decisive/high-impact frame losses recently
+Long pots failed often but rarely mattered
+
+→ Speed Control may be the real current limiting factor.
+
+==================================================
+10. MATCH ROOT-CAUSE EVENTS
+==================================================
+
+Allow frame-level root-cause evidence.
+
+Example:
+
+Poor route decision
+→ difficult position
+→ missed recovery pot
+→ frame lost
+
+Store:
+
+Immediate visible failure:
+Potting miss
+
+Contributing:
+Position
+
+Root:
+Pattern Recognition
+
+Frame impact:
+High / Decisive
+
+Do not require the user to manually reconstruct the whole chain every time.
+
+Use player-reported quick error plus known context.
+
+For MVP, inference can remain conservative.
+
+If confidence is low:
+store provisional diagnosis.
+
+==================================================
+11. PLAYER-REPORTED VS SYSTEM-INFERRED CAUSE
+==================================================
+
+Preserve both.
+
+Player may report:
+
+MISS
+
+System may infer:
+
+Likely upstream cause:
+Position
+
+Store:
+
+reportedCause
+inferredCause
+diagnosticConfidence
+agreement/disagreement
+
+Do not overwrite player input.
+
+==================================================
+12. MATCH CONTEXT
+==================================================
+
+Every match-derived observation should store:
+
+ruleset
+
+and:
+
+environment:
+- practice
+- competition
+
+This allows future comparisons such as:
+
+"Your tactical decisions are solid in practice but less stable in competition."
+
+Do not expose a complex context dashboard yet.
+
+Just preserve the data correctly.
+
+==================================================
+13. PRESSURE CONTEXT — FOUNDATION ONLY
+==================================================
+
+Do NOT build a full pressure-performance feature in this phase.
+
+However, allow optional frame context such as:
+
+- normal
+- deciding frame
+- match point / hill-hill
+- high pressure
+
+Keep it optional.
+
+Store it so future analytics can use it.
+
+Do not create a separate "Pressure Skill".
+
+==================================================
+14. MATCH-TO-SKILL MAPPING
+==================================================
+
+Create context-aware mapping from quick match errors to skills.
+
+Examples:
+
+MISS
+→ Potting
+
+POSITION
+→ Positional Execution
+
+SPEED
+→ Speed / Touch Control
+
+SPIN
+→ Cue-Ball Control
+
+PATTERN
+→ Pattern Recognition & Clearance Planning
+
+PROBLEM BALL
+→ Problem-Ball Identification / Execution depending on context
+
+SAFETY
+→ Tactical / Safety Decision-Making
+
+BREAK
+→ Break Execution
+
+8-BALL
+→ 8-Ball Finishing
+
+DECISION
+→ use frame/scenario context to select the appropriate decision skill
+
+Do not make DECISION always map to Pattern.
+
+==================================================
+15. FRAME-LOSS REASONS
+==================================================
+
+Add a small structured list.
+
+Example:
+
+- Missed pot
+- Lost position
+- Poor speed
+- Poor pattern
+- Tactical choice
+- Safety error
+- Break problem
+- 8-ball finish
+- Opponent clearance
+- Foul
+- Other
+
+Avoid creating too many categories.
+
+Use detailed notes only optionally.
+
+==================================================
+16. POSITIVE MATCH EVIDENCE
+==================================================
+
+Do not log only mistakes.
+
+Allow meaningful positive evidence when appropriate.
+
+Examples:
+
+- completed clearance
+- strong safety exchange
+- good tactical recovery
+- successful 8-ball finish
+- strong break / post-break position
+- correct re-plan
+
+Positive evidence should help confidence and skill assessment.
+
+Do not turn every won frame into automatic positive evidence for every skill.
+
+Only credit what was actually observed/reported.
+
+==================================================
+17. CLEARANCE OPPORTUNITY
+==================================================
+
+Add optional frame-level fields such as:
+
+clearanceOpportunity:
+- none
+- partial
+- realistic
+- strong
+
+clearanceOutcome:
+- completed
+- broke down
+- never attempted
+
+If broke down:
+record the primary reported breakdown reason.
+
+This gives the engine useful match-specific clearance evidence without requiring shot-by-shot match logging.
+
+==================================================
+18. MATCH SUMMARY
+==================================================
+
+At match end, generate a concise coaching summary.
+
+Example:
+
+"You won 5–3. Your potting held up well, but three of your lost frames broke down after losing cue-ball speed. Speed Control was involved in two high-impact errors, so it becomes more important in your next training plan."
+
+Do not produce generic text.
+
+Summary should come from:
+
+- frame outcomes
+- key events
+- impact
+- existing player profile
+- limiting-factor change
+
+==================================================
+19. MATCH SUMMARY MUST DISTINGUISH TODAY VS LONG-TERM
+==================================================
+
+Use separate concepts:
+
+TODAY'S MATCH
+What happened in this match?
+
+CURRENT PROFILE
+What does the larger evidence base say?
+
+CURRENT TRAINING PRIORITY
+What should change next?
+
+Do not turn one bad match into:
+
+"Speed Control is now terrible."
+
+Prefer:
+
+"Speed Control caused problems today and now has stronger evidence as a current focus."
+
+==================================================
+20. TRAINING RECOMMENDATION UPDATE
+==================================================
+
+After a match:
+
+1. append match evidence
+2. update relevant confidence/context evidence
+3. recompute limiting factors
+4. rebuild next training recommendation
+
+Do not immediately generate a new session unless the current UX already does so.
+
+Dashboard should reflect the updated focus.
+
+==================================================
+21. RULESET-AWARE MATCH EVIDENCE
+==================================================
+
+Every match belongs to:
+
+blackball
+or
+international
+
+Rules-sensitive decision evidence must feed the correct ruleset-specific confidence.
+
+Example:
+
+International tactical mistake
+→ International tactical evidence
+
+It must not inflate Blackball tactical confidence.
+
+Execution skill evidence may remain shared where appropriate.
+
+==================================================
+22. MIXED TRAINING INTERACTION
+==================================================
+
+If preferredRulesMode = mixed:
+
+Match logging still asks which actual ruleset was played.
+
+After the match:
+
+shared execution evidence updates globally
+
+rules-sensitive decision evidence updates only that match ruleset
+
+Mixed Training allocation may then shift based on the new evidence.
+
+==================================================
+23. LOCAL PERSISTENCE
+==================================================
+
+Extend the existing local persistence adapter.
+
+Persist:
+
+- matches
+- frames
+- frame events
+- match summaries
+- relevant context
+
+Do not introduce a backend.
+
+Bump data version if required.
+
+Provide migration for existing Phase 2.1 profiles.
+
+No user data may be lost.
+
+==================================================
+24. NAVIGATION / UI — MINIMAL ADDITIONS ONLY
+==================================================
+
+Add only what is necessary for Phase 3.
+
+Possible navigation entry:
+
+MATCHES
+
+or:
+
+LOG MATCH
+
+Keep the existing visual style.
+
+Do not begin the premium redesign.
+
+The core match flow should be mobile-first and fast.
+
+==================================================
+25. REQUIRED MATCH SCREENS
+==================================================
+
+Implement only the minimum necessary screens/flows:
+
+A. Start Match
+
+B. Match in Progress / Frame List
+
+C. Log Frame Result
+
+D. Optional Key Error / Key Positive Event
+
+E. Match Complete Summary
+
+F. Match History list
+
+G. Match detail summary
+
+Do not build advanced analytics screens yet.
+
+==================================================
+26. MATCH HISTORY
+==================================================
+
+Allow the player to see prior matches.
+
+At minimum show:
+
+- date
+- opponent if entered
+- score
+- ruleset
+- practice/competition
+- short coaching summary
+
+Do not build complex filtering yet.
+
+==================================================
+27. SCORE HANDLING
+==================================================
+
+Support a simple frame score.
+
+Example:
+
+Player 5
+Opponent 3
+
+Do not require a race length.
+
+If format/race is entered, store it.
+
+The user should be able to end the match manually.
+
+==================================================
+28. EDIT / CORRECTION
+==================================================
+
+Allow correction of a recently logged frame.
+
+Do not make raw data silently immutable in the UI.
+
+Use append/correction semantics internally if practical, but user experience should simply allow:
+
+Edit last frame
+
+At minimum support correcting:
+
+- win/loss
+- key error
+- frame-loss reason
+- impact category
+
+==================================================
+29. DELETION
+==================================================
+
+Allow:
+
+- delete a frame
+- delete a match
+
+with confirmation.
+
+Keep implementation simple.
+
+Deleting match data must trigger recomputation of derived match-priority evidence.
+
+Do not leave stale match-derived limiting-factor evidence behind.
+
+==================================================
+30. DERIVED DATA MUST BE RECOMPUTABLE
+==================================================
+
+Do not permanently bake match-derived limiting-factor conclusions into the raw match records.
+
+Store raw match/frame events.
+
+Derived coaching evidence should be recomputable.
+
+This preserves the earlier architectural principle:
+
+RAW DATA
+→ DERIVED ANALYSIS
+
+not:
+
+DERIVED ANALYSIS AS THE ONLY TRUTH
+
+==================================================
+31. MATCH IMPACT CONFIG
+==================================================
+
+Put tunable impact weights in config.
+
+Example conceptually:
+
+impactWeights: {
+  low: ...
+  medium: ...
+  high: ...
+  decisive: ...
+}
+
+Do not scatter constants through UI code.
+
+==================================================
+32. MATCH EVIDENCE DECAY
+==================================================
+
+Match evidence should be recency-aware.
+
+Recent high-impact match issues should matter strongly.
+
+Old match issues should gradually matter less.
+
+Use the same general recency philosophy already in the engine.
+
+Do not erase history.
+
+Decay affects current coaching relevance, not raw records.
+
+==================================================
+33. MATCH VS TRAINING DISAGREEMENT
+==================================================
+
+Support the possibility:
+
+Training Speed Control:
+Strong
+
+Match Speed Control:
+Repeated high-impact breakdowns
+
+Do not average this away.
+
+The app should be able to surface:
+
+"Your speed control is solid in training but less reliable in matches."
+
+For MVP, this can be derived from separate source/context slices.
+
+Do not build a sophisticated pressure model yet.
+
+==================================================
+34. TESTS — KEEP A–AV PASSING
+==================================================
+
+All existing tests must remain green.
+
+Do not weaken the adaptive/rules core tests.
+
+==================================================
+35. ADD PHASE 3 TESTS AW–BN
+==================================================
+
+Add deterministic tests:
+
+AW. Match creation
+A Blackball or International match is created with one real ruleset.
+
+AX. Mixed preference still requires real match ruleset
+preferredRulesMode = mixed cannot create a "mixed-rules" match.
+
+AY. Frame logging
+Win/loss is stored correctly and score updates.
+
+AZ. Match persistence
+Matches survive serialization/storage reload.
+
+BA. Ruleset evidence
+International tactical match evidence does not increase Blackball tactical confidence.
+
+BB. Shared execution
+International match potting evidence can still contribute to shared Potting evidence.
+
+BC. Impact weighting
+A decisive error contributes more training-priority evidence than a low-impact error of the same skill.
+
+BD. Recency weighting
+Recent match evidence contributes more than otherwise equal old match evidence.
+
+BE. One bad match does not collapse established profile
+A high-confidence skill is not catastrophically re-rated from one poor match.
+
+BF. Repeated match breakdown
+Repeated high-impact errors can elevate a skill to primary limiting factor.
+
+BG. Low-impact frequent error
+Frequent low-impact errors may rank below fewer decisive errors.
+
+BH. Match vs training context
+Strong training evidence + weak match evidence remain distinguishable.
+
+BI. Player-reported vs inferred cause
+Reported MISS can coexist with inferred Positional root cause.
+
+BJ. Positive match evidence
+A reported successful clearance provides positive evidence without crediting unrelated skills.
+
+BK. Match deletion
+Deleting a match removes its derived current-priority influence.
+
+BL. Frame edit
+Correcting a frame recomputes match evidence appropriately.
+
+BM. Match summary
+Summary reflects actual match data and distinguishes match performance from long-term profile.
+
+BN. Post-match recommendation
+New match evidence can change the next training focus without resetting unrelated skills.
+
+==================================================
+36. ADD MATCH-ENGINE PURE TESTS
+==================================================
+
+Create pure functions where practical for:
+
+- impact weighting
+- match evidence aggregation
+- match-score calculation
+- context/source filtering
+- deletion/recompute
+- match summary inputs
+- post-match limiting-factor contribution
+
+Test them independently of React.
+
+==================================================
+37. QUALITY GATE
+==================================================
+
+Phase 3 is complete only when:
+
+- TypeScript passes
+- production build passes
+- all existing tests A–AV pass
+- AW–BN pass
+- match-engine helper tests pass
+- app runtime works
+- start-match flow works
+- frame logging is fast
+- match score works
+- match completion works
+- match summary works
+- match history persists
+- frame edit works
+- match delete works
+- ruleset-specific evidence is correct
+- mixed preference still logs real rulesets
+- impact weighting influences training priority
+- one bad match does not destabilize profile
+- repeated costly errors influence limiting factor
+- next training recommendation reflects match evidence
+
+==================================================
+38. NO VISUAL REDESIGN
+==================================================
+
+Only make UI changes required for match logging and history.
+
+Do NOT begin the premium visual redesign.
+
+Do NOT replace the current design system.
+
+==================================================
+39. NO BACKEND
+==================================================
+
+Do NOT use:
+
+- Supabase
+- Firebase
+- Replit database
+- external authentication
+- paid API
+
+Local persistence remains the MVP requirement.
+
+==================================================
+40. SOURCE CONTROL
+==================================================
+
+Preserve the Phase 2.1 baseline before changes.
+
+After Phase 3 passes:
+
+commit and push to origin/main with:
+
+"Add real-match adaptive coaching intelligence"
+
+Verify the remote commit.
+
+==================================================
+41. FINAL REPORT
+==================================================
+
+Report only:
+
+- Match data model added
+- Match logging flow status
+- Frame logging status
+- Impact weighting status
+- Player-reported vs inferred cause status
+- Match vs training context status
+- Ruleset-aware match evidence status
+- Mixed-mode match handling status
+- Match summary status
+- Match history status
+- Edit/delete status
+- Post-match adaptive recommendation status
+- Existing tests A–AV result
+- Tests AW–BN result
+- Match-helper test results
+- Typecheck
+- Build
+- Runtime
+- Git commit hash
+- GitHub push/sync status
+- Known remaining limitations
+
+STOP after the Phase 3 milestone.
+
+Do NOT begin Phase 4.
+Do NOT add authentication.
+Do NOT add cloud persistence.
+Do NOT add video analysis.
+Do NOT begin the premium visual redesign.
