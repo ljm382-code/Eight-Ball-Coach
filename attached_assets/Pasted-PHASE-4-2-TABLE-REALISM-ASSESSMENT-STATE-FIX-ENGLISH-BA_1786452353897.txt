@@ -1,0 +1,648 @@
+PHASE 4.2 — TABLE REALISM + ASSESSMENT STATE FIX + ENGLISH BALL SET
+
+The Sage–Teal Balanced theme is approved.
+
+Do NOT redesign the app again.
+Do NOT change adaptive logic.
+Do NOT change rules logic.
+Do NOT change match logic.
+Do NOT change training recommendations.
+Do NOT change persistence or data models.
+
+This patch addresses ONLY THREE issues:
+
+1. Pool balls are visually unrealistic and badly oversized relative to the table.
+2. Assessment failure-classification UI incorrectly persists into the next assessment question.
+3. Pool-table diagrams must consistently use the correct English 8-ball ball set: reds, yellows, one black and one white cue ball only.
+
+==================================================
+1. FIX POOL-BALL PROPORTIONS
+==================================================
+
+The current SVG table renders balls much too large.
+
+Use realistic English-pool proportions.
+
+Visual reference:
+
+English pool ball diameter ≈ 2 inches / 50.8 mm
+Typical English pool table ≈ 6 × 3 ft
+
+Therefore ball diameter should visually represent approximately:
+
+2.8% of the table playing length
+
+or approximately:
+
+5.5% of the table playing width.
+
+Do not use an oversized arbitrary fixed radius.
+
+Derive ball radius from the reusable PoolTable/table geometry.
+
+Example:
+
+If the table playing-surface SVG width is around 300 units:
+
+ball diameter ≈ 8–9 units
+ball radius ≈ 4–4.5 units
+
+Adjust proportionately for the actual current SVG viewBox.
+
+The result should look like real English pool balls placed on a full-size table, not oversized tokens.
+
+==================================================
+2. CORRECT ENGLISH 8-BALL BALL SET
+==================================================
+
+IMPORTANT:
+
+This application is for English 8-ball / Blackball / International Rules.
+
+ALL pool-table diagrams throughout the app must use the correct English-pool ball set.
+
+The ONLY object-ball colours permitted are:
+
+- 7 RED balls
+- 7 YELLOW balls
+- 1 BLACK ball
+- 1 WHITE cue ball
+
+Maximum complete set:
+
+7 red + 7 yellow + 1 black + 1 white cue ball = 16 balls.
+
+DO NOT use:
+
+- American numbered solids
+- American stripes
+- blue object balls
+- orange object balls
+- green object balls
+- purple object balls
+- brown object balls
+- multi-coloured numbered object-ball sets
+- arbitrary decorative ball colours
+
+This applies to:
+
+- assessment diagrams
+- execution drills
+- decision drills
+- clearance exercises
+- training diagrams
+- match/table visualisations
+- drill-library previews
+- any reusable PoolTable component
+
+==================================================
+3. REALISTIC BALL APPEARANCE
+==================================================
+
+Create or reuse one consistent English-pool Ball component.
+
+Supported ball types should conceptually be:
+
+"red"
+"yellow"
+"black"
+"cue"
+
+RED BALL
+
+Use a realistic deep English-pool red.
+
+Suggested base:
+#B83E35
+
+Use subtle edge shading and a restrained highlight.
+
+No number.
+No stripe.
+No white circle.
+
+YELLOW BALL
+
+Use a warm English-pool yellow rather than neon yellow.
+
+Suggested base:
+#D6A52E
+
+Use subtle edge shading and a restrained highlight.
+
+No number.
+No stripe.
+No white circle.
+
+BLACK BALL
+
+Use near-black:
+
+#151918
+
+The black is the 8-ball.
+
+A small realistic white circle containing a black “8” may be used only if it remains visually clean at the rendered size.
+
+Do not:
+- enlarge the black ball
+- use an oversized number circle
+- distort its proportions
+
+If the rendered ball is too small for a clean 8 marking, render it simply as a black ball.
+
+WHITE CUE BALL
+
+Use warm/off-white rather than glowing pure white.
+
+Suggested base:
+#F2F0E8
+
+Use subtle grey edge shading and a small restrained highlight.
+
+No number.
+No decorative marking unless a future specific drill explicitly requires a spotted cue ball.
+
+==================================================
+4. ALL BALLS SAME PHYSICAL SIZE
+==================================================
+
+ALL balls must have exactly the same physical diameter:
+
+red = yellow = black = cue ball
+
+Do NOT change ball size depending on:
+
+- colour
+- importance
+- selection
+- drill type
+- cue-ball status
+- black-ball status
+
+Selected balls must use a separate OUTER selection ring or glow.
+
+Do not enlarge the physical ball itself.
+
+==================================================
+5. BALL RENDERING QUALITY
+==================================================
+
+Keep the balls realistic but restrained.
+
+Use:
+
+- subtle radial highlight
+- slight edge shading
+- small contact shadow
+- consistent sphere size
+
+Avoid:
+
+- huge white glare spots
+- thick outlines
+- cartoon styling
+- exaggerated gradients
+- different ball sizes by colour
+
+The current balls look too much like large glossy UI tokens.
+The corrected balls should look like actual English pool balls.
+
+==================================================
+6. TABLE CLOTH
+==================================================
+
+Keep support for:
+
+- teal cloth
+- light blue cloth
+
+These are appropriate for the rule sets being used.
+
+Recommended cloth ranges:
+
+Teal cloth:
+approximately #247F86 / #2A8790
+
+Light blue cloth:
+approximately #5F9FB9 / #6AA8C2
+
+Do not change the approved Sage–Teal application theme.
+
+The cloth colour is independent from the app UI palette.
+
+Ensure all balls remain clearly visible against both cloth options.
+
+==================================================
+7. BALL INVENTORY MUST MATCH THE DRILL
+==================================================
+
+Do NOT automatically draw all 16 balls on every table diagram.
+
+The reusable table system should SUPPORT a complete English set:
+
+7 reds
+7 yellows
+1 black
+1 cue
+
+But each drill must render only the balls actually required.
+
+Examples:
+
+Straight Pot — Middle Pocket:
+- 1 white cue ball
+- 1 red OR yellow object ball
+
+No black needed unless the drill specifically uses it.
+No extra decorative balls.
+
+Position drill:
+- 1 white cue ball
+- the relevant target red/yellow ball
+- only other balls genuinely required for the route/setup
+
+Clearance drill:
+- white cue ball
+- player's chosen group
+- black when relevant
+- opponent-group balls only when they intentionally act as obstacles
+
+Full-table/rules scenario:
+may use up to:
+- 7 reds
+- 7 yellows
+- 1 black
+- 1 white cue
+
+Never exceed the legal English-pool inventory.
+
+==================================================
+8. CLEARANCE GROUP CONSISTENCY
+==================================================
+
+For a clearance exercise, do not randomly mix reds and yellows as the player's target group.
+
+Each clearance must explicitly establish:
+
+playerGroup = "red"
+
+OR
+
+playerGroup = "yellow"
+
+If playerGroup = red:
+
+- red balls are legal player targets
+- yellow balls may only appear as opponent/obstacle balls
+- black becomes legal only according to existing rules logic
+
+If playerGroup = yellow:
+
+- yellow balls are legal player targets
+- red balls may only appear as opponent/obstacle balls
+- black becomes legal only according to existing rules logic
+
+Do NOT alter the rules engine.
+
+Reuse the existing legal-ball / isEightBallLegal logic.
+
+==================================================
+9. TARGET ZONES / ROUTES / SELECTION
+==================================================
+
+Selection, target zones and route indicators must be separate visual layers.
+
+Do not make the ball itself larger.
+
+Selected-ball state:
+- outer ring
+- subtle glow
+- route/aim line if appropriate
+
+Target zone:
+- translucent area beneath/around the ball
+- must not visually change ball size
+
+==================================================
+10. FIX ASSESSMENT FAILURE-STATE LEAK
+==================================================
+
+There is a UI bug in Initial Assessment.
+
+Current incorrect flow:
+
+Question 1
+→ player taps FAILED
+→ failure reasons appear
+→ player selects MISS / POSITION / SPEED / etc.
+→ assessment advances to Question 2
+→ Question 2 incorrectly still shows failure-reason options
+
+Correct flow:
+
+Question 1
+→ SUCCESS or FAILED
+
+If FAILED:
+→ show failure classification
+→ player selects one reason
+→ record failure + classification
+→ advance
+
+Question 2
+→ fresh default state
+→ SUCCESS or FAILED
+
+Every assessment item must begin in its normal initial interaction state.
+
+==================================================
+11. RESET TRANSIENT DRILL UI STATE
+==================================================
+
+Audit the current DrillRunnerItem / Assessment integration.
+
+Transient state such as:
+
+- showErrorGrid
+- selected error
+- decision feedback
+- temporary selection
+- local feedback state
+
+must reset whenever the active drill/assessment item changes.
+
+Use a robust React solution.
+
+Acceptable approaches:
+
+A. Ensure runner components have unique keys based on drill/item ID so they remount cleanly for every item.
+
+AND/OR
+
+B. Explicitly reset transient state whenever drill.id changes.
+
+Example conceptually:
+
+useEffect(() => {
+  setShowErrorGrid(false);
+  setFeedback(null);
+}, [drill.id]);
+
+Do not rely on timing/order of asynchronous React state updates.
+
+==================================================
+12. FAILURE RECORDING ORDER
+==================================================
+
+When a player selects a failure reason:
+
+1. Record the failed execution result.
+2. Record the selected failure classification.
+3. Complete/advance the current item.
+4. Mount the next item in fresh default state.
+
+Do NOT carry showErrorGrid=true into the next drill.
+
+==================================================
+13. CHECK NORMAL TRAINING TOO
+==================================================
+
+Verify this state leak cannot occur during normal training.
+
+Example:
+
+Training Drill A
+→ Failed
+→ MISS
+
+Training Drill B
+→ must start at its normal initial state
+
+For execution drills:
+SUCCESS / FAILED
+
+For decision drills:
+normal scenario/options
+
+The previous drill's failure options must never appear automatically.
+
+==================================================
+14. DECISION DRILL FEEDBACK MUST RESET
+==================================================
+
+Do not break decision-drill feedback.
+
+Correct decision flow:
+
+Scenario
+→ choose option
+→ feedback/rationale
+→ Continue
+→ next drill starts fresh
+
+Decision feedback from one drill must not appear in the next drill.
+
+==================================================
+15. ASSESSMENT REGRESSION TESTS
+==================================================
+
+Add focused deterministic tests.
+
+Required:
+
+CK. Failure classification is current-drill-only
+A failed attempt's error grid applies only to the active drill.
+
+CL. Next assessment item resets
+After selecting a failure reason and advancing, next item starts at Success / Failed.
+
+CM. Success after failure
+A failed classified item followed by another item can be logged as Success normally.
+
+CN. Consecutive failures
+If two consecutive assessment items fail, the second item must require the user to tap Failed again before failure reasons appear.
+
+CO. Decision feedback resets
+Decision-drill feedback from one item does not persist into the next.
+
+==================================================
+16. ENGLISH BALL-SET TESTS
+==================================================
+
+Add deterministic tests for the reusable table/ball data where practical.
+
+CP. English ball palette only
+No generated table state contains American-style coloured/striped object balls.
+
+CQ. Full-set inventory
+Maximum complete table contains exactly:
+7 red
+7 yellow
+1 black
+1 cue
+
+CR. Ball size consistency
+Red, yellow, black and cue balls use the same physical radius.
+
+CS. Clearance group consistency
+A clearance correctly distinguishes the player's group from opponent obstacle balls.
+
+CT. Black-ball uniqueness
+No table state can contain more than one black ball.
+
+CU. Cue-ball uniqueness
+No table state can contain more than one cue ball.
+
+CV. Drill inventory
+Simple drills render only the balls required rather than automatically displaying the complete set.
+
+==================================================
+17. VISUAL VERIFICATION
+==================================================
+
+Inspect at mobile widths around:
+
+390px
+430px
+
+Verify:
+
+- balls now look realistically proportioned
+- cue ball is not oversized
+- object balls are not oversized
+- red/yellow/black/cue all have identical physical diameter
+- selected-ball highlight does not enlarge the ball
+- table remains easy to read
+- pockets remain proportionate
+- teal cloth works
+- light-blue cloth works
+- English red/yellow ball set is used throughout
+
+Specifically inspect:
+
+Assessment:
+Straight Pot — Middle Pocket
+
+Expected:
+- white cue ball
+- one red OR one yellow object ball
+- no arbitrary blue object ball
+- no decorative extra balls
+
+==================================================
+18. MANUAL ASSESSMENT FLOW VERIFICATION
+==================================================
+
+Manually run:
+
+Assessment item 1:
+SUCCESS
+→ next item
+
+Verify next item starts normally.
+
+Then:
+
+Assessment item:
+FAILED
+→ MISS
+→ next item
+
+Verify next item shows:
+SUCCESS / FAILED
+
+Then:
+
+FAILED
+→ POSITION
+→ next item
+
+Verify next item again shows:
+SUCCESS / FAILED
+
+Then test:
+
+FAILED
+→ reason
+→ next item
+→ FAILED
+
+Verify error reasons only appear after tapping Failed on that second item.
+
+==================================================
+19. REGRESSION GATE
+==================================================
+
+All existing 159 tests must remain green.
+
+Then run:
+
+- CK–CV tests
+- TypeScript typecheck
+- production build
+- runtime verification
+
+Do not weaken existing tests.
+
+==================================================
+20. DO NOT CHANGE OTHER FEATURES
+==================================================
+
+Do NOT modify:
+
+- Sage–Teal Balanced theme
+- navigation
+- dashboard structure
+- match logging
+- match intelligence
+- adaptive weighting
+- ruleset logic
+- Mixed training allocation
+- persistence
+- session recommendations
+- ratings/confidence
+
+If you notice unrelated issues, document them but do not fix them in this patch.
+
+==================================================
+21. COMMIT
+==================================================
+
+Commit with exact message:
+
+Fix pool-table proportions and assessment state
+
+Push to origin/main.
+
+Confirm origin/main contains the commit.
+
+Confirm GitHub Pages deployment workflow triggers after the push.
+
+==================================================
+22. FINAL REPORT
+==================================================
+
+Report only:
+
+- ball-size calculation/proportion used
+- English ball-set implementation
+- red/yellow/black/cue visual changes
+- ball inventory validation
+- table changes if any
+- assessment-state bug cause
+- assessment-state fix
+- normal-training state verification
+- existing 159 test result
+- CK–CV test result
+- typecheck result
+- build result
+- runtime result
+- commit SHA
+- GitHub push status
+- GitHub Pages deployment status
+- any remaining visual limitations
+
+STOP after this patch.
+
+Do not begin another phase.

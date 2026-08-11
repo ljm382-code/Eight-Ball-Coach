@@ -12,6 +12,7 @@ description: Phase delivery status, key architecture decisions, and build/test c
 - **Phase 3.1** — COMPLETE. Integrity patch. Tests BO–BZ. 149 total.
 - **Phase 4** — COMPLETE. Committed `88e28c7`, pushed to `origin/main`. Premium UX/UI redesign. Display helper tests CA–CJ. 159 total tests.
 - **Phase 4.1** — COMPLETE. Sage-Teal Balanced visual theme. Committed locally `f7bed69`, pushed to `origin/main` as `f3712b0` (via Git Data API, rebased on top of `a09c012` deploy-pages commit). 159 tests still pass. TypeScript clean. Production build clean.
+- **Phase 4.2** — COMPLETE. Pool-table proportions, English ball set, assessment state fix. Pushed to `origin/main` as `7167fdd` (cherry-pick onto remote branch to preserve `a09c012`). 171 tests (CK–CV added). TypeScript clean. Production build clean.
 
 ## Phase 4.1 — Sage-Teal Balanced theme (palette-only swap)
 
@@ -21,9 +22,19 @@ description: Phase delivery status, key architecture decisions, and build/test c
 - **Won score colors**: `won ? C.green : C.rust` everywhere (green win, red loss) — NOT primary teal.
 - **Btn text**: primary/success/danger variants use `"#FFFFFF"` (not `C.bg` / `C.ink` which would be dark).
 - **Pool table cloth**: changed from dark green `#1a4d33` to teal `#2A8790`.
-- **Pool ball colours**: hardcoded in `ExecDrillDiagram`/`DecisionDrillDiagram`/`simpleBalls` — `#5d99b2` (blue ball), `#c49b58` (gold/yellow ball) — decoupled from theme palette.
+- **Pool ball colours (Phase 4.2)**: English pool set only — `BALL.red #B83E35`, `BALL.yellow #D6A52E`, `BALL.black #151918`, `BALL.cue #F2F0E8`. Applied in `ExecDrillDiagram`, `DecisionDrillDiagram`, `simpleBalls`, `clearanceBalls`. No American colours anywhere.
+- **Ball radius**: `bW * 0.017` (≈4 px for 280 px table; was `width * 0.038`). Derived from playing-surface width.
+- **Selection ring**: outer ring + teal glow only — ball physical size unchanged. `shotBalls` no longer overrides colour.
+- **Assessment state fix**: `key={assess-${index}}` on both `DrillRunner` and `ClearanceRunner` inside `Assessment`. Belt-and-suspenders `useEffect(() => { setErrorOpen(false); setFeedback(null); }, [drill.id])` added to `DrillRunner`.
 - **Card**: added `boxShadow: "0 1px 4px rgba(30,43,37,0.07)"` for depth on white background.
 - **LibraryView filter tabs**: `DDE4E0` track, white selected tab with teal text.
+
+## Phase 4.2 scope (table realism + assessment state fix — engine FROZEN)
+
+- `BALL` constant added in `App.tsx` after SP/R constants: `red`, `yellow`, `black`, `cue`.
+- `BallSpec` type gained `opacity?: number` field — used by clearance runner for potted (0.28) and obstacle (0.55) balls.
+- `PoolTable` SVG: shared `<defs><radialGradient id="ballShade">` at top; contact shadow ellipse; selection = outer ring only; specular highlight at 0.40 opacity. Removed inline per-ball `<defs>` blocks.
+- Push pattern: `gitPush({ force: false })` rejected for diverged histories; `gitPush({ force: true })` also rejected. Correct pattern: `git checkout -b tmp origin/main && git cherry-pick <sha> && gitPush({ branch: "main" }) && git checkout main`.
 
 ## Phase 4 scope (UX/UI redesign — engine FROZEN)
 
@@ -90,7 +101,7 @@ description: Phase delivery status, key architecture decisions, and build/test c
 # Type-check
 cd artifacts/mockup-sandbox && npx tsc --noEmit
 
-# Tests (159 tests, A–BZ + CA–CJ)
+# Tests (171 tests, A–BZ + CA–CV)
 pnpm --filter @workspace/mockup-sandbox run test:engine
 
 # Full production build
