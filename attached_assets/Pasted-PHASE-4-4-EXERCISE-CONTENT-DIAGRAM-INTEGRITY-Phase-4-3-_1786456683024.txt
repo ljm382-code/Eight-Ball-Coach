@@ -1,0 +1,1035 @@
+PHASE 4.4 — EXERCISE CONTENT & DIAGRAM INTEGRITY
+
+Phase 4.3 is complete.
+
+The following are APPROVED and must remain intact:
+
+- Sage–Teal Balanced visual theme
+- realistic English pool ball proportions
+- English red/yellow/black/cue palette
+- external training-number markers
+- authored diagram support
+- route overlays
+- adaptive engine
+- rating/confidence logic
+- rules logic
+- match intelligence
+- Mixed Training allocation
+- persistence
+- navigation
+
+This patch is NOT another redesign.
+
+Its purpose is:
+
+MAKE EVERY ASSESSMENT/TRAINING EXERCISE CLEAR, DISTINCT, REPRODUCIBLE ON A REAL TABLE, AND INTERNALLY CONSISTENT WITH ITS ANSWER OPTIONS.
+
+8-Ball Coach is a TRAINING APPLICATION.
+
+The diagrams, instructions and answer choices must therefore teach and assess real pool concepts rather than act as decorative UI.
+
+==================================================
+1. CURRENT PROBLEMS TO FIX
+==================================================
+
+Current issues observed in the live app:
+
+A. Several decision drills reuse visually similar or identical table layouts.
+
+B. Some diagrams do not match the question/answer options.
+
+C. Some answers refer generically to:
+- nearest ball
+- farthest ball
+- ball against cushion
+etc.
+
+without clearly identifying WHICH ball in the diagram is meant.
+
+D. The current “3-Ball Yellow Clearance” screen is unclear.
+
+It currently presents:
+
+“Which ball?”
+
+with Yellow 1 / Yellow 2 / Yellow 3
+
+but does not adequately explain:
+
+- what the player is trying to achieve
+- whether this is a full clearance or only a 3-ball sequence
+- whether the black is part of the exercise
+- what constitutes success
+- whether the player should plan the whole route
+- whether the cue-ball position matters
+- why one ball might be preferable to another
+
+This is not sufficient for a real training exercise.
+
+==================================================
+2. CORE CONTENT RULE
+==================================================
+
+Every exercise must answer these questions before the player acts:
+
+1. WHAT is the setup?
+2. WHAT group am I playing?
+3. WHAT is the objective?
+4. WHAT exactly am I being asked to decide or execute?
+5. WHAT counts as success?
+6. WHAT constraints matter?
+
+The player should be able to reproduce the exercise on a real pool table without guessing.
+
+==================================================
+3. EXTEND DRILL CONTENT METADATA
+==================================================
+
+Extend the authored drill/scenario model minimally so exercises can carry structured instructional content.
+
+Suggested fields:
+
+setup?: string
+
+objective?: string
+
+successCriteria?: string[]
+
+constraints?: string[]
+
+coachingFocus?: string
+
+playerGroup?: "red" | "yellow"
+
+assessmentInstruction?: string
+
+trainingInstruction?: string
+
+Do NOT put these strings directly into React conditionals.
+
+They must live with the authored drill/scenario data.
+
+==================================================
+4. DISPLAY STRUCTURE FOR PHYSICAL DRILLS
+==================================================
+
+Before the Success / Failed interaction, physical drills should present concise instructional sections.
+
+Recommended visual hierarchy:
+
+DRILL NAME
+
+SETUP
+“Place Yellow 1 one diamond below the top-middle pocket. Place the cue ball directly in line, approximately two diamonds away.”
+
+OBJECTIVE
+“Pot Yellow 1 into the top-middle pocket.”
+
+SUCCESS
+“Pot the ball and keep the cue ball within the marked control area.”
+
+Then:
+
+[ SUCCESS ]
+[ FAILED ]
+
+Keep this concise enough for mobile use.
+
+Do not show huge paragraphs.
+
+==================================================
+5. ASSESSMENT VS COACHING
+==================================================
+
+Assessment instructions may explain:
+
+- setup
+- objective
+- rules/context
+- success criteria
+
+but must NOT reveal the correct answer.
+
+Example:
+
+GOOD:
+
+“You are yellows. Identify the order that gives the largest positional margin while keeping access to the black.”
+
+BAD:
+
+“Start with Ball 3 because it leaves the best angle.”
+
+The reasoning appears only AFTER the player answers.
+
+==================================================
+6. UNIQUE PATTERN-RECOGNITION SCENARIOS
+==================================================
+
+The Pattern Recognition drills must represent genuinely different table problems.
+
+Do NOT reuse one generic 4-ball diagram with small coordinate changes.
+
+Author distinct layouts.
+
+At minimum:
+
+PAT1 — OPEN-TABLE NATURAL PATTERN
+
+Purpose:
+Basic route selection.
+
+Player:
+Yellow.
+
+Table:
+3 yellows + cue + black.
+
+Characteristics:
+All three yellows are open.
+One route offers clearly larger positional margins.
+
+Example optimal sequence:
+3 → 1 → 2 → black
+
+Teaching concept:
+Natural angles and minimizing cue-ball movement.
+
+--------------------------------------------------
+
+PAT2 — BLACK ACCESS
+
+Purpose:
+Protect position on the black.
+
+Player:
+Yellow.
+
+Table:
+3 yellows + cue + black + optional red obstacle.
+
+Characteristics:
+Two apparent routes exist.
+One route leaves a poor final angle on the black.
+
+Teaching concept:
+Plan backwards from the black.
+
+--------------------------------------------------
+
+PAT3 — PROBLEM BALL / CUSHION
+
+Purpose:
+Recognise when a problem ball must be dealt with.
+
+Player:
+Yellow.
+
+Table:
+3 yellows + cue + black + red obstacle(s).
+
+One yellow should genuinely be:
+
+- close to a cushion
+- partially blocked
+- pocket-restricted
+
+This must be clearly visible in the diagram.
+
+Teaching concept:
+Do not leave the problem ball until last without a route.
+
+--------------------------------------------------
+
+PAT4 — LOST POSITION / REPLAN
+
+Purpose:
+Adaptation.
+
+Player:
+Yellow.
+
+Table:
+A partially completed clearance with cue ball no longer in the planned area.
+
+Teaching concept:
+Do not force the original route after position has changed.
+
+These four layouts must LOOK clearly different from each other.
+
+==================================================
+7. ANSWERS MUST MATCH THE DIAGRAM
+==================================================
+
+Every answer option must reference actual labelled balls shown in that specific scenario.
+
+Example:
+
+GOOD:
+
+“Ball 3 — stun into the line of Ball 1; then use left draw from Ball 1 to Ball 2.”
+
+GOOD:
+
+“Ball 2 first with soft follow, then Ball 3, leaving Ball 1 as the key ball to the black.”
+
+BAD:
+
+“Take the nearest ball.”
+
+BAD:
+
+“Play the farthest ball first.”
+
+unless the option explicitly says which labelled ball that is.
+
+If a concept such as nearest/farthest is pedagogically useful, write:
+
+“Ball 1 — simply take the nearest available pot and reassess.”
+
+==================================================
+8. OPTIONS AND DIAGRAM MUST BE VALIDATED
+==================================================
+
+For each decision scenario:
+
+- every referenced Ball 1 / Ball 2 / Ball 3 exists
+- every referenced shot type is plausible for its coordinates
+- every claimed obstacle is actually visible
+- every claimed cushion problem is actually near a cushion
+- every claimed black-access issue is represented geometrically
+- answer rationale matches the shown table
+
+Do not claim:
+
+“Ball 2 is tied to the cushion”
+
+if Ball 2 is sitting in open space.
+
+==================================================
+9. PROBLEM-BALL IDENTIFICATION DRILL
+==================================================
+
+The current “Spot the Problem Ball” question needs a fully authored layout.
+
+Do NOT use vague answers such as:
+
+“The ball tucked against the cushion”
+
+without identifying it.
+
+Use numbered player balls.
+
+Example:
+
+Player:
+Yellow
+
+Yellow 1:
+open near left-middle route
+
+Yellow 2:
+close to right cushion with restricted pocket access
+
+Yellow 3:
+open near lower half
+
+Cue:
+realistic starting location
+
+Black:
+relevant finishing position
+
+Optional red:
+blocks one path/pocket
+
+Question:
+
+“Which yellow is the key problem ball you need to plan around?”
+
+Answers:
+
+A. Ball 1 — because it is closest to the cue ball
+B. Ball 2 — because its cushion position limits pocket and positional options
+C. Ball 3 — because it is furthest from the black
+D. None — all three can safely be left until later
+
+Correct answer and rationale must correspond to the actual diagram.
+
+==================================================
+10. DO THE SAME FOR OTHER DECISION DRILLS
+==================================================
+
+Audit every decision drill currently in DRILLS.
+
+Especially:
+
+Pattern Recognition
+Problem-Ball Identification
+Problem-Ball Management
+Tactical/Safety Decision-Making
+
+Remove generic/recycled table diagrams.
+
+Every assessment-eligible decision drill must have its own authored diagram.
+
+Training decision drills should also progressively receive authored diagrams.
+
+Do not display one generic decision diagram for drills that don't yet have proper content.
+
+If a drill lacks a validated authored scenario:
+
+either author one now
+
+OR
+
+temporarily mark it unavailable for adaptive assignment.
+
+Do not present misleading content.
+
+==================================================
+11. CLEAR UP THE “3-BALL YELLOW CLEARANCE”
+==================================================
+
+The current exercise must be explicitly defined.
+
+First decide what the exercise ACTUALLY measures.
+
+Preferred implementation:
+
+Rename it to:
+
+3-Yellow Pattern Clearance
+
+if the black is included as the finishing ball.
+
+Setup:
+
+“You are yellows. Place Yellow 1, Yellow 2 and Yellow 3 as shown. Place the cue ball at the marked starting position. The black remains as the finishing ball.”
+
+Objective:
+
+“Clear all three yellows and finish on the black.”
+
+Task:
+
+“Before each shot, select the yellow you intend to play.”
+
+Success criteria:
+
+- pot all three yellows
+- finish with a playable position on the black
+- minimise recovery shots
+- route may change if position is lost
+
+If the black is NOT intended to be part of this assessment, then rename the drill:
+
+3-Ball Yellow Sequence
+
+and explicitly state:
+
+“The drill ends once all three yellows are potted. The black is not part of this exercise.”
+
+Do NOT call something a clearance while leaving the player unsure whether the black must be finished.
+
+==================================================
+12. CLEARANCE INSTRUCTION SCREEN
+==================================================
+
+Before the first “Which ball?” interaction, show a short exercise brief.
+
+Example:
+
+3-YELLOW PATTERN CLEARANCE
+
+YOU ARE: YELLOWS
+
+OBJECTIVE
+Pot Yellow 1, Yellow 2 and Yellow 3, then finish on the black.
+
+HOW TO LOG IT
+Before each shot:
+1. Tap the ball you intend to play.
+2. Play the shot.
+3. Record Success or Failed.
+4. If position changes, choose a new route.
+
+FOCUS
+Planning + positional execution.
+
+[ START CLEARANCE ]
+
+This brief should appear once at the beginning of the exercise.
+
+Do not repeat it before every shot.
+
+==================================================
+13. NUMBER THE CLEARANCE BALLS ON THE TABLE
+==================================================
+
+The table itself must visibly show:
+
+① beside Yellow 1
+② beside Yellow 2
+③ beside Yellow 3
+
+The player should never need to infer which physical ball corresponds to the Yellow 1 button.
+
+The selection options may then say:
+
+Ball 1
+Ball 2
+Ball 3
+
+rather than only:
+
+Yellow 1
+Yellow 2
+Yellow 3
+
+Because playerGroup is already visible.
+
+==================================================
+14. CUE BALL MUST BE SHOWN
+==================================================
+
+Any physical shot or clearance exercise must display the cue ball.
+
+Do not present:
+
+3 yellow balls + unrelated fourth ball
+
+without clearly showing the cue ball.
+
+Cue ball:
+
+- white
+- unnumbered
+- positioned according to authored setup
+
+==================================================
+15. BLACK BALL MUST BE SEMANTICALLY CORRECT
+==================================================
+
+The black appears only when relevant.
+
+If the drill includes a black finish:
+
+show it.
+
+If the drill does not involve the black:
+
+omit it.
+
+Do not use the black decoratively.
+
+==================================================
+16. CLEARANCE LAYOUTS MUST BE DISTINCT
+==================================================
+
+Different clearance difficulty levels should not just add balls in a straight line.
+
+Author table geometry that reflects difficulty.
+
+Example progression:
+
+Stage 2:
+two open balls with natural transition
+
+Stage 3:
+three-ball shape requiring route planning
+
+Stage 4:
+four-ball clearance with one positional transition
+
+Higher:
+one problem ball
+blocked route
+cluster/development
+black-access constraint
+recovery possibility
+
+Difficulty must come from the table problem, not merely ball count.
+
+==================================================
+17. EXECUTION DRILL INSTRUCTIONS
+==================================================
+
+Audit all assessment execution drills.
+
+Each must include:
+
+SETUP
+OBJECTIVE
+SUCCESS CRITERIA
+
+Examples:
+
+STRAIGHT POT
+
+Setup:
+“Place the yellow one diamond below the top-middle pocket. Put the cue ball directly in line, approximately two diamonds away.”
+
+Objective:
+“Pot the yellow into the top-middle pocket.”
+
+Success:
+“Ball potted cleanly.”
+
+--------------------------------------------------
+
+STOP-BALL SPEED GATE
+
+Setup:
+“Place the target ball as shown. Mark the cue-ball target zone with two chalk markers.”
+
+Objective:
+“Pot the object ball and stop the cue ball inside the highlighted zone.”
+
+Success:
+“Object ball potted AND cue ball finishes inside the zone.”
+
+A player must not have to infer what “success” means.
+
+==================================================
+18. POSITIONAL DRILLS REQUIRE TARGET ZONES
+==================================================
+
+A positional drill cannot be scored meaningfully if the player only knows whether the ball was potted.
+
+Where positional success matters:
+
+display a target zone.
+
+Example:
+
+Large beginner zone
+Medium developing zone
+Small advanced zone
+
+Success criteria:
+
+“Pot the object ball AND finish the cue ball in the highlighted zone.”
+
+Use existing diagram/target-zone infrastructure or minimally extend TrainingDiagram.
+
+==================================================
+19. SPEED DRILLS REQUIRE DISTANCE/ZONES
+==================================================
+
+For speed-control exercises, define measurable targets.
+
+Examples:
+
+- finish within marked rectangle
+- stop between two markers
+- reach cushion and return to zone
+- finish within one ball-width of target mark
+
+Avoid:
+
+“Control the speed well.”
+
+==================================================
+20. PROBLEM-BALL EXECUTION MUST SHOW THE PROBLEM
+==================================================
+
+For Simple Nudge / Cannon / Break-Out drills:
+
+the diagram must visibly contain:
+
+- the problem ball
+- obstacle/cluster
+- intended development area
+
+Instructions must state what should happen.
+
+Example:
+
+“Use Yellow 1 to nudge Yellow 2 away from the cushion into the highlighted open area while retaining a shot.”
+
+==================================================
+21. BREAK DRILLS NEED REAL SETUP TEXT
+==================================================
+
+Break exercises must state:
+
+- rack setup
+- cue-ball placement
+- objective
+- scoring criteria
+
+Do not rely on a tiny diagram alone to explain a break.
+
+==================================================
+22. AUTHORED SCENARIO QUALITY
+==================================================
+
+Do not mass-generate random coordinates.
+
+Every assessment scenario should be intentionally authored.
+
+The initial library is small.
+
+Quality is more important than quantity.
+
+Each scenario needs a reason to exist.
+
+==================================================
+23. CONTENT DIVERSITY CHECK
+==================================================
+
+Create a validation/helper that detects obviously duplicated authored layouts.
+
+A simple normalized coordinate/layout signature is sufficient.
+
+Assessment decision drills must not share identical diagram signatures.
+
+If two scenarios have the same ball coordinates/groups:
+
+test should fail unless explicitly marked as intentionally shared.
+
+==================================================
+24. INTRODUCE SCENARIO PURPOSE METADATA
+==================================================
+
+Add where useful:
+
+scenarioPurpose
+
+Suggested values:
+
+"natural_pattern"
+"black_access"
+"problem_ball"
+"development"
+"recovery"
+"safety"
+"containment"
+"position_route"
+"speed_control"
+
+This is authored metadata.
+
+It should help prevent the library from becoming a collection of repetitive layouts.
+
+Do not use it to alter rating mathematics.
+
+==================================================
+25. OPTION QUALITY RULES
+==================================================
+
+For each 4-option decision question:
+
+- one may be Optimal
+- one may be Acceptable
+- one High-risk
+- one Poor
+
+BUT the options must still be realistic choices.
+
+Do not create silly distractors such as:
+
+“Play by ball number”
+
+unless a real novice might plausibly make that decision.
+
+A poor choice should still be believable.
+
+==================================================
+26. COACHING RATIONALE QUALITY
+==================================================
+
+Every decision answer must explain:
+
+WHY.
+
+Include the relevant concepts:
+
+- cue-ball travel
+- natural angle
+- positional margin
+- black access
+- risk
+- problem-ball timing
+- safety value
+- recovery route
+
+Avoid generic feedback like:
+
+“This is the best pattern.”
+
+==================================================
+27. USE DIAGRAM AFTER ANSWER
+==================================================
+
+Where structured sequences exist:
+
+after the answer, display:
+
+- selected route
+- optimal route if different
+- sequence markers
+- brief explanation
+
+Example:
+
+YOUR ROUTE
+1 → 3 → 2
+
+COACH'S ROUTE
+3 → 1 → 2
+
+Then:
+
+“Starting with Ball 3 reduces cue-ball travel and leaves the natural stun angle into Ball 1.”
+
+This is substantially more educational than simply saying “High risk.”
+
+==================================================
+28. DO NOT OVERLOAD THE LIVE-PLAY UI
+==================================================
+
+Detailed setup instructions appear before starting the exercise.
+
+During actual attempt logging, return to the minimal interaction hierarchy:
+
+Success / Failed
+or
+ball selection
+
+Do not repeat setup paragraphs after every shot.
+
+==================================================
+29. DATA-DRIVEN IMPLEMENTATION
+==================================================
+
+Keep:
+
+diagram
+setup
+objective
+successCriteria
+constraints
+options
+rationale
+
+inside drill/scenario data.
+
+Do not create:
+
+if drill.id === "pat1"
+if drill.id === "pbd1"
+etc.
+
+inside App.tsx.
+
+React renders authored content generically.
+
+==================================================
+30. TESTS — DK ONWARDS
+==================================================
+
+Preserve all existing 183 tests.
+
+Add deterministic tests:
+
+DK.
+Every assessment decision drill has an authored diagram.
+
+DL.
+Assessment decision diagram signatures are unique.
+
+DM.
+Every assessment drill has objective text.
+
+DN.
+Every physical assessment drill has setup instructions.
+
+DO.
+Every physical assessment drill defines success criteria.
+
+DP.
+Pattern Recognition drills have distinct scenarioPurpose values/layouts where appropriate.
+
+DQ.
+Every numbered answer references a real trainingLabel.
+
+DR.
+Problem-Ball assessment identifies a specific labelled ball.
+
+DS.
+The designated problem ball is geometrically near the declared cushion/obstacle.
+
+DT.
+3-Yellow exercise has an explicit objective.
+
+DU.
+3-Yellow exercise explicitly defines whether black is included.
+
+DV.
+3-Yellow exercise includes a cue ball.
+
+DW.
+Yellow 1/2/3 buttons correspond to visible table labels 1/2/3.
+
+DX.
+Clearance stages use distinct layouts.
+
+DY.
+Positional assessment contains a target zone.
+
+DZ.
+Speed assessment contains a measurable target/zone.
+
+EA.
+Execution assessment success criteria are explicit.
+
+EB.
+No assessment question depends solely on generic positional words such as “nearest” without a ball reference when labelled balls exist.
+
+EC.
+Every structured sequence references existing ball IDs.
+
+ED.
+Every answer rationale is non-empty and scenario-specific.
+
+EE.
+No duplicate authored assessment layouts unless explicitly allowed.
+
+EF.
+Player group is declared for group-based decision/clearance scenarios.
+
+==================================================
+31. VISUAL QA — SPECIFIC SCREENS
+==================================================
+
+Inspect at 390px and 430px:
+
+A. Choose the Ball Order
+
+Must show:
+- distinct authored layout
+- Ball 1/2/3 markers
+- concrete numbered answers
+- diagram matches answers
+
+B. Spot the Problem Ball
+
+Must show:
+- Ball 1/2/3
+- visually obvious but not trivial problem geometry
+- answers explicitly reference Ball numbers
+
+C. 3-Yellow exercise
+
+Must show:
+- clear exercise brief before start
+- player = yellows
+- explicit objective
+- visible cue ball
+- Ball 1/2/3 labels
+- black only if it is genuinely part of the exercise
+- understandable success criteria
+
+==================================================
+32. MANUAL COACHING TEST
+==================================================
+
+A human player looking at each assessment screen should be able to answer:
+
+“I know exactly how to set this up on my real table.”
+
+“I understand what I am trying to achieve.”
+
+“I know what counts as success.”
+
+“I can identify every ball referenced by the answer.”
+
+“The diagram actually matches the choices.”
+
+If any answer is NO, the exercise is not ready.
+
+==================================================
+33. REGRESSION GATE
+==================================================
+
+All existing 183 tests remain green.
+
+Then run:
+
+DK–EF tests
+TypeScript
+production build using:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Verify dist is produced.
+
+Verify generated assets use:
+
+/Eight-Ball-Coach/
+
+Run runtime verification.
+
+==================================================
+34. DO NOT CHANGE
+==================================================
+
+Do NOT change:
+
+adaptive rating math
+confidence
+match weighting
+root-cause engine
+Mixed allocation
+rules legality
+storage
+theme
+navigation
+match UX
+
+This patch is content/diagram integrity only.
+
+==================================================
+35. COMMIT
+==================================================
+
+Commit with exact message:
+
+Improve exercise clarity and scenario diversity
+
+Push to origin/main.
+
+Confirm GitHub Pages workflow triggers.
+
+==================================================
+36. FINAL REPORT
+==================================================
+
+Report only:
+
+- drill metadata added
+- Pattern Recognition layouts changed
+- Problem-Ball layout changed
+- 3-Yellow exercise definition
+- clearance instructions added
+- execution instructions added
+- target zones added
+- duplicated scenarios removed
+- scenario-purpose metadata
+- existing 183 tests result
+- DK–EF tests result
+- typecheck
+- GitHub Pages production build
+- runtime
+- commit SHA
+- GitHub push status
+- Pages deployment status
+- remaining content limitations
+
+STOP after this patch.
+
+Do not begin another phase.

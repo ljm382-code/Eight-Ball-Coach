@@ -238,12 +238,14 @@ function PoolTable({
   targetBalls = [],
   selectedBall = null,
   routeSegments = [],
+  targetZone,
 }: {
   width?: number;
   balls?: BallSpec[];
   targetBalls?: string[];
   selectedBall?: string | null;
   routeSegments?: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }>;
+  targetZone?: { x: number; y: number; width: number; height: number };
 }) {
   const h = width * 0.56;
   const pW = width * 0.08;   // frame padding
@@ -286,6 +288,20 @@ function PoolTable({
         <circle cx={px} cy={py} r={pR * 0.75} fill="#060e0a" />
       </g>
     ))}
+    {/* Target zone — shaded coaching area for positional/speed drills */}
+    {targetZone && <rect
+      x={bX + (targetZone.x / 100) * bW}
+      y={bY + (targetZone.y / 100) * bH}
+      width={(targetZone.width / 100) * bW}
+      height={(targetZone.height / 100) * bH}
+      fill={COLORS.primary}
+      fillOpacity={0.13}
+      stroke={COLORS.primary}
+      strokeWidth={1}
+      strokeOpacity={0.38}
+      strokeDasharray="3,2"
+      rx={2}
+    />}
     {/* Balls — all same physical radius; selection shown by outer ring only */}
     {balls.map((b, i) => {
       const sel = selectedBall === b.label;
@@ -800,7 +816,7 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
     ];
     return <div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
-        <PoolTable width={260} balls={execBalls} />
+        <PoolTable width={260} balls={execBalls} targetZone={drill.diagram?.targetZone} />
       </div>
       <Card>
         {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
@@ -808,7 +824,22 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
           DIFFICULTY {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name.toUpperCase()}
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
-        <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
+        {drill.setup ? <>
+          <div style={{ marginBottom: SP.sm }}>
+            <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>SETUP</div>
+            <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{drill.setup}</div>
+          </div>
+          {drill.objective && <div style={{ marginBottom: SP.sm }}>
+            <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>OBJECTIVE</div>
+            <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{drill.objective}</div>
+          </div>}
+          {drill.successCriteria && drill.successCriteria.length > 0 && <div style={{ marginBottom: SP.md }}>
+            <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>SUCCESS</div>
+            <ul style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, margin: 0, paddingLeft: 16 }}>
+              {drill.successCriteria.map((c, i) => <li key={i}>{c}</li>)}
+            </ul>
+          </div>}
+        </> : <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>}
         <WhyThisDrill reason={drill.reason} />
         {!errorOpen
           ? <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
@@ -916,7 +947,7 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
   const endedRef    = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
-  const [phase, setPhase]               = useState<"choose" | "plan" | "play">(clearance.planEligible ? "choose" : "play");
+  const [phase, setPhase]               = useState<"brief" | "choose" | "plan" | "play">("brief");
   const [planned, setPlanned]           = useState<string[]>(initialRemaining);
   const [current, setCurrent]           = useState<string | null>(null);
   const [errorOpen, setErrorOpen]       = useState(false);
@@ -974,8 +1005,14 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
     }
   };
 
-  // Build ball specs for pool table SVG
+  // Build ball specs for pool table SVG — use authored diagram when available (includes cue ball + training labels)
   const clearanceBalls: BallSpec[] = useMemo(() => {
+    if (clearance.diagram) {
+      return diagramToBalls(clearance.diagram, 280).map(b => {
+        const isPotted = b.label ? potted.includes(b.label) : false;
+        return { ...b, opacity: isPotted ? 0.28 : b.opacity, highlight: !isPotted && (b.opacity ?? 1) > 0.54 };
+      });
+    }
     const count = clearance.balls.length;
     return clearance.balls.map((b, i) => {
       const col = b.group === "black" ? BALL.black : b.group === "red" ? BALL.red : BALL.yellow;
@@ -983,7 +1020,27 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
       const xFrac = 0.15 + (i / Math.max(count - 1, 1)) * 0.7;
       return { x: xFrac, y: 0.5, color: col, highlight: !potted.includes(b.id) && b.role !== "obstacle", label: b.id, opacity };
     });
-  }, [clearance.balls, potted]);
+  }, [clearance, potted]);
+
+  if (phase === "brief") return <Card>
+    {clearance.playerGroup && <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.sm }}>YOU ARE: {clearance.playerGroup.toUpperCase()}S</div>}
+    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: clearance.objective ? SP.sm : SP.md }}>{clearance.name}</div>
+    {clearance.objective && <div style={{ marginBottom: SP.md }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>OBJECTIVE</div>
+      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{clearance.objective}</div>
+    </div>}
+    <div style={{ marginBottom: SP.md }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>HOW TO LOG IT</div>
+      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65 }}>Tap the ball you intend to play, attempt the shot, then record Success or Failed. Adapt your route if position changes.</div>
+    </div>
+    {clearance.successCriteria && clearance.successCriteria.length > 0 && <div style={{ marginBottom: SP.lg }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>SUCCESS</div>
+      <ul style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, margin: 0, paddingLeft: 16 }}>
+        {clearance.successCriteria.map((c, i) => <li key={i}>{c}</li>)}
+      </ul>
+    </div>}
+    <Btn variant="primary" onClick={() => setPhase(clearance.planEligible ? "choose" : "play")}>Start Exercise <ChevronRight size={17} /></Btn>
+  </Card>;
 
   if (phase === "choose") return <Card>
     <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.sm }}>{clearance.name}</div>
@@ -1058,7 +1115,12 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
         <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{potted.length}/{initialRemaining.length}</div>
       </div>
       <div style={{ display: "grid", gap: SP.sm }}>
-        {legalTargets.map((id) => <Btn key={id} onClick={() => setCurrent(id)} style={{ justifyContent: "flex-start" }}>{ballMap[id]?.label ?? id}</Btn>)}
+        {legalTargets.map((id) => {
+          const tl = clearance.diagram?.balls.find(b => b.id === id)?.trainingLabel;
+          return <Btn key={id} onClick={() => setCurrent(id)} style={{ justifyContent: "flex-start" }}>
+            {tl ? `Ball ${tl}` : (ballMap[id]?.label ?? id)}
+          </Btn>;
+        })}
       </div>
       {attempted.length > potted.length && <div style={{ color: C.muted, fontSize: 12, marginTop: SP.md, fontFamily: "'IBM Plex Mono', monospace" }}>{attempted.length - potted.length} miss{attempted.length - potted.length !== 1 ? "es" : ""} recorded</div>}
     </Card>
@@ -1074,7 +1136,9 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
     <Card>
       <div style={{ marginBottom: SP.lg }}>
         <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{clearance.name}</div>
-        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Pot the {ball?.label ?? selectedId}</div>
+        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>
+          {(() => { const tl = clearance.diagram?.balls.find(b => b.id === selectedId)?.trainingLabel; return tl ? `Pot Ball ${tl}` : `Pot the ${ball?.label ?? selectedId}`; })()}
+        </div>
         <div style={{ color: C.muted, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}>SKILL: {ball ? SKILL_MAP[ball.execSkill].name.toUpperCase() : "—"}</div>
       </div>
       {!errorOpen

@@ -1682,4 +1682,224 @@ import {
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, and Phase 4.3 CW–DJ all passed ✓");
+// ── DK: Every assessment decision drill has an authored diagram ───────────────
+{
+  const decDrills = ASSESSMENT_ITEMS.filter(d => d.type === "decision");
+  assert.ok(decDrills.length > 0, "DK: there must be assessment decision drills");
+  for (const d of decDrills) {
+    assert.ok(d.diagram !== undefined, `DK: assessment decision drill ${d.id} must have an authored diagram`);
+  }
+}
+
+// ── DL: Assessment decision diagram signatures are unique ────────────────────
+{
+  const decDrills = ASSESSMENT_ITEMS.filter(d => d.type === "decision" && d.diagram);
+  const sig = (d: { diagram?: { balls: Array<{ group: string; x: number; y: number }> } }) =>
+    d.diagram!.balls.map(b => `${b.group}:${Math.round(b.x/5)*5}:${Math.round(b.y/5)*5}`).sort().join("|");
+  const sigs = decDrills.map(d => ({ id: d.id, sig: sig(d) }));
+  const seen = new Map<string, string>();
+  for (const { id, sig: s } of sigs) {
+    assert.ok(!seen.has(s), `DL: assessment decision drills ${id} and ${seen.get(s)} share the same diagram signature`);
+    seen.set(s, id);
+  }
+}
+
+// ── DM: Every assessment drill has objective text ─────────────────────────────
+{
+  for (const d of ASSESSMENT_ITEMS) {
+    assert.ok(d.objective && d.objective.length > 0, `DM: assessment drill ${d.id} must have objective text`);
+  }
+}
+
+// ── DN: Every physical assessment drill has setup instructions ────────────────
+{
+  const physical = ASSESSMENT_ITEMS.filter(d => d.type === "execution");
+  for (const d of physical) {
+    assert.ok(d.setup && d.setup.length > 0, `DN: physical assessment drill ${d.id} must have setup instructions`);
+  }
+}
+
+// ── DO: Every physical assessment drill defines success criteria ──────────────
+{
+  const physical = ASSESSMENT_ITEMS.filter(d => d.type === "execution");
+  for (const d of physical) {
+    assert.ok(d.successCriteria && d.successCriteria.length > 0, `DO: physical assessment drill ${d.id} must define success criteria`);
+  }
+}
+
+// ── DP: Pattern Recognition drills have distinct scenarioPurpose values ───────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.diagram);
+  assert.ok(patDrills.length >= 3, "DP: at least 3 pattern drills with diagrams must exist");
+  const purposes = patDrills.filter(d => d.scenarioPurpose).map(d => d.scenarioPurpose!);
+  const uniquePurposes = new Set(purposes);
+  assert.ok(uniquePurposes.size >= 3, `DP: pattern drills must have at least 3 distinct scenarioPurpose values (got ${uniquePurposes.size}: [${[...uniquePurposes]}])`);
+}
+
+// ── DQ: Every numbered answer references a real trainingLabel ─────────────────
+{
+  const drillsWithLabels = DRILLS.filter(d => d.diagram?.balls.some(b => b.trainingLabel));
+  for (const d of drillsWithLabels) {
+    const labels = new Set(d.diagram!.balls.filter(b => b.trainingLabel).map(b => b.trainingLabel!));
+    for (const opt of d.options ?? []) {
+      for (const [, n] of opt.label.matchAll(/Ball (\d+)/g)) {
+        assert.ok(labels.has(n), `DQ: ${d.id} opt "${opt.key}" references "Ball ${n}" but no ball has trainingLabel="${n}"`);
+      }
+    }
+  }
+}
+
+// ── DR: Problem-Ball assessment identifies a specific labelled ball ───────────
+{
+  const pbd1 = DRILLS.find(d => d.id === "pbd1");
+  assert.ok(pbd1?.diagram, "DR: pbd1 must have an authored diagram");
+  const labels = new Set(pbd1!.diagram!.balls.filter(b => b.trainingLabel).map(b => b.trainingLabel!));
+  const optimal = (pbd1!.options ?? []).find(o => o.tier === "optimal");
+  assert.ok(optimal, "DR: pbd1 must have an optimal option");
+  const refsBall = [...labels].some(lbl => optimal!.label.includes(`Ball ${lbl}`));
+  assert.ok(refsBall, `DR: pbd1 optimal answer must reference a specific labelled ball (labels: [${[...labels]}])`);
+}
+
+// ── DS: Designated problem ball is geometrically near a cushion ───────────────
+{
+  const pbd1 = DRILLS.find(d => d.id === "pbd1");
+  const optimal = (pbd1?.options ?? []).find(o => o.tier === "optimal");
+  const match = optimal?.label.match(/Ball (\d+)/);
+  if (match) {
+    const problemBall = pbd1!.diagram!.balls.find(b => b.trainingLabel === match[1]);
+    assert.ok(problemBall, `DS: problem ball "Ball ${match[1]}" must exist in pbd1 diagram`);
+    const nearCushion = problemBall!.x < 10 || problemBall!.x > 85 || problemBall!.y < 10 || problemBall!.y > 85;
+    assert.ok(nearCushion, `DS: problem ball "Ball ${match[1]}" (x=${problemBall!.x}, y=${problemBall!.y}) must be near a cushion`);
+  }
+}
+
+// ── DT: 3-Yellow exercise has an explicit objective ───────────────────────────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  assert.ok(clr3?.objective && clr3.objective.length > 0, "DT: 3-yellow exercise must have an explicit objective");
+}
+
+// ── DU: 3-Yellow exercise explicitly defines whether black is included ─────────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  assert.ok(clr3?.includesBlack !== undefined, "DU: 3-yellow exercise must explicitly declare includesBlack (true or false)");
+}
+
+// ── DV: 3-Yellow exercise diagram includes a cue ball ────────────────────────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  assert.ok(clr3?.diagram, "DV: 3-yellow exercise must have a diagram");
+  assert.ok(clr3!.diagram!.balls.some(b => b.group === "cue"), "DV: 3-yellow exercise diagram must include a cue ball");
+}
+
+// ── DW: Clearance target balls correspond to visible table labels ──────────────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  const targets = (clr3?.balls ?? []).filter(b => b.role === "target");
+  for (const t of targets) {
+    const diagramBall = clr3!.diagram?.balls.find(b => b.id === t.id);
+    assert.ok(diagramBall?.trainingLabel, `DW: clearance target ball ${t.id} must have a trainingLabel in the diagram`);
+  }
+}
+
+// ── DX: Clearance stages use distinct authored layouts ────────────────────────
+{
+  const withDiagram = CLEARANCES.filter(c => c.diagram);
+  const sig = (c: { diagram?: { balls: Array<{ group: string; x: number; y: number }> } }) =>
+    c.diagram!.balls.map(b => `${b.group}:${Math.round(b.x/5)*5}:${Math.round(b.y/5)*5}`).sort().join("|");
+  if (withDiagram.length >= 2) {
+    const seen = new Map<string, string>();
+    for (const c of withDiagram) {
+      const s = sig(c);
+      assert.ok(!seen.has(s), `DX: clearances ${c.id} and ${seen.get(s)} share the same diagram layout`);
+      seen.set(s, c.id);
+    }
+  }
+}
+
+// ── DY: Positional assessment contains a target zone ─────────────────────────
+{
+  const pos1 = DRILLS.find(d => d.id === "pos1");
+  assert.ok(pos1?.diagram?.targetZone, "DY: pos1 diagram must include a target zone");
+}
+
+// ── DZ: Speed assessment contains a measurable target zone ───────────────────
+{
+  const spd1 = DRILLS.find(d => d.id === "spd1");
+  assert.ok(spd1?.diagram?.targetZone, "DZ: spd1 diagram must include a target zone");
+}
+
+// ── EA: Execution assessment success criteria are explicit ────────────────────
+{
+  const execAssessment = ASSESSMENT_ITEMS.filter(d => d.type === "execution");
+  for (const d of execAssessment) {
+    assert.ok(d.successCriteria && d.successCriteria.length > 0, `EA: ${d.id} must have success criteria`);
+    for (const c of d.successCriteria!) {
+      assert.ok(c.length > 5, `EA: ${d.id} criterion "${c}" must be a meaningful string`);
+    }
+  }
+}
+
+// ── EB: No assessment question uses generic positional terms without ball ref ─
+{
+  const genericRe = /\b(nearest ball|farthest ball|closest ball|the ball nearest|the ball farthest)\b/i;
+  for (const d of ASSESSMENT_ITEMS) {
+    if (!d.diagram?.balls.some(b => b.trainingLabel)) continue;
+    for (const opt of d.options ?? []) {
+      const hasGenericOnly = genericRe.test(opt.label) && !/Ball \d+/.test(opt.label);
+      assert.ok(!hasGenericOnly, `EB: ${d.id} opt "${opt.key}" uses generic positional term without ball reference`);
+    }
+  }
+}
+
+// ── EC: Every structured sequence references existing ball IDs (belt-and-suspenders) ─
+{
+  for (const d of DRILLS) {
+    if (!d.diagram) continue;
+    const ids = new Set(d.diagram.balls.map(b => b.id));
+    for (const opt of d.options ?? []) {
+      for (const step of opt.sequence ?? []) {
+        assert.ok(ids.has(step.ballId), `EC: ${d.id} sequence step ballId "${step.ballId}" must exist in diagram balls`);
+      }
+    }
+  }
+}
+
+// ── ED: Every assessment answer rationale is non-empty and meaningful ─────────
+{
+  for (const d of ASSESSMENT_ITEMS) {
+    for (const opt of d.options ?? []) {
+      assert.ok(opt.rationale && opt.rationale.length >= 20,
+        `ED: ${d.id} opt "${opt.key}" rationale must be at least 20 characters (got ${opt.rationale?.length ?? 0}): "${opt.rationale}"`);
+    }
+  }
+}
+
+// ── EE: No duplicate authored assessment layouts ───────────────────────────────
+{
+  type SigItem = { source: string; sig: string };
+  const sigFn = (balls: Array<{ group: string; x: number; y: number }>) =>
+    balls.map(b => `${b.group}:${Math.round(b.x/5)*5}:${Math.round(b.y/5)*5}`).sort().join("|");
+  const items: SigItem[] = [
+    ...ASSESSMENT_ITEMS.filter(d => d.diagram).map(d => ({ source: d.id, sig: sigFn(d.diagram!.balls) })),
+    ...CLEARANCES.filter(c => c.assessmentEligible && c.diagram).map(c => ({ source: c.id, sig: sigFn(c.diagram!.balls) })),
+  ];
+  const seen = new Map<string, string>();
+  for (const { source, sig } of items) {
+    assert.ok(!seen.has(sig), `EE: duplicate assessment layout detected: ${source} matches ${seen.get(sig)}`);
+    seen.set(sig, source);
+  }
+}
+
+// ── EF: Player group is declared for group-based decision/clearance scenarios ─
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.assessmentEligible);
+  for (const d of patDrills) {
+    const pg = d.diagram?.playerGroup ?? d.playerGroup;
+    assert.ok(pg, `EF: pattern assessment drill ${d.id} must declare playerGroup`);
+  }
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  assert.ok(clr3?.playerGroup, "EF: clr3 clearance must declare playerGroup");
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, and Phase 4.4 DK–EF all passed ✓");
