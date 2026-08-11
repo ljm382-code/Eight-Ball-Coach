@@ -1,1 +1,2 @@
-- [8-Ball Coach architecture](8bc-architecture.md) — Phase 1+2 complete; rules module, mixed mode, 30+ tests, correct imports to note
+- [8-Ball Coach architecture](8bc-architecture.md) — Phases 1–4.4 complete; 205 tests (A–EF); push via cherry-pick pattern
+- [8-Ball Coach nesting trap](8bc-nesting-trap.md) — structured metadata fields must sit at drill level, not inside diagram: {}
