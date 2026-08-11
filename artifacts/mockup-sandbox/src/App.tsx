@@ -1,146 +1,150 @@
-import { useEffect, useState, type ComponentType } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
+import { Check, ChevronRight, Play, RotateCcw, TrendingDown, TrendingUp, Minus, X } from "lucide-react";
+import {
+  ASSESSMENT_CLEARANCE, ASSESSMENT_ITEMS, CLEARANCES, DRILLS, ERROR_CODES, RULESETS, SKILLS, SKILL_MAP,
+  applySkillUpdate, appendRatingSnapshots, buildErrorChainNarrative, buildSummary, classifyErrorChain,
+  confidenceLabel, computeConfidence, decisionValue, generateSession, isStale, limitingFactor, newProfile,
+  sessionWeighting, trendFor,
+  type Attempt, type Clearance, type DecisionOption, type Drill, type Profile, type RuleSetId,
+  type SessionSummary, type SkillId,
+} from "./engine";
+import { clearProfile, loadProfile, saveProfile, updateRuleset } from "./persistence/profileStorage";
 
-import { modules as discoveredModules } from "./.generated/mockup-components";
+type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings";
+const C = { bg: "#0e1a15", panel: "#16261e", panel2: "#1d3025", line: "#2a4436", ink: "#edeae1", dim: "#9fb3a8", brass: "#c9a15a", chalk: "#6fa8c9", rust: "#b5533c", green: "#4e8b6b" };
+const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
+const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings" };
 
-type ModuleMap = Record<string, () => Promise<Record<string, unknown>>>;
-
-function _resolveComponent(
-  mod: Record<string, unknown>,
-  name: string,
-): ComponentType | undefined {
-  const fns = Object.values(mod).filter(
-    (v) => typeof v === "function",
-  ) as ComponentType[];
-  return (
-    (mod.default as ComponentType) ||
-    (mod.Preview as ComponentType) ||
-    (mod[name] as ComponentType) ||
-    fns[fns.length - 1]
-  );
+function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
+  return <section style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, ...style }}>{children}</section>;
+}
+function Label({ children }: { children: ReactNode }) {
+  return <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1, marginBottom: 7, textTransform: "uppercase" }}>{children}</div>;
+}
+function Button({ children, onClick, variant = "default", disabled = false, style }: { children: ReactNode; onClick?: () => void; variant?: "default" | "primary" | "success" | "danger" | "ghost"; disabled?: boolean; style?: CSSProperties }) {
+  const styles: Record<string, CSSProperties> = {
+    default: { background: C.panel2, border: `1px solid ${C.line}`, color: C.ink },
+    primary: { background: C.brass, color: C.bg }, success: { background: "#245c3e", color: C.ink },
+    danger: { background: "#5c2f26", color: C.ink }, ghost: { background: "transparent", color: C.dim },
+  };
+  return <button disabled={disabled} onClick={onClick} style={{ alignItems: "center", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", display: "flex", fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 600, justifyContent: "center", minHeight: 46, opacity: disabled ? .5 : 1, padding: "12px 15px", width: "100%", ...styles[variant], ...style }}>{children}</button>;
+}
+function ProgressBar({ value, color = C.brass }: { value: number; color?: string }) {
+  return <div style={{ background: C.panel2, borderRadius: 5, height: 7, overflow: "hidden" }}><div style={{ background: color, height: "100%", transition: "width .35s ease", width: `${Math.max(0, Math.min(100, value))}%` }} /></div>;
+}
+function TableDiagram({ balls = [], size = 70 }: { balls?: { color?: string }[]; size?: number }) {
+  return <svg height={size} viewBox="0 0 170 100" width={size * 1.7}><rect fill={C.panel2} height="92" rx="6" stroke={C.brass} strokeWidth="2" width="162" x="4" y="4" />{[[6, 6], [83, 3], [160, 6], [6, 90], [83, 96], [160, 90]].map(([cx, cy], i) => <circle key={i} cx={cx} cy={cy} fill="#0a1310" r="6" />)}{balls.map((ball, i) => <circle key={i} cx={20 + i * 32} cy="50" fill={ball.color ?? C.chalk} r="9" stroke="#0a1310" strokeWidth="1.5" />)}</svg>;
+}
+function TrendIcon({ trend }: { trend: string }) {
+  if (trend === "up") return <TrendingUp color={C.green} size={14} />;
+  if (trend === "down") return <TrendingDown color={C.rust} size={14} />;
+  return <Minus color={C.dim} size={14} />;
+}
+function WhyThisDrill({ reason }: { reason?: string }) {
+  return reason ? <details style={{ marginBottom: 14 }}><summary style={{ color: C.dim, cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>Why this drill?</summary><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, marginTop: 7 }}>{reason}</div></details> : null;
 }
 
-function PreviewRenderer({
-  componentPath,
-  modules,
-}: {
-  componentPath: string;
-  modules: ModuleMap;
-}) {
-  const [Component, setComponent] = useState<ComponentType | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    setComponent(null);
-    setError(null);
-
-    async function loadComponent(): Promise<void> {
-      const key = `./components/mockups/${componentPath}.tsx`;
-      const loader = modules[key];
-      if (!loader) {
-        setError(`No component found at ${componentPath}.tsx`);
-        return;
-      }
-
-      try {
-        const mod = await loader();
-        if (cancelled) {
-          return;
-        }
-        const name = componentPath.split("/").pop()!;
-        const comp = _resolveComponent(mod, name);
-        if (!comp) {
-          setError(
-            `No exported React component found in ${componentPath}.tsx\n\nMake sure the file has at least one exported function component.`,
-          );
-          return;
-        }
-        setComponent(() => comp);
-      } catch (e) {
-        if (cancelled) {
-          return;
-        }
-
-        const message = e instanceof Error ? e.message : String(e);
-        setError(`Failed to load preview.\n${message}`);
-      }
-    }
-
-    void loadComponent();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [componentPath, modules]);
-
-  if (error) {
-    return (
-      <pre style={{ color: "red", padding: "2rem", fontFamily: "system-ui" }}>
-        {error}
-      </pre>
-    );
-  }
-
-  if (!Component) return null;
-
-  return <Component />;
+function AppShell({ view, children, onNav, profile }: { view: View; children: ReactNode; onNav: (view: View) => void; profile: Profile }) {
+  const nav = [{ id: "dashboard" as const, label: "Today" }, { id: "library" as const, label: "Library" }, { id: "progress" as const, label: "Progress" }, { id: "settings" as const, label: "Rules" }];
+  return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100vh" }}><style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.98)}`}</style><div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100vh" }}><header style={{ borderBottom: `1px solid ${C.line}`, padding: "18px 16px 11px" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1.5 }}>8-BALL COACH</div><div style={{ color: C.dim, fontSize: 13, marginTop: 2 }}>{titles[view]} <span style={{ color: C.line }}>·</span> {RULESETS[profile.ruleset].name}</div></header><main style={{ flex: 1, padding: 16, paddingBottom: 92 }}>{children}</main><nav style={{ background: C.panel, borderTop: `1px solid ${C.line}`, bottom: 0, display: "flex", position: "fixed", width: "min(100%, 520px)", zIndex: 5 }}>{nav.map((item) => <button key={item.id} onClick={() => onNav(item.id)} style={{ background: "transparent", border: 0, color: view === item.id ? C.brass : C.dim, cursor: "pointer", flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: view === item.id ? 700 : 500, padding: "15px 4px" }}>{item.label}</button>)}</nav></div></div>;
 }
 
-function getBasePath(): string {
-  return import.meta.env.BASE_URL.replace(/\/$/, "");
+function Onboarding({ onChoose }: { onChoose: (ruleset: RuleSetId) => void }) {
+  const [ruleset, setRuleset] = useState<RuleSetId>("blackball");
+  return <div style={{ alignItems: "center", display: "flex", justifyContent: "center", minHeight: "100vh", padding: 18 }}><div style={{ maxWidth: 440, width: "100%" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 38, letterSpacing: 2, marginBottom: 8 }}>8-BALL COACH</div><h1 style={{ fontSize: 28, lineHeight: 1.1, margin: "0 0 14px" }}>Train the part of your game that is costing frames.</h1><p style={{ color: C.dim, fontSize: 15, lineHeight: 1.65, margin: "0 0 28px" }}>8-Ball Coach learns your game and adapts your training to fix the weaknesses that matter most.</p><Card style={{ marginBottom: 14 }}><Label>Which rules do you normally play?</Label><div style={{ display: "grid", gap: 9 }}>{Object.values(RULESETS).map((rule) => <button key={rule.id} onClick={() => setRuleset(rule.id)} style={{ background: ruleset === rule.id ? "#284735" : C.panel2, border: `1px solid ${ruleset === rule.id ? C.brass : C.line}`, borderRadius: 10, color: C.ink, cursor: "pointer", padding: 14, textAlign: "left" }}><div style={{ alignItems: "center", display: "flex", justifyContent: "space-between" }}><strong>{rule.name}</strong>{ruleset === rule.id && <Check color={C.brass} size={18} />}</div><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>{rule.description}</div></button>)}</div></Card><Button variant="primary" onClick={() => onChoose(ruleset)}>Start a short assessment <ChevronRight size={17} /></Button><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5, marginTop: 14, textAlign: "center" }}>Your ratings start shared across rulesets. You can change your preferred rules later.</div></div></div>;
 }
 
-function getPreviewExamplePath(): string {
-  const basePath = getBasePath();
-  return `${basePath}/preview/ComponentName`;
+function SkillRadar({ profile, color = C.chalk }: { profile: Profile; color?: string }) {
+  const data = SKILLS.map((skill) => ({ skill: skill.shortName, value: Math.round(profile.skills[skill.id].rating) }));
+  return <Card style={{ height: 286, marginBottom: 14 }}><ResponsiveContainer height="100%" width="100%"><RadarChart data={data} outerRadius="69%"><PolarGrid stroke={C.line} /><PolarAngleAxis dataKey="skill" tick={{ fill: C.dim, fontSize: 9 }} /><Radar dataKey="value" fill={color} fillOpacity={.22} stroke={color} /></RadarChart></ResponsiveContainer></Card>;
 }
 
-function Gallery() {
-  return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-8">
-      <div className="text-center max-w-md">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-3">
-          Component Preview Server
-        </h1>
-        <p className="text-gray-500 mb-4">
-          This server renders individual components for the workspace canvas.
-        </p>
-        <p className="text-sm text-gray-400">
-          Access component previews at{" "}
-          <code className="bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">
-            {getPreviewExamplePath()}
-          </code>
-        </p>
-      </div>
-    </div>
-  );
+function Assessment({ profile, onDone }: { profile: Profile; onDone: (profile: Profile) => void }) {
+  const [index, setIndex] = useState(0); const profileRef = useRef(profile); const total = ASSESSMENT_ITEMS.length + 1;
+  const current = index === ASSESSMENT_ITEMS.length ? ASSESSMENT_CLEARANCE : ASSESSMENT_ITEMS[index];
+  const advance = (next: Profile) => { profileRef.current = next; index + 1 >= total ? onDone({ ...next, assessmentComplete: true }) : setIndex((value) => value + 1); };
+  return <div><div style={{ marginBottom: 16 }}><Label>Step {index + 1} of {total}</Label><ProgressBar value={index / total * 100} /></div>{current.type === "combined" ? <ClearanceRunner clearance={current} profile={profileRef.current} source="assessment" onComplete={advance} /> : <DrillRunner drill={current as Drill} profile={profileRef.current} source="assessment" onComplete={advance} />}</div>;
+}
+function Provisional({ profile, onContinue }: { profile: Profile; onContinue: () => void }) {
+  const mean = SKILLS.reduce((sum, skill) => sum + profile.skills[skill.id].rating, 0) / SKILLS.length;
+  const strengths = SKILLS.filter((skill) => profile.skills[skill.id].rating >= mean + 5).map((skill) => skill.name);
+  const focus = SKILLS.filter((skill) => profile.skills[skill.id].rating < mean - 5).sort((a, b) => profile.skills[a.id].rating - profile.skills[b.id].rating).map((skill) => skill.name);
+  return <div><Card style={{ marginBottom: 14 }}><p style={{ lineHeight: 1.6, margin: 0 }}>Here's your starting picture. {strengths.length > 0 && <><strong style={{ color: C.brass }}>{strengths.slice(0, 2).join(" and ")}</strong> look like early strengths. </>}{focus.length > 0 && <><strong style={{ color: C.chalk }}>{focus.slice(0, 2).join(" and ")}</strong> are good places to start. </>}This is a rough sketch — confidence sharpens as you train.</p></Card><SkillRadar color={C.brass} profile={profile} /><Button variant="primary" onClick={onContinue}>Start your first training session <Play size={17} /></Button></div>;
 }
 
-function getPreviewPath(): string | null {
-  const basePath = getBasePath();
-  const { pathname } = window.location;
-  const local =
-    basePath && pathname.startsWith(basePath)
-      ? pathname.slice(basePath.length) || "/"
-      : pathname;
-  const match = local.match(/^\/preview\/(.+)$/);
-  return match ? match[1] : null;
+function Dashboard({ profile, onStart, onNav }: { profile: Profile; onStart: () => void; onNav: (view: View) => void }) {
+  const lf = limitingFactor(profile); const weighting = sessionWeighting(profile); const recent = profile.sessions.slice(-3).reverse();
+  return <div><Card style={{ marginBottom: 14 }}><Label>Today's training</Label><div style={{ fontSize: 21, fontWeight: 700, marginBottom: 5 }}>{lf.primary ? lf.primary.name : "Build a broader picture"}</div><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 15px" }}>{lf.status === "insufficient" ? "Still gathering evidence — today's session samples across your game." : `${lf.status === "provisional" ? "Early signal: " : ""}${lf.primary?.name} is currently the biggest opportunity.`}</p><Button variant="primary" onClick={onStart}><Play size={17} /> Start training</Button></Card><div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}><Card><Label>Main focus</Label><div style={{ fontSize: 14 }}>{lf.primary?.name ?? "Still learning"}</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{lf.primary ? `${Math.round(lf.primary.rating)} / 100` : "More evidence needed"}</div></Card><Card><Label>Session balance</Label><div style={{ fontSize: 14 }}>{weighting.execWeight}% execution</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{weighting.decWeight}% decision work</div></Card></div><Card style={{ marginBottom: 14 }}><Label>Recent progress</Label>{!recent.length && <div style={{ color: C.dim, fontSize: 13 }}>No sessions yet. Your first session will start the feedback loop.</div>}{recent.map((session, index) => <div key={`${session.ts}-${index}`} style={{ borderBottom: index === recent.length - 1 ? 0 : `1px solid ${C.line}`, color: C.dim, fontSize: 13, padding: "9px 0" }}>{new Date(session.ts).toLocaleDateString()} — {session.summary.changeNote}</div>)}</Card><Button onClick={() => onNav("progress")}>View full skill profile <ChevronRight size={16} /></Button></div>;
+}
+function PickTime({ onPick }: { onPick: (minutes: number) => void }) {
+  return <Card><Label>How much time do you have?</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 14px" }}>The session adjusts its balance, difficulty, and variety to fit.</p><div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>{[15, 30, 45, 60, 90].map((minutes) => <Button key={minutes} onClick={() => onPick(minutes)} style={{ fontSize: 17, minHeight: 64 }}>{minutes} min</Button>)}</div></Card>;
 }
 
-function App() {
-  const previewPath = getPreviewPath();
-
-  if (previewPath) {
-    return (
-      <PreviewRenderer
-        componentPath={previewPath}
-        modules={discoveredModules}
-      />
-    );
-  }
-
-  return <Gallery />;
+function ErrorGrid({ onPick }: { onPick: (code: string) => void }) {
+  return <div><Label>What went wrong?</Label><div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>{ERROR_CODES.map((code) => <Button key={code} onClick={() => onPick(code)}>{code}</Button>)}</div></div>;
+}
+function DrillRunner({ drill, profile, source, onComplete }: { drill: Drill; profile: Profile; source: "assessment" | "training"; onComplete: (profile: Profile, entry: Attempt & { skillId: SkillId }) => void }) {
+  const [errorOpen, setErrorOpen] = useState(false); const [feedback, setFeedback] = useState<{ option: DecisionOption; updated: Profile; value: number } | null>(null);
+  const finish = (value: number, reportedError?: string) => onComplete(applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, reportedError }), { skillId: drill.skillId, value, drillId: drill.id, difficulty: drill.difficulty, ts: Date.now(), reportedError });
+  if (drill.type === "execution") return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: C.chalk }, { color: C.brass }]} /></div><div style={{ fontSize: 18, fontWeight: 700 }}>{drill.name}</div><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "5px 0" }}>{drill.desc}</div><div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, marginBottom: 12 }}>Difficulty {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name}</div><WhyThisDrill reason={drill.reason} />{!errorOpen ? <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}><Button variant="success" onClick={() => finish(1)}><Check size={19} /> Success</Button><Button variant="danger" onClick={() => setErrorOpen(true)}><X size={19} /> Failed</Button></div> : <ErrorGrid onPick={(code) => finish(0, code)} />}</Card>;
+  if (!feedback) return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: C.brass }, { color: C.chalk }, { color: C.rust }]} /></div><div style={{ fontSize: 18, fontWeight: 700 }}>{drill.name}</div><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "5px 0 14px" }}>{drill.desc}</div><WhyThisDrill reason={drill.reason} /><div style={{ display: "grid", gap: 8 }}>{drill.options?.map((option) => <Button key={option.key} onClick={() => { const value = decisionValue(option.tier); setFeedback({ option, updated: applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, tier: option.tier }), value }); }} style={{ justifyContent: "flex-start", textAlign: "left" }}>{option.label}</Button>)}</div></Card>;
+  return <Card><Label>{feedback.option.tier === "optimal" ? "Strong choice" : feedback.option.tier === "acceptable" ? "Reasonable choice" : feedback.option.tier === "highrisk" ? "High risk" : "Not the best option"}</Label><p style={{ lineHeight: 1.6, margin: "0 0 16px" }}>{feedback.option.rationale}</p><Button variant="primary" onClick={() => onComplete(feedback.updated, { skillId: drill.skillId, value: feedback.value, drillId: drill.id, difficulty: drill.difficulty, tier: feedback.option.tier, ts: Date.now() })}>Continue <ChevronRight size={17} /></Button></Card>;
 }
 
-export default App;
+const smallButton: CSSProperties = { background: "transparent", border: 0, color: C.brass, cursor: "pointer", fontSize: 16, padding: "2px 7px" };
+function ClearanceRunner({ clearance, profile, source, onComplete }: { clearance: Clearance; profile: Profile; source: "assessment" | "training"; onComplete: (profile: Profile, entries: (Attempt & { skillId?: SkillId; type?: string; chainNarrative?: string })[]) => void }) {
+  const state = useRef({ profile, entries: [] as (Attempt & { skillId?: SkillId; observedSkill?: SkillId; type?: string; chainNarrative?: string })[], remaining: clearance.balls.map((ball) => ball.id), route: [] as string[], planned: null as string[] | null });
+  const [, force] = useState(0); const [phase, setPhase] = useState<"choose" | "plan" | "play">(clearance.planEligible ? "choose" : "play"); const [planned, setPlanned] = useState(clearance.balls.map((ball) => ball.id)); const [current, setCurrent] = useState<string | null>(null); const [errorOpen, setErrorOpen] = useState(false); const [adaptationOpen, setAdaptationOpen] = useState(false);
+  const ballMap = useMemo(() => Object.fromEntries(clearance.balls.map((ball) => [ball.id, ball])), [clearance]);
+  const selectedId = current ?? (state.current.remaining.length === 1 ? state.current.remaining[0] : null);
+  const complete = () => { const chain = classifyErrorChain(state.current.entries); const narrative = buildErrorChainNarrative(chain); const entries = narrative ? [...state.current.entries, { ts: Date.now(), value: 0, difficulty: clearance.difficulty, chainNarrative: narrative }] : state.current.entries; onComplete(state.current.profile, entries); };
+  const applyResult = (value: number, reportedError?: string) => { if (!selectedId) return; const ball = ballMap[selectedId]; state.current.profile = applySkillUpdate(state.current.profile, ball.execSkill, value, { drillId: clearance.id, difficulty: clearance.difficulty, source, clearance: true, ballId: ball.id, reportedError }); state.current.entries.push({ ts: Date.now(), value, difficulty: clearance.difficulty, drillId: clearance.id, source, clearance: true, ballId: ball.id, reportedError, skillId: ball.execSkill, observedSkill: ball.execSkill }); state.current.route.push(ball.id); if (value === 0 && clearance.failureMode === "end_clearance") { complete(); return; } state.current.remaining = state.current.remaining.filter((id) => id !== selectedId); setCurrent(null); setErrorOpen(false); if (value === 0 && clearance.adaptationEligible && reportedError === "POSITION") { setAdaptationOpen(true); return; } if (!state.current.remaining.length) complete(); else force((tick) => tick + 1); };
+  if (phase === "choose") return <Card><div style={{ fontSize: 18, fontWeight: 700 }}>{clearance.name}</div><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5 }}>Would you like to plan this clearance first, or just play?</p><div style={{ display: "grid", gap: 8 }}><Button variant="primary" onClick={() => setPhase("plan")}>Plan the clearance</Button><Button onClick={() => setPhase("play")}>Just play</Button></div></Card>;
+  if (phase === "plan") return <Card><div style={{ fontSize: 18, fontWeight: 700, marginBottom: 5 }}>Plan your order</div><p style={{ color: C.dim, fontSize: 13 }}>Reorder if needed, then confirm. The plan is scored separately from execution.</p><div style={{ display: "grid", gap: 8, marginBottom: 14 }}>{planned.map((id, index) => <div key={id} style={{ alignItems: "center", background: C.panel2, borderRadius: 8, display: "flex", justifyContent: "space-between", padding: "9px 12px" }}><span>{index + 1}. {ballMap[id].label}</span><span style={{ display: "flex", gap: 4 }}><button onClick={() => { if (!index) return; const copy = [...planned]; [copy[index - 1], copy[index]] = [copy[index], copy[index - 1]]; setPlanned(copy); }} style={smallButton}>↑</button><button onClick={() => { if (index === planned.length - 1) return; const copy = [...planned]; [copy[index + 1], copy[index]] = [copy[index], copy[index + 1]]; setPlanned(copy); }} style={smallButton}>↓</button></span></div>)}</div><Button variant="primary" onClick={() => { state.current.planned = planned; state.current.entries.push({ ts: Date.now(), value: 1, difficulty: clearance.difficulty, drillId: clearance.id, source: "planDecision", skillId: "pattern", tier: "optimal" }); setPhase("play"); }}>Confirm plan</Button></Card>;
+  if (adaptationOpen) return <Card><div style={{ fontSize: 18, fontWeight: 700 }}>Position lost</div><p style={{ color: C.dim, fontSize: 13 }}>What's your plan?</p><div style={{ display: "grid", gap: 8 }}>{["Re-plan clearance", "Continue original route", "Develop a problem ball", "Play safe", "Other"].map((choice) => <Button key={choice} onClick={() => { const tier = choice === clearance.preferredAdaptation ? "optimal" : choice === "Other" ? "highrisk" : "acceptable"; state.current.entries.push({ ts: Date.now(), value: decisionValue(tier), difficulty: clearance.difficulty, source: "adaptation", type: "adaptation", skillId: "pattern", tier }); setAdaptationOpen(false); if (!state.current.remaining.length) complete(); else force((tick) => tick + 1); }}>{choice}</Button>)}</div></Card>;
+  if (!selectedId) return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><TableDiagram balls={clearance.balls.map((ball) => ({ color: state.current.remaining.includes(ball.id) ? ball.group === "black" ? "#222" : ball.group === "red" ? C.rust : "#d9c089" : C.panel2 }))} /></div><div style={{ color: C.dim, fontSize: 12 }}>{clearance.name}</div><div style={{ fontSize: 18, fontWeight: 700, margin: "5px 0 13px" }}>Which ball are you playing?</div><div style={{ display: "grid", gap: 8 }}>{state.current.remaining.map((id) => <Button key={id} onClick={() => setCurrent(id)} style={{ justifyContent: "flex-start" }}>{ballMap[id].label}</Button>)}</div></Card>;
+  if (!selectedId) return null;
+  const ball = ballMap[selectedId];
+  return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}><TableDiagram balls={clearance.balls.map((item) => ({ color: item.id === selectedId ? C.brass : state.current.remaining.includes(item.id) ? C.panel2 : C.green }))} /></div><div style={{ color: C.dim, fontSize: 12 }}>{clearance.name}</div><div style={{ fontSize: 18, fontWeight: 700, margin: "5px 0" }}>Pot the {ball.label}</div><div style={{ color: C.dim, fontSize: 12, marginBottom: 13 }}>Skill in focus: {SKILL_MAP[ball.execSkill].name}</div>{!errorOpen ? <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}><Button variant="success" onClick={() => applyResult(1)}><Check size={19} /> Success</Button><Button variant="danger" onClick={() => setErrorOpen(true)}><X size={19} /> Failed</Button></div> : <ErrorGrid onPick={(code) => applyResult(0, code)} />}</Card>;
+}
+
+function SessionRunner({ profile, generated, onFinish }: { profile: Profile; generated: ReturnType<typeof generateSession>; onFinish: (profile: Profile, summary: SessionSummary) => void }) {
+  const [index, setIndex] = useState(0); const profileRef = useRef(profile); const logRef = useRef<(Attempt & { skillId?: SkillId; type?: string; chainNarrative?: string })[]>([]); const current = generated.drills[index];
+  const complete = (updated: Profile, entries: (Attempt & { skillId?: SkillId; type?: string; chainNarrative?: string })[] | Attempt & { skillId?: SkillId }) => { profileRef.current = updated; logRef.current = [...logRef.current, ...(Array.isArray(entries) ? entries : [entries])]; if (index + 1 >= generated.drills.length) onFinish(updated, buildSummary(logRef.current, generated, updated)); else setIndex((value) => value + 1); };
+  return <div><Label>Drill {index + 1} of {generated.drills.length}</Label><ProgressBar color={C.chalk} value={index / generated.drills.length * 100} />{current.type === "combined" ? <ClearanceRunner key={`${current.id}-${index}`} clearance={current} profile={profileRef.current} source="training" onComplete={complete} /> : <DrillRunner key={`${current.id}-${index}`} drill={current} profile={profileRef.current} source="training" onComplete={complete} />}</div>;
+}
+function Summary({ summary, onDone }: { summary: SessionSummary; onDone: () => void }) {
+  return <div><Card style={{ marginBottom: 14 }}><Label>Today's session</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.todayWentWell.length ? `Your ${summary.todayWentWell.join(" and ")} held up well today.` : "A mixed session across several skills."}</p><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: "10px 0 0" }}>{summary.todayLimited.length ? `Most of today's difficulty traced back to ${summary.todayLimited.join(" and ")} — today's snapshot, not a rewrite of your profile.` : "Nothing stood out as a clear limiter in today's session."}</p></Card>{summary.chainNarratives.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Error-chain note</Label>{summary.chainNarratives.map((note, index) => <p key={index} style={{ color: C.chalk, lineHeight: 1.55, margin: index ? "9px 0 0" : 0 }}>{note}</p>)}</Card>}{summary.adaptations.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Adaptation</Label><p style={{ color: C.brass, lineHeight: 1.55, margin: 0 }}>You made a decision after position was lost. That choice is credited separately from the later execution result.</p></Card>}<Card style={{ marginBottom: 14 }}><Label>What changes next</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.changeNote}</p></Card><Button variant="primary" onClick={onDone}>Back to today</Button></div>;
+}
+
+function ProgressView({ profile }: { profile: Profile }) {
+  const lf = limitingFactor(profile); const weighting = sessionWeighting(profile);
+  return <div><SkillRadar profile={profile} /><Card style={{ marginBottom: 14 }}><Label>Execution vs decision</Label><div style={{ display: "grid", gap: 10 }}><div><div style={{ color: C.dim, fontSize: 12, marginBottom: 5 }}>Execution <strong style={{ color: C.ink }}>{Math.round(weighting.exec)}</strong></div><ProgressBar color={C.chalk} value={weighting.exec} /></div><div><div style={{ color: C.dim, fontSize: 12, marginBottom: 5 }}>Decision <strong style={{ color: C.ink }}>{Math.round(weighting.dec)}</strong></div><ProgressBar color={C.brass} value={weighting.dec} /></div></div></Card><Card style={{ marginBottom: 14 }}><Label>Current focus</Label><div style={{ fontSize: 15 }}>{lf.primary ? `${lf.primary.name}${lf.status === "provisional" ? " · early signal" : ""}` : "Still gathering enough evidence for a clear focus"}</div>{lf.secondary && <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>Also worth attention: {lf.secondary.name}</div>}</Card><Card><Label>All skills</Label>{SKILLS.map((skill) => { const state = profile.skills[skill.id]; const confidence = computeConfidence(state.attempts); return <div key={skill.id} style={{ alignItems: "center", borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "10px 0" }}><div><div style={{ alignItems: "center", display: "flex", fontSize: 13, gap: 6 }}>{skill.name}<TrendIcon trend={trendFor(profile.ratingHistory, skill.id)} /></div><div style={{ color: C.dim, fontSize: 11, marginTop: 4 }}>{confidenceLabel(confidence.tier, isStale(state))} · {state.attempts.length} attempts</div></div><div style={{ color: C.brass, fontFamily: "'IBM Plex Mono', monospace", fontSize: 15 }}>{Math.round(state.rating)}</div></div>; })}</Card></div>;
+}
+function LibraryView({ ruleset }: { ruleset: RuleSetId }) {
+  const groups = SKILLS.map((skill) => ({ skill, drills: DRILLS.filter((drill) => drill.skillId === skill.id && drill.rulesets.includes(ruleset)) })).filter((group) => group.drills.length);
+  return <div>{groups.map(({ skill, drills }) => <Card key={skill.id} style={{ marginBottom: 12 }}><Label>{skill.name} {skill.priority && <span style={{ color: C.brass }}>· priority</span>}</Label>{drills.map((drill) => <div key={drill.id} style={{ borderBottom: `1px solid ${C.line}`, color: C.dim, fontSize: 13, padding: "8px 0" }}><div style={{ color: C.ink }}>{drill.name}</div><div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, marginTop: 3 }}>difficulty {drill.difficulty} · {drill.type}</div></div>)}</Card>)}<Card><Label>Clearances</Label>{CLEARANCES.filter((clearance) => clearance.rulesets.includes(ruleset)).map((clearance) => <div key={clearance.id} style={{ color: C.dim, fontSize: 13, padding: "7px 0" }}>{clearance.name} <span style={{ color: C.line, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>· difficulty {clearance.difficulty}</span></div>)}</Card></div>;
+}
+function SettingsView({ profile, onRuleset, onReset }: { profile: Profile; onRuleset: (ruleset: RuleSetId) => void; onReset: () => void }) {
+  return <div><Card style={{ marginBottom: 14 }}><Label>Preferred rules</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Changing rules keeps your physical skill ratings. It changes the content available to future sessions.</p>{Object.values(RULESETS).map((rule) => <button key={rule.id} onClick={() => onRuleset(rule.id)} style={{ alignItems: "center", background: profile.ruleset === rule.id ? "#284735" : C.panel2, border: `1px solid ${profile.ruleset === rule.id ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", marginBottom: 8, padding: 13, textAlign: "left", width: "100%" }}><span><strong>{rule.name}</strong><span style={{ color: C.dim, display: "block", fontSize: 12, marginTop: 4 }}>{rule.tacticalNote}</span></span>{profile.ruleset === rule.id && <Check color={C.brass} size={18} />}</button>)}</Card><Card style={{ marginBottom: 14 }}><Label>Rules foundation</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{RULESETS[profile.ruleset].unsupportedNote}</p></Card><Card><Label>Local profile</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Your profile is stored on this device for the restored MVP.</p><Button variant="danger" onClick={onReset}><RotateCcw size={16} /> Reset profile</Button></Card></div>;
+}
+
+export default function App() {
+  const [profile, setProfile] = useState<Profile>(() => loadProfile());
+  const [view, setView] = useState<View>(() => { const loaded = loadProfile(); return loaded.assessmentComplete ? "dashboard" : "onboarding"; });
+  const [generated, setGenerated] = useState<ReturnType<typeof generateSession> | null>(null);
+  const [summary, setSummary] = useState<SessionSummary | null>(null);
+  useEffect(() => { saveProfile(profile); }, [profile]);
+  const chooseRuleset = (ruleset: RuleSetId) => { setProfile(newProfile(ruleset)); setView("assessment"); };
+  const startSession = (minutes: number) => { setGenerated(generateSession(profile, minutes)); setView("session"); };
+  const finishSession = (updated: Profile, sessionSummary: SessionSummary) => { const withHistory = { ...updated, ratingHistory: appendRatingSnapshots(updated), sessions: [...updated.sessions, { ts: Date.now(), minutes: generated?.drills.length ?? 0, summary: sessionSummary }] }; setProfile(withHistory); setSummary(sessionSummary); setView("summary"); };
+  const nav = (next: View) => { if (!["session", "assessment", "onboarding"].includes(next)) setView(next); };
+  if (view === "onboarding") return <Onboarding onChoose={chooseRuleset} />;
+  if (view === "assessment") return <AppShell view={view} onNav={nav} profile={profile}><Assessment profile={profile} onDone={(next) => { setProfile(next); setView("provisional"); }} /></AppShell>;
+  if (view === "provisional") return <AppShell view={view} onNav={nav} profile={profile}><Provisional profile={profile} onContinue={() => setView("dashboard")} /></AppShell>;
+  if (view === "pickTime") return <AppShell view={view} onNav={nav} profile={profile}><PickTime onPick={startSession} /></AppShell>;
+  if (view === "session" && generated) return <AppShell view={view} onNav={nav} profile={profile}><SessionRunner profile={profile} generated={generated} onFinish={finishSession} /></AppShell>;
+  if (view === "summary" && summary) return <AppShell view={view} onNav={nav} profile={profile}><Summary summary={summary} onDone={() => setView("dashboard")} /></AppShell>;
+  return <AppShell view={view} onNav={nav} profile={profile}>{view === "dashboard" && <Dashboard profile={profile} onStart={() => setView("pickTime")} onNav={nav} />}{view === "progress" && <ProgressView profile={profile} />}{view === "library" && <LibraryView ruleset={profile.ruleset} />}{view === "settings" && <SettingsView profile={profile} onRuleset={(ruleset) => setProfile(updateRuleset(profile, ruleset))} onReset={() => { clearProfile(); setProfile(newProfile()); setView("onboarding"); }} />}</AppShell>;
+}
