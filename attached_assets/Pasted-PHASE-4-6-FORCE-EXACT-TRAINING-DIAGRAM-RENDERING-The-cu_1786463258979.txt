@@ -1,0 +1,928 @@
+PHASE 4.6 — FORCE EXACT TRAINING-DIAGRAM RENDERING
+
+The current deployed app is still NOT acceptable for training use.
+
+Do NOT add new features.
+Do NOT redesign the UI.
+Do NOT change adaptive logic.
+Do NOT change rules logic.
+Do NOT change match logic.
+Do NOT change persistence.
+Do NOT change navigation.
+Do NOT change the Sage–Teal theme.
+
+This patch exists ONLY because the live diagrams still do not match the written drill instructions.
+
+The current implementation has data fields for target zones, aim lines, table markings, target pockets, cue-ball identity and rack metadata — but the deployed SVG does not reliably display them.
+
+You must fix the REAL RENDER PATH, not just add more data types or tests.
+
+==================================================
+1. NON-NEGOTIABLE TRAINING PRINCIPLE
+==================================================
+
+8-Ball Coach is a TRAINING APPLICATION, not a game.
+
+Every diagram must teach the player how to reproduce the exercise on a real table.
+
+If the written drill mentions:
+
+- marked zone
+- highlighted zone
+- target zone
+- potting line
+- nominated pocket
+- baulk
+- break line
+- rack
+- black spot
+- cue-ball route
+
+then that visual MUST be plainly visible in the diagram.
+
+No hidden, ultra-faint, decorative, or theoretical SVG support is acceptable.
+
+==================================================
+2. FIRST: TRACE THE ACTUAL LIVE RENDER PATH
+==================================================
+
+Before editing:
+
+Inspect the real component chain used by the deployed assessment screens.
+
+For example:
+
+Assessment
+→ DrillRunner
+→ execution diagram
+→ PoolTable
+→ SVG
+
+and
+
+Assessment
+→ Decision drill
+→ PoolTable
+
+and
+
+Assessment
+→ ClearanceRunner
+→ PoolTable
+
+Confirm which props reach PoolTable in the ACTUAL runtime.
+
+Do not assume the data is being passed.
+
+Logically trace:
+
+drill.diagram.targetZone
+drill.diagram.aimLines
+drill.diagram.targetPocket
+drill.diagram.tableMarkings
+drill.diagram.rack
+drill.diagram.cueBall
+
+through every intermediate component.
+
+If any layer drops those fields, fix it.
+
+==================================================
+3. REMOVE GENERIC FALLBACKS FOR AUTHORED DRILLS
+==================================================
+
+This is critical.
+
+If a drill has drill.diagram, the renderer MUST use that authored diagram.
+
+Do NOT replace it with:
+
+simpleBalls
+generic execution balls
+generic decision balls
+fallback decorative layouts
+
+For assessment drills:
+
+drill.diagram must be authoritative.
+
+Only drills with NO authored diagram may use a fallback.
+
+==================================================
+4. CUE BALL MUST BE HARD-CODED BY TYPE
+==================================================
+
+The cue ball must ALWAYS render off-white.
+
+Canonical mapping:
+
+cue:
+#F2F0E8
+
+red:
+#B83E35
+
+yellow:
+#D6A52E
+
+black:
+#151918
+
+Do not accept arbitrary fill colours for canonical ball types.
+
+Implement one authoritative renderer function.
+
+Conceptually:
+
+function getCanonicalBallFill(group) {
+  switch (group) {
+    case "cue":
+      return BALL_COLORS.cue;
+    case "red":
+      return BALL_COLORS.red;
+    case "yellow":
+      return BALL_COLORS.yellow;
+    case "black":
+      return BALL_COLORS.black;
+    default:
+      throw new Error("Unknown English pool ball group");
+  }
+}
+
+Do NOT use:
+
+ball.color || ...
+ball.fill || ...
+fallbackColor
+
+for canonical English balls.
+
+If a cue ball is marked as group/type "cue", it MUST render white/off-white regardless of any other field.
+
+==================================================
+5. CUE BALL VALIDATION IN LIVE DIAGRAMS
+==================================================
+
+For every physical assessment drill:
+
+exactly one cue ball must exist.
+
+Specifically verify live:
+
+Straight Pot
+Stop-Ball Speed Gate
+Simple Follow Route
+Basic Stun
+Simple Nudge
+Controlled Break
+Straight 8-Ball
+
+Each must show one white cue ball.
+
+If any authored diagram uses a non-cue generic ball where the cue ball should be, correct the data.
+
+==================================================
+6. TARGET ZONES — MAKE THEM OBVIOUS
+==================================================
+
+The current live target zones are effectively invisible.
+
+Replace the current styling.
+
+Render target zones with unmistakable training styling.
+
+Use something approximately:
+
+fill: rgba(255, 245, 150, 0.24)
+stroke: #E0B84C
+strokeWidth: 2
+strokeDasharray: "6 4"
+
+Also render:
+
+TARGET ZONE
+
+or
+
+STOP ZONE
+
+inside or directly above the area where space allows.
+
+On teal cloth and light-blue cloth the zone must remain obvious.
+
+Do NOT use near-transparent teal-on-teal styling.
+
+==================================================
+7. TARGET ZONE RENDERING MUST USE SVG COORDINATES CORRECTLY
+==================================================
+
+Inspect the coordinate conversion.
+
+If TrainingDiagram uses 0–100 normalized coordinates:
+
+convert target zone x/y/width/height into the SAME SVG playing-surface coordinate system used by balls.
+
+Do not render normalized percentages as raw SVG units.
+
+Create/reuse helpers:
+
+diagramXToSvg(x)
+diagramYToSvg(y)
+diagramWidthToSvg(w)
+diagramHeightToSvg(h)
+
+Use the same transformation for:
+
+balls
+zones
+lines
+rack
+markers
+
+==================================================
+8. STOP-BALL SPEED GATE — EXACT LIVE RESULT
+==================================================
+
+The deployed Stop-Ball Speed Gate MUST show:
+
+- one white cue ball
+- one yellow or red object ball
+- intended target pocket highlighted
+- clearly visible STOP ZONE
+- visible straight pot/aim line if appropriate
+
+The object ball should be positioned toward the pocket.
+
+The target zone should represent where the CUE BALL is supposed to stop after contact.
+
+The written text and visible zone must agree exactly.
+
+If the zone is not immediately obvious on a 390px phone screen, it is not acceptable.
+
+==================================================
+9. SIMPLE FOLLOW ROUTE — EXACT LIVE RESULT
+==================================================
+
+The deployed Simple Follow Route MUST show:
+
+- white cue ball
+- yellow/red object ball
+- target pocket
+- clearly visible FOLLOW ZONE
+- cue-ball route arrow continuing beyond the object ball toward that zone
+
+The zone must be placed physically beyond the contact point in a plausible follow direction.
+
+No hidden rectangle.
+
+No generic ball layout.
+
+==================================================
+10. AIM / POTTING LINES — MUST ACTUALLY RENDER
+==================================================
+
+Current drills mention potting lines but they are absent.
+
+Render authored aimLines visibly.
+
+Style approximately:
+
+stroke: rgba(255,255,255,0.85)
+strokeWidth: 1.5
+strokeDasharray: "5 4"
+
+For key training drills, use a small arrowhead.
+
+A straight pot drill should visually show:
+
+cue ball
+→ object ball
+→ target pocket
+
+Do not draw a random centre line.
+
+The line must be based on actual authored coordinates.
+
+==================================================
+11. TARGET POCKET — MUST BE VISIBLY HIGHLIGHTED
+==================================================
+
+When targetPocket exists:
+
+highlight that exact pocket.
+
+Use an OUTER ring around the pocket.
+
+Suggested:
+
+stroke: #C79A38
+strokeWidth: 3
+fill: none
+
+Optional small label:
+
+TARGET
+
+Do not resize the actual pocket.
+
+==================================================
+12. STRAIGHT POT — MIDDLE POCKET
+==================================================
+
+The live first assessment drill MUST visibly show:
+
+- white cue ball
+- one yellow/red object ball
+- exact top-middle OR bottom-middle target pocket
+- straight line cue → object ball → middle pocket
+- target pocket highlighted
+
+The current screenshot shows the balls but not the line/pocket emphasis.
+
+Fix that.
+
+==================================================
+13. STRAIGHT 8-BALL
+==================================================
+
+The live Straight 8-Ball drill MUST show:
+
+- white cue ball
+- black ball
+- chosen target pocket
+- potting line cue → black → target pocket
+- target pocket highlight
+
+The black ball must not simply sit in open space without shot geometry.
+
+==================================================
+14. TABLE MARKINGS — FIX THE ACTUAL SVG
+==================================================
+
+Add visible table markings at PoolTable level.
+
+These must be real SVG geometry tied to the playing surface.
+
+Implement:
+
+A. baulk/break line
+B. baulk/break area shading
+C. black spot
+D. rack marker/line where ruleset requires it
+E. optional head-ball marker for International Rules
+
+The markings must appear on the cloth, not outside the table.
+
+==================================================
+15. STANDARD TABLE ORIENTATION
+==================================================
+
+Use ONE orientation throughout:
+
+BAULK / BREAK END = bottom of screen
+RACK END = top of screen
+
+Do not rotate orientation between drills.
+
+Then:
+
+break/baulk line is near the bottom end
+rack triangle is near the top end
+
+Use this everywhere.
+
+==================================================
+16. BAULK / BREAK LINE VISIBILITY
+==================================================
+
+When a drill needs baulk/break context:
+
+render a line across the FULL playing width.
+
+Suggested:
+
+stroke: rgba(242,240,232,0.75)
+strokeWidth: 1.5
+strokeDasharray: "4 3"
+
+Also lightly shade the area between that line and the baulk cushion.
+
+Suggested fill:
+
+rgba(255,255,255,0.07)
+
+Add a small label:
+
+BAULK
+
+or
+
+BREAK AREA
+
+depending on the drill/ruleset.
+
+==================================================
+17. BLACK SPOT
+==================================================
+
+Render the black spot when relevant.
+
+Use a small high-contrast marker on the cloth.
+
+For example:
+
+small white ring + dark centre
+
+Do not confuse it with a physical black ball.
+
+==================================================
+18. CONTROLLED BREAK — MUST BE COMPLETELY CORRECT
+==================================================
+
+The current break drill showing only two balls is unacceptable.
+
+Replace the live break diagram.
+
+It MUST render:
+
+- exactly 15 object balls in a tight triangle
+- exactly 7 red
+- exactly 7 yellow
+- exactly 1 black
+- exactly 1 white cue ball separately in the legal break area
+- visible break/baulk line
+- visible break area
+- correct rack end
+- black/rack marker where relevant
+
+No generic 2-ball fallback is allowed.
+
+==================================================
+19. ENGLISH RACK VISUAL GEOMETRY
+==================================================
+
+Use the existing createEnglishEightBallRack helper.
+
+But verify it is actually consumed by PoolTable.
+
+The triangle must visibly contain:
+
+row 1: 1
+row 2: 2
+row 3: 3
+row 4: 4
+row 5: 5
+
+Total = 15.
+
+Balls should appear tightly packed.
+
+The rack should clearly look like a real rack, not scattered balls.
+
+==================================================
+20. BREAK CUE BALL
+==================================================
+
+The cue ball must be shown inside the highlighted baulk/break placement area.
+
+It must be white.
+
+Do not place the black where the cue ball should be.
+
+==================================================
+21. RULESET-SENSITIVE BREAK
+==================================================
+
+If Controlled Break is used in Mixed Training:
+
+resolve a concrete ruleset before rendering rules-specific markings.
+
+Use:
+
+Blackball
+
+or
+
+International
+
+Do NOT render a fake hybrid ruleset.
+
+If the drill is truly rules-neutral:
+make the visual instructions explicitly coaching-neutral.
+
+==================================================
+22. D-LINE / SEMICIRCLE
+==================================================
+
+Do not falsely teach a semicircular D as mandatory for both rulesets.
+
+However:
+
+if the app wants a familiar visual training D for table orientation, render it only when:
+
+tableMarkings.showTrainingD === true
+
+and clearly treat it as an optional training/table marking.
+
+Never use it as rules logic.
+
+==================================================
+23. RENDERING ORDER MUST BE FIXED
+==================================================
+
+In PoolTable render exactly in this order:
+
+1. cloth
+2. permanent/ruleset markings
+3. baulk/break shaded area
+4. black spot / rack markers
+5. target zones
+6. aim / potting lines
+7. route lines
+8. rack guide if any
+9. balls
+10. training number markers
+11. selection rings
+12. target pocket highlight
+
+Do NOT render markings underneath an opaque cloth rectangle.
+
+This may be the current bug.
+
+Inspect SVG DOM order carefully.
+
+==================================================
+24. TARGET ZONE MUST NOT BE BEHIND CLOTH
+==================================================
+
+Explicitly verify that target zone elements are created AFTER the cloth <rect>.
+
+Same for:
+
+aim lines
+baulk lines
+black spot
+target pocket ring
+
+If they are rendered before the cloth rectangle, they will be invisible.
+
+Fix SVG order.
+
+==================================================
+25. OPACITY MUST NOT MAKE TRAINING ELEMENTS INVISIBLE
+==================================================
+
+Do not use values such as:
+
+opacity 0.02
+opacity 0.04
+strokeOpacity 0.05
+
+for required instructional features.
+
+Required visual aids should generally render around 0.6–1.0 stroke opacity.
+
+Target zone fill may be lighter, but the BORDER must remain obvious.
+
+==================================================
+26. POOLTABLE PROP AUDIT
+==================================================
+
+Update PoolTable API so it accepts the full TrainingDiagram rather than many disconnected optional props if that reduces prop-loss risk.
+
+Preferred:
+
+<PoolTable
+  diagram={drill.diagram}
+  ruleset={activeRuleset}
+/>
+
+Then PoolTable directly reads:
+
+diagram.cueBall
+diagram.balls
+diagram.tableMarkings
+diagram.targetZone
+diagram.targetPocket
+diagram.aimLines
+diagram.routeSegments
+diagram.rack
+
+This is preferred over passing 8 separate props through multiple layers and accidentally forgetting one.
+
+Do not perform a huge refactor beyond this renderer seam.
+
+==================================================
+27. AUTHORED DIAGRAM MUST OVERRIDE FALLBACKS
+==================================================
+
+Implement logic:
+
+if (drill.diagram) {
+  render diagram exactly
+} else {
+  render fallback diagram
+}
+
+Never merge authored balls with generic fallback balls.
+
+That is likely why cue-ball colours/ball identities are becoming incorrect.
+
+==================================================
+28. GENERIC FALLBACK COLOUR MUST NOT TOUCH AUTHORED BALLS
+==================================================
+
+Any generic fallback ball renderer must be separate.
+
+For authored TrainingBall:
+
+group controls colour.
+
+For fallback decorative balls:
+use fallback renderer.
+
+Do not mix the models.
+
+==================================================
+29. PROBLEM-BALL SCREEN — CUE BALL
+==================================================
+
+The current live Problem-Ball screen shows a non-white/ambiguous ball.
+
+Fix the diagram so the cue ball is explicitly:
+
+group: "cue"
+
+and renders off-white.
+
+The red opponent obstacle remains red.
+
+The three yellows remain yellow.
+
+Black remains black.
+
+No grey/blue generic ball.
+
+==================================================
+30. EXACT VISUAL REFERENT RULE
+==================================================
+
+Enforce:
+
+If text says TARGET ZONE → visible zone.
+
+If text says HIGHLIGHTED ZONE → visible zone.
+
+If text says POTTING LINE → visible line.
+
+If text says TARGET POCKET / NOMINATED POCKET → highlighted pocket.
+
+If text says BAULK / BREAK AREA → line + area visible.
+
+If text says RACK 15 BALLS → 15 balls visible.
+
+If text says BLACK SPOT → spot visible.
+
+This must be testable.
+
+==================================================
+31. ADD RENDER-MODEL HELPERS
+==================================================
+
+Create pure helpers that convert training metadata into SVG render primitives.
+
+For example:
+
+buildTableRenderModel(diagram, ruleset)
+
+returns:
+
+{
+  balls,
+  markings,
+  zones,
+  aimLines,
+  routes,
+  targetPocket,
+  rackMarkers
+}
+
+Tests should inspect this.
+
+This is more reliable than testing only the source data.
+
+==================================================
+32. TEST THE RENDER MODEL, NOT JUST DATA EXISTENCE
+==================================================
+
+The previous tests passed even though live visuals were missing.
+
+Therefore add tests against the actual render model.
+
+Required tests:
+
+FE.
+Stop-Ball render model contains visible target-zone primitive.
+
+FF.
+Stop-Ball target-zone stroke opacity > 0.5.
+
+FG.
+Simple Follow render model contains visible target zone.
+
+FH.
+Simple Follow render model contains cue-ball route/aim primitive.
+
+FI.
+Straight Pot render model contains aim line.
+
+FJ.
+Straight Pot render model targets middle pocket.
+
+FK.
+Straight 8-Ball render model contains cue→black→pocket line.
+
+FL.
+Straight 8-Ball target pocket highlight exists.
+
+FM.
+Controlled Break render model contains 16 total balls:
+15 object + 1 cue.
+
+FN.
+Controlled Break render model contains 7 red + 7 yellow + 1 black + 1 cue.
+
+FO.
+Controlled Break render model contains visible break/baulk line.
+
+FP.
+Controlled Break render model contains visible break area.
+
+FQ.
+Cue ball render primitive fill === BALL_COLORS.cue.
+
+FR.
+No authored cue-ball primitive may use another fill.
+
+FS.
+Problem-Ball render model contains exactly one cue ball.
+
+FT.
+Problem-Ball cue ball fill is off-white.
+
+FU.
+Every required visual appears after the cloth layer in render-order metadata.
+
+FV.
+Every assessment authored drill passes render-model validation.
+
+==================================================
+33. RUNTIME VISUAL ASSERTION
+==================================================
+
+Do not stop after unit tests.
+
+Run the app and visually inspect actual rendered screens.
+
+You MUST inspect:
+
+1. Straight Pot — Middle Pocket
+2. Stop-Ball Speed Gate
+3. Simple Follow Route
+4. Controlled Break
+5. Straight 8-Ball
+6. Spot the Problem Ball
+
+At mobile width ~390px.
+
+==================================================
+34. SCREENSHOT ACCEPTANCE CRITERIA
+==================================================
+
+Before committing, visually confirm:
+
+STRAIGHT POT
+- white cue
+- yellow/red object ball
+- visible straight aim line
+- highlighted middle pocket
+
+STOP-BALL
+- white cue
+- object ball
+- clear gold/cream STOP ZONE
+- target pocket
+
+FOLLOW ROUTE
+- white cue
+- object ball
+- clear FOLLOW ZONE
+- route arrow
+
+CONTROLLED BREAK
+- visible 15-ball rack
+- white cue
+- visible break line
+- visible break area
+
+STRAIGHT 8-BALL
+- white cue
+- black
+- visible potting line
+- highlighted pocket
+
+PROBLEM BALL
+- white cue
+- yellow 1/2/3
+- red obstacle
+- black
+- no incorrect cue colour
+
+==================================================
+35. DO NOT ACCEPT “SUPPORT EXISTS”
+==================================================
+
+Final report must NOT say only:
+
+“targetZone supported”
+“aimLine supported”
+“tableMarkings supported”
+
+It must say:
+
+“verified visibly on live Stop-Ball screen”
+“verified visibly on live Controlled Break screen”
+
+If a screenshot still does not show it:
+the task is NOT done.
+
+==================================================
+36. EXISTING TESTS
+==================================================
+
+Preserve all existing 229 tests.
+
+Add FE–FV tests.
+
+Run TypeScript.
+
+==================================================
+37. PRODUCTION BUILD
+==================================================
+
+Run:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+with the existing production build command.
+
+Verify:
+
+dist exists
+
+and generated assets use:
+
+/Eight-Ball-Coach/
+
+==================================================
+38. COMMIT
+==================================================
+
+Commit exact message:
+
+Fix live training diagram rendering
+
+Push to origin/main.
+
+Confirm GitHub Pages workflow triggers.
+
+==================================================
+39. FINAL REPORT
+==================================================
+
+Report ONLY:
+
+- root cause of missing visuals
+- authored-diagram render-path fix
+- cue-ball canonical colour fix
+- target-zone visible styling
+- aim-line visible styling
+- target-pocket visible styling
+- break/baulk markings
+- English 15-ball rack live rendering
+- Problem-Ball cue-ball fix
+- render-model helper
+- FE–FV tests
+- total tests
+- TypeScript
+- production build
+- live mobile visual verification for all 6 required screens
+- commit SHA
+- push status
+- Pages status
+
+STOP.
+
+Do not begin another phase.

@@ -13,10 +13,10 @@ import {
 import {
   ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, BALL_COLORS, CLEARANCES, CONFIG, DRILLS,
   ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
-  applySkillUpdate, applyClearanceBallResult, classifyErrorChain, computeConfidence,
-  computeRulesetConfidence, createEnglishEightBallRack, decayRootCauseScore, decisionValue,
-  evaluatePlannedRoute, generateSession, limitingFactor, mixedRulesetSplit, newProfile,
-  selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
+  applySkillUpdate, applyClearanceBallResult, buildTableRenderModel, classifyErrorChain,
+  computeConfidence, computeRulesetConfidence, createEnglishEightBallRack, decayRootCauseScore,
+  decisionValue, evaluatePlannedRoute, generateSession, limitingFactor, mixedRulesetSplit,
+  newProfile, selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
   type Attempt, type ClearanceRouteState, type DiagramVisualRequirement, type LimitingFactors,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type SkillId, type TableMarkings,
 } from "./index";
@@ -2082,4 +2082,165 @@ import {
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, and Phase 4.5 EG–FD all passed ✓");
+// ── FE: Stop-Ball render model contains a visible target-zone primitive ────────
+{
+  const spd1  = DRILLS.find(d => d.id === "spd1");
+  const model = buildTableRenderModel(spd1?.diagram);
+  assert.equal(model.zones.length, 1, "FE: spd1 render model must contain exactly one zone primitive");
+}
+
+// ── FF: Stop-Ball target-zone stroke opacity > 0.5 ───────────────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "spd1")?.diagram);
+  assert.ok((model.zones[0]?.strokeOpacity ?? 0) > 0.5,
+    `FF: spd1 zone stroke opacity must be > 0.5 (got ${model.zones[0]?.strokeOpacity})`);
+}
+
+// ── FG: Simple Follow render model contains visible target zone ──────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pos1")?.diagram);
+  assert.equal(model.zones.length, 1, "FG: pos1 render model must contain one zone primitive");
+}
+
+// ── FH: Simple Follow render model contains cue-ball aim line ────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pos1")?.diagram);
+  assert.ok(model.aimLines.length > 0, "FH: pos1 render model must contain aim lines");
+  assert.ok(model.aimLines.some(al => al.fromId === "CB"),
+    "FH: pos1 aim line must originate from the cue ball (CB)");
+}
+
+// ── FI: Straight Pot render model contains aim line ──────────────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pot1")?.diagram);
+  assert.ok(model.aimLines.length > 0, "FI: pot1 render model must contain an aim line");
+}
+
+// ── FJ: Straight Pot render model targets a middle pocket ────────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pot1")?.diagram);
+  assert.ok(
+    model.targetPocket === "topMiddle" || model.targetPocket === "bottomMiddle",
+    `FJ: pot1 target pocket must be a middle pocket (got "${model.targetPocket}")`);
+}
+
+// ── FK: Straight 8-Ball render model contains cue→black→pocket line ──────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "8b1")?.diagram);
+  assert.ok(model.aimLines.length > 0, "FK: 8b1 render model must contain an aim line");
+  const al = model.aimLines[0];
+  assert.equal(al.fromId,    "CB",        `FK: 8b1 aim line fromId must be "CB" (got "${al.fromId}")`);
+  assert.equal(al.throughId, "BLK",       `FK: 8b1 aim line throughId must be "BLK" (got "${al.throughId}")`);
+  assert.equal(al.toPocket,  "topMiddle", `FK: 8b1 aim line toPocket must be "topMiddle" (got "${al.toPocket}")`);
+}
+
+// ── FL: Straight 8-Ball render model specifies a target pocket ───────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "8b1")?.diagram);
+  assert.ok(model.targetPocket !== null, "FL: 8b1 render model must specify a targetPocket");
+}
+
+// ── FM: Controlled Break render model contains 16 total balls ────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "brk1")?.diagram);
+  assert.equal(model.balls.length, 16,
+    `FM: brk1 render model must contain 16 balls (15 object + 1 cue; got ${model.balls.length})`);
+}
+
+// ── FN: Controlled Break render model: 7R + 7Y + 1BLK + 1 cue ───────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "brk1")?.diagram);
+  assert.equal(model.balls.filter(b => b.group === "red").length,    7, "FN: brk1 must have 7 red primitives");
+  assert.equal(model.balls.filter(b => b.group === "yellow").length, 7, "FN: brk1 must have 7 yellow primitives");
+  assert.equal(model.balls.filter(b => b.group === "black").length,  1, "FN: brk1 must have 1 black primitive");
+  assert.equal(model.balls.filter(b => b.group === "cue").length,    1, "FN: brk1 must have 1 cue primitive");
+}
+
+// ── FO: Controlled Break render model contains a baulk/break line ────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "brk1")?.diagram);
+  assert.ok(model.hasBaulkLine, "FO: brk1 render model must indicate a baulk/break line");
+}
+
+// ── FP: Controlled Break render model contains a baulk shaded area ───────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "brk1")?.diagram);
+  assert.ok(model.hasBaulkArea, "FP: brk1 render model must indicate a baulk shaded area");
+}
+
+// ── FQ: Every cue-ball render primitive uses BALL_COLORS.cue fill ─────────────
+{
+  for (const d of DRILLS.filter(x => x.diagram)) {
+    const model = buildTableRenderModel(d.diagram);
+    for (const b of model.balls.filter(x => x.group === "cue")) {
+      assert.equal(b.fill, BALL_COLORS.cue,
+        `FQ: ${d.id} cue ball fill must equal BALL_COLORS.cue (got "${b.fill}")`);
+    }
+  }
+}
+
+// ── FR: No authored non-cue ball primitive may use the cue fill ───────────────
+{
+  for (const d of DRILLS.filter(x => x.diagram)) {
+    const model = buildTableRenderModel(d.diagram);
+    for (const b of model.balls.filter(x => x.group !== "cue")) {
+      assert.notEqual(b.fill, BALL_COLORS.cue,
+        `FR: ${d.id} ball ${b.id} (group=${b.group}) must not use the cue fill "${BALL_COLORS.cue}"`);
+    }
+  }
+}
+
+// ── FS: Problem-Ball render model contains exactly one cue ball ───────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pbe1")?.diagram);
+  const cues  = model.balls.filter(b => b.group === "cue");
+  assert.equal(cues.length, 1, `FS: pbe1 render model must have exactly 1 cue ball (found ${cues.length})`);
+}
+
+// ── FT: Problem-Ball cue ball fill is off-white ───────────────────────────────
+{
+  const model = buildTableRenderModel(DRILLS.find(d => d.id === "pbe1")?.diagram);
+  const cb    = model.balls.find(b => b.group === "cue");
+  assert.equal(cb?.fill, BALL_COLORS.cue,
+    `FT: pbe1 cue ball fill must be BALL_COLORS.cue (got "${cb?.fill}")`);
+}
+
+// ── FU: Every required training visual appears after the cloth in render order ─
+{
+  const trainLayers = ["targetZone","aimLines","targetPocket",
+                       "tablemark_baulkArea","tablemark_baulkLine","tablemark_blackSpot"];
+  for (const d of DRILLS.filter(x => x.diagram?.requiresVisuals?.length)) {
+    const model     = buildTableRenderModel(d.diagram);
+    const clothIdx  = model.renderOrder.indexOf("cloth");
+    for (const layer of model.renderOrder.filter(l => trainLayers.includes(l))) {
+      assert.ok(model.renderOrder.indexOf(layer) > clothIdx,
+        `FU: ${d.id} layer "${layer}" must appear after "cloth" in renderOrder`);
+    }
+  }
+}
+
+// ── FV: Every assessment authored drill passes render-model validation ─────────
+{
+  const reqToLayer: Record<string, string | null> = {
+    targetZone: "targetZone", aimLine: "aimLines", targetPocket: "targetPocket",
+    baulkArea: "tablemark_baulkArea", rack: null,
+  };
+  for (const d of ASSESSMENT_ITEMS) {
+    if (!d.diagram) continue;
+    const model = buildTableRenderModel(d.diagram);
+    // 1. Exactly one cue ball with correct fill
+    const cues = model.balls.filter(b => b.group === "cue");
+    assert.equal(cues.length, 1, `FV: ${d.id} must have exactly 1 cue ball (found ${cues.length})`);
+    assert.equal(cues[0].fill, BALL_COLORS.cue, `FV: ${d.id} cue ball fill must equal BALL_COLORS.cue`);
+    // 2. Required visual layers present in renderOrder
+    for (const req of d.diagram.requiresVisuals ?? []) {
+      const layer = reqToLayer[req];
+      if (layer) {
+        assert.ok(model.renderOrder.includes(layer),
+          `FV: ${d.id} renderOrder must include "${layer}" (required by requiresVisuals: "${req}")`);
+      }
+    }
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, and Phase 4.6 FE–FV all passed ✓");

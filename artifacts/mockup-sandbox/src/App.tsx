@@ -228,26 +228,27 @@ function EmptyState({ icon, title, body }: { icon?: string; title: string; body:
 type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string; opacity?: number; trainingLabel?: string };
 
 function PoolTable({
-  width = 280,
-  balls = [],
-  targetBalls = [],
+  width = 260,
+  diagram,
+  balls: legacyBalls = [],
   selectedBall = null,
   routeSegments = [],
-  targetZone,
-  tableMarkings,
-  targetPocket,
-  aimLines = [],
 }: {
   width?: number;
+  /** Authoritative training diagram — balls, zones, aim lines, pockets, markings derived here. */
+  diagram?: TrainingDiagram | null;
+  /** Legacy/fallback balls used only when diagram is absent (clearance screens). */
   balls?: BallSpec[];
-  targetBalls?: string[];
   selectedBall?: string | null;
   routeSegments?: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }>;
-  targetZone?: { x: number; y: number; width: number; height: number };
-  tableMarkings?: TableMarkings;
-  targetPocket?: PocketId;
-  aimLines?: AimLine[];
 }) {
+  // Authored diagram is always authoritative — never mixed with fallback balls
+  const balls         = diagram ? diagramToBalls(diagram, width) : legacyBalls;
+  const targetZone    = diagram?.targetZone;
+  const tableMarkings = diagram?.tableMarkings;
+  const targetPocket  = diagram?.targetPocket;
+  const aimLines      = diagram?.aimLines ?? [];
+
   const h   = width * 0.56;
   const pW  = width * 0.08;
   const bX  = pW, bY = pW * 0.85;
@@ -285,6 +286,9 @@ function PoolTable({
       <marker id="routeArrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto">
         <polygon points="0 0, 5 2.5, 0 5" fill={COLORS.primaryDark} opacity={0.65} />
       </marker>
+      <marker id="aimArrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <polygon points="0 0, 7 3.5, 0 7" fill="rgba(255,255,255,0.85)" />
+      </marker>
     </defs>
 
     {/* ── 1. Table shell ── */}
@@ -319,30 +323,30 @@ function PoolTable({
       stroke="#F2F0E8" strokeOpacity={0.16} strokeWidth={1}
     />}
 
-    {/* ── 3. Target zone (coaching area — visibly shaded + bordered) ── */}
+    {/* ── 3. Target zone — amber/gold styling, plainly visible on teal cloth ── */}
     {targetZone && <>
       <rect
         x={bX + (targetZone.x / 100) * bW}
         y={bY + (targetZone.y / 100) * bH}
         width={(targetZone.width / 100) * bW}
         height={(targetZone.height / 100) * bH}
-        fill="rgba(255,255,255,0.18)"
-        stroke="#F2F0E8"
-        strokeWidth={1.8}
-        strokeDasharray="4,3"
-        strokeOpacity={0.75}
+        fill="rgba(255,245,150,0.24)"
+        stroke="#E0B84C"
+        strokeWidth={2}
+        strokeDasharray="6,4"
+        strokeOpacity={0.90}
         rx={2}
       />
       <text
         x={bX + (targetZone.x / 100) * bW + ((targetZone.width / 100) * bW) / 2}
         y={bY + (targetZone.y / 100) * bH + ((targetZone.height / 100) * bH) / 2}
         textAnchor="middle" dominantBaseline="central"
-        fontSize={6} fill="#F2F0E8" fillOpacity={0.65}
+        fontSize={7} fill="#E0B84C" fillOpacity={0.92}
         fontFamily="'IBM Plex Mono', monospace" letterSpacing={0.5}
-      >TARGET</text>
+      >TARGET ZONE</text>
     </>}
 
-    {/* ── 4. Aim / potting lines (instructional shot geometry) ── */}
+    {/* ── 4. Aim / potting lines — bright white, high contrast on teal cloth ── */}
     {aimLines.map((al, i) => {
       const fromB = balls.find(b => b.label === al.fromBallId);
       const thruB = al.throughBallId ? balls.find(b => b.label === al.throughBallId) : null;
@@ -350,18 +354,19 @@ function PoolTable({
       if (!fromB) return null;
       const dash  = al.style !== "solid";
       const fx = fromB.x * width, fy = fromB.y * h;
-      const segs: [number, number, number, number][] = [];
+      const segs: [number, number, number, number, boolean][] = [];
       if (thruB) {
         const tx = thruB.x * width, ty = thruB.y * h;
-        segs.push([fx, fy, tx, ty]);
-        if (pPos) segs.push([tx, ty, pPos[0], pPos[1]]);
+        segs.push([fx, fy, tx, ty, false]);
+        if (pPos) segs.push([tx, ty, pPos[0], pPos[1], true]);
       } else if (pPos) {
-        segs.push([fx, fy, pPos[0], pPos[1]]);
+        segs.push([fx, fy, pPos[0], pPos[1], true]);
       }
-      return segs.map(([x1, y1, x2, y2], j) => <line
+      return segs.map(([x1, y1, x2, y2, withArrow], j) => <line
         key={`al-${i}-${j}`} x1={x1} y1={y1} x2={x2} y2={y2}
-        stroke="#F2F0E8" strokeOpacity={0.42} strokeWidth={1.4}
-        strokeDasharray={dash ? "5,3" : undefined}
+        stroke="rgba(255,255,255,0.85)" strokeWidth={1.5}
+        strokeDasharray={dash ? "5,4" : undefined}
+        markerEnd={withArrow ? "url(#aimArrow)" : undefined}
       />);
     })}
 
@@ -412,12 +417,12 @@ function PoolTable({
       />;
     })}
 
-    {/* ── 8. Target pocket emphasis (gold ring — rendered last, on top of pocket) ── */}
+    {/* ── 8. Target pocket emphasis — gold ring rendered above pocket, clearly visible ── */}
     {targetPocket && (() => {
       const [px, py] = pocketMap[targetPocket];
       return <>
-        <circle cx={px} cy={py} r={pR * 1.65} fill="none" stroke={COLORS.gold} strokeWidth={2.0} strokeOpacity={0.82} />
-        <circle cx={px} cy={py} r={pR * 1.95} fill="none" stroke={COLORS.gold} strokeWidth={0.9} strokeOpacity={0.38} />
+        <circle cx={px} cy={py} r={pR * 1.65} fill="none" stroke={COLORS.gold} strokeWidth={3} strokeOpacity={0.90} />
+        <circle cx={px} cy={py} r={pR * 2.00} fill="none" stroke={COLORS.gold} strokeWidth={1} strokeOpacity={0.42} />
       </>;
     })()}
   </svg>;
@@ -880,13 +885,11 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
   };
 
   if (drill.type === "execution") {
-    const execBalls = drill.diagram ? diagramToBalls(drill.diagram) : [
-      { x: 0.35, y: 0.50, color: BALL.cue, highlight: true },
-      { x: 0.62, y: 0.44, color: BALL.red, highlight: true },
-    ];
     return <div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
-        <PoolTable width={260} balls={execBalls} targetZone={drill.diagram?.targetZone} tableMarkings={drill.diagram?.tableMarkings} targetPocket={drill.diagram?.targetPocket} aimLines={drill.diagram?.aimLines ?? []} />
+        {drill.diagram
+          ? <PoolTable width={260} diagram={drill.diagram} />
+          : <ExecDrillDiagram />}
       </div>
       <Card>
         {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
@@ -922,11 +925,10 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
   }
 
   if (!feedback) {
-    const decBalls  = drill.diagram ? diagramToBalls(drill.diagram) : null;
     const hasLabels = drill.diagram?.balls.some(b => b.trainingLabel);
     return <div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: hasLabels ? SP.xs : SP.lg, padding: "0 8px" }}>
-        {decBalls ? <PoolTable width={260} balls={decBalls} /> : <DecisionDrillDiagram />}
+        {drill.diagram ? <PoolTable width={260} diagram={drill.diagram} /> : <DecisionDrillDiagram />}
       </div>
       {hasLabels && (
         <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 0.5, marginBottom: SP.md, textAlign: "center" }}>
@@ -959,16 +961,15 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
 
   const tier    = TIER_LABELS[feedback.option.tier] ?? TIER_LABELS["acceptable"];
   const seq     = feedback.option.sequence;
-  const fbBalls = drill.diagram ? diagramToBalls(drill.diagram) : null;
   const routeSegs: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }> = seq
     ? seq.filter(s => s.positionFor && s.positionFor !== "pocket")
          .map(s => ({ fromBallId: s.ballId, toBallId: s.positionFor!, type: "cueBallRoute" as const }))
     : [];
 
   return <div>
-    {fbBalls && (
+    {drill.diagram && (
       <div style={{ alignItems: "center", display: "flex", flexDirection: "column", marginBottom: SP.md }}>
-        <PoolTable width={260} balls={fbBalls} routeSegments={routeSegs} />
+        <PoolTable width={260} diagram={drill.diagram} routeSegments={routeSegs} />
         {seq && seq.length > 0 && (
           <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginTop: SP.sm }}>
             {seq.map((step, i) => {

@@ -475,6 +475,118 @@ export function validateDrillDiagramIntegrity(drill: Drill): { valid: boolean; e
   return { valid: errors.length === 0, errors };
 }
 
+// ─── Render-model types and builder (pure — no DOM, no React) ────────────────
+
+export type BallRenderPrimitive = {
+  id:      string;
+  group:   TrainingBall["group"];
+  /** Canonical fill resolved from BALL_COLORS — never from arbitrary input. */
+  fill:    string;
+  x:       number;   // diagram % (0–100)
+  y:       number;   // diagram % (0–100)
+  opacity: number;
+};
+
+export type ZonePrimitive = {
+  x: number; y: number; width: number; height: number;
+  fill:          string;
+  stroke:        string;
+  strokeOpacity: number;
+  label?:        string;
+};
+
+export type AimLinePrimitive = {
+  fromId:        string;
+  throughId?:    string;
+  toPocket?:     PocketId;
+  style:         "solid" | "dashed";
+  stroke:        string;
+  strokeOpacity: number;
+};
+
+export type TableRenderModel = {
+  balls:        BallRenderPrimitive[];
+  zones:        ZonePrimitive[];
+  aimLines:     AimLinePrimitive[];
+  targetPocket: PocketId | null;
+  hasMarkings:  boolean;
+  hasBaulkLine: boolean;
+  hasBaulkArea: boolean;
+  hasBlackSpot: boolean;
+  hasRack:      boolean;
+  /** Layer names in render order — every required training visual must appear after "cloth". */
+  renderOrder:  string[];
+};
+
+/**
+ * Convert a TrainingDiagram into render primitives with resolved styles.
+ * Pure function — no DOM, no React, safe to call in tests.
+ */
+export function buildTableRenderModel(diagram: TrainingDiagram | undefined | null): TableRenderModel {
+  if (!diagram) {
+    return {
+      balls: [], zones: [], aimLines: [], targetPocket: null,
+      hasMarkings: false, hasBaulkLine: false, hasBaulkArea: false,
+      hasBlackSpot: false, hasRack: false, renderOrder: ["cloth"],
+    };
+  }
+
+  const balls: BallRenderPrimitive[] = diagram.balls.map(b => ({
+    id:      b.id,
+    group:   b.group,
+    fill:    b.group === "cue"   ? BALL_COLORS.cue
+           : b.group === "black" ? BALL_COLORS.black
+           : b.group === "red"   ? BALL_COLORS.red
+           :                       BALL_COLORS.yellow,
+    x:       b.x,
+    y:       b.y,
+    opacity: b.role === "obstacle" ? 0.55 : 1,
+  }));
+
+  const zones: ZonePrimitive[] = diagram.targetZone ? [{
+    x: diagram.targetZone.x, y: diagram.targetZone.y,
+    width: diagram.targetZone.width, height: diagram.targetZone.height,
+    fill:          "rgba(255,245,150,0.24)",
+    stroke:        "#E0B84C",
+    strokeOpacity: 0.90,
+    label:         "TARGET ZONE",
+  }] : [];
+
+  const aimLines: AimLinePrimitive[] = (diagram.aimLines ?? []).map(al => ({
+    fromId:        al.fromBallId,
+    throughId:     al.throughBallId,
+    toPocket:      al.toPocket,
+    style:         al.style ?? "dashed",
+    stroke:        "rgba(255,255,255,0.85)",
+    strokeOpacity: 0.85,
+  }));
+
+  const tm           = diagram.tableMarkings;
+  const hasBaulkLine = !!(tm?.showBaulkLine || tm?.showBreakLine);
+  const hasBaulkArea = !!tm?.showBaulkArea;
+  const hasBlackSpot = !!tm?.showBlackSpot;
+  const hasMarkings  = hasBaulkLine || hasBaulkArea || hasBlackSpot || !!(tm?.showRackLine);
+  const hasRack      = !!diagram.rack;
+
+  const renderOrder: string[] = [
+    "cloth",
+    ...(hasBaulkArea    ? ["tablemark_baulkArea"] : []),
+    ...(hasBaulkLine    ? ["tablemark_baulkLine"] : []),
+    ...(hasBlackSpot    ? ["tablemark_blackSpot"] : []),
+    ...(zones.length    ? ["targetZone"]          : []),
+    ...(aimLines.length ? ["aimLines"]            : []),
+    "balls",
+    ...(diagram.targetPocket ? ["targetPocket"]   : []),
+  ];
+
+  return {
+    balls, zones, aimLines,
+    targetPocket:  diagram.targetPocket ?? null,
+    hasMarkings, hasBaulkLine, hasBaulkArea, hasBlackSpot, hasRack,
+    renderOrder,
+  };
+}
+
 // ─── Decision option helpers ──────────────────────────────────────────────────
 
 const opt = (label: string, tier: DecisionTier, rationale: string, risk: DecisionOption["risk"]): DecisionOption =>
