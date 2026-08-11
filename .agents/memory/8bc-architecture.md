@@ -5,35 +5,63 @@ description: Phase delivery status, key architecture decisions, and build/test c
 
 ## Phase delivery
 
-- **Phase 1** — COMPLETE. Committed `af56e95`. Adaptive engine, drills, clearances, UI. Tests A–O passing.
-- **Phase 2** — COMPLETE. Committed `db3e0b8`. Multi-ruleset foundation: Blackball/International rule helpers, mixed-mode session generation, per-ruleset confidence tracking. Tests P–X, Y–AD, rules helpers passing.
-- **Phase 2.1** — COMPLETE. Committed `3ea2d3e`, pushed. 20 integrity fixes + tests AE–AV (all 73 tests A–AV passing).
-- **Phase 3** — COMPLETE. Committed `aaa3a1d`. Real-match adaptive coaching intelligence. Tests AW–BN (111 total tests passing).
-- **Phase 3.1** — COMPLETE. Committed `09a3404`, pushed to `origin/main`. Integrity patch. Tests BO–BZ (149 total tests passing).
+- **Phase 1** — COMPLETE. Adaptive engine, drills, clearances, UI. Tests A–O.
+- **Phase 2** — COMPLETE. Multi-ruleset: Blackball/International helpers, mixed mode, confidence tracking. Tests P–AD.
+- **Phase 2.1** — COMPLETE. 20 integrity fixes, tests AE–AV. 73 total.
+- **Phase 3** — COMPLETE. Real-match adaptive coaching intelligence. Tests AW–BN. 111 total.
+- **Phase 3.1** — COMPLETE. Integrity patch. Tests BO–BZ. 149 total.
+- **Phase 4** — COMPLETE. Committed `88e28c7`, pushed to `origin/main`. Premium UX/UI redesign. Display helper tests CA–CJ. 159 total tests.
+
+## Phase 4 scope (UX/UI redesign — engine FROZEN)
+
+- **Design system**: Refined cue-sports palette (bg `#0d1a14`, panel `#152019`, panel2 `#1b2c22`, brass `#c49b58`, chalk `#5d99b2`, rust `#a04840`, green `#3a7758`); spacing constants `SP`; radius constants `R`.
+- **Navigation**: TODAY / MATCHES / TRAIN / PROGRESS / MORE (was Today/Matches/Library/Progress/Rules). `NAV_ITEMS` array with `target` view; `navTab()` maps all sub-views. TRAIN tab → `pickTime`, MORE tab → `settings`.
+- **Nav hidden during**: `["session", "assessment"]` (HIDE_NAV). `session` view gets its own lean shell without bottom nav.
+- **AppShell**: Separate slim header for session view; mode badge in header; safe-area bottom padding.
+- **Onboarding**: 3 screens — brand/hero, "how it works" numbered list, rules picker.
+- **Dashboard**: Hero card with coaching reason quote; secondary grid (current focus, session mix); recent match card with `matchCoachingLine()`; recent sessions; skill profile link.
+- **PickTime**: Shows current LF priority above duration chips; "Browse drill library" secondary link.
+- **Pool table SVG**: `PoolTable` component — proper proportions, 6 pockets, baize surface, frame rail, ball specs with radial gradient highlights. Replaces old crude `TableDiagram`. `ExecDrillDiagram` and `DecisionDrillDiagram` convenience components.
+- **DrillRunner**: Full-screen layout — diagram above, card below; tier labels use `TIER_LABELS` map; decision options styled as full-width cards.
+- **ClearanceRunner**: SVG pool table with colored balls; "Just Play" option alongside "Confirm Plan"; improved plan UI with numbered items.
+- **SessionRunner**: Ruleset transition card shows "NEXT / INTERNATIONAL RULES" / "NEXT / BLACKBALL" with Bebas display; progress bar with %.
+- **Summary**: 4 sections — What held up well / What limited you / Key insight / What changes next. Two CTAs: Return to Today + View Progress.
+- **LogFrameView**: "Did you win the frame?" → big Won/Lost targets (80px min-height). Lost → grid of category tiles. Impact simplified to 3 choices: Minor / Important / Frame-deciding (mapped via `displayToImpact`).
+- **MatchActiveView**: 72px score hero; two large frame buttons (Won/Lost, 64px); secondary grid for Edit Last + View Frames; W/L badges in frame log.
+- **MatchHistoryView**: Match cards with score, ruleset badge, competition badge, outcome, coaching line; empty state with 🎱 icon.
+- **MatchCompleteView**: Centred large score; MATCH WON/LOST; 4 cards (Takeaway / Key Issues / Training vs Match / What Changes Next).
+- **ProgressView**: Focus card first; radar; balance bars; Shot-Making section (exec skills); Table-Reading section (decision skills); skill cards with rating, level, trend, confidence display, progress bar, ruleset breakdown for mixed.
+- **LibraryView**: Filter tabs (All/Execution/Decision); priority badge on skill groups; ruleset badge per drill.
+- **SettingsView** (MORE tab): Renamed; includes training mode selector, rules notes, drill library link, reset.
+- **EmptyState** component: icon + title + body pattern.
+- **RulesBadge**: Now has subtle background tint (`#22` alpha), border, and colour-matched text (brass for BB, chalk for INT).
+
+## Display helpers (pure, exported from App.tsx, tested CA–CJ)
+
+| Helper | Maps |
+|--------|------|
+| `ratingLevel(n)` | 0–34 Foundation → 86+ Elite (6 bands) |
+| `confidenceDisplay(tier, stale)` | Low/Emerging/Established/Strong → plain copy; stale overrides |
+| `rulesetBadgeLabel(ruleset)` | "BLACKBALL" / "INTERNATIONAL" |
+| `impactLabel(impact)` | low/medium/high → Minor/Important; decisive → Frame-deciding |
+| `displayToImpact(display)` | Minor → low; Important → high; Frame-deciding → decisive |
+| `matchCoachingLine(match)` | One-line coaching takeaway for match cards |
+
+## Key architectural decisions — Phase 4
+
+- Engine, match, rules, persistence modules are **completely unchanged**.
+- All state and handlers in `App()` are **unchanged** — only JSX/styles redesigned.
+- `PickTime` now receives `profile` and `matches` props to compute LF for priority display (presentation only).
+- `Summary` now receives `onProgress` prop to navigate directly to progress view.
+- `SettingsView` now receives `onLibrary` prop for library shortcut.
+- No new npm dependencies added.
+- `displayToImpact` replaces the 4-option impact grid with 3-option simplified choices (Minor/Important/Frame-deciding). Internally maps to `low`/`high`/`decisive` — `"medium"` impact is no longer selectable via UI (existing stored data unaffected).
 
 ## Phase 3.1 scope (three integrity fixes)
 
-1. **Root-cause guessing removed** — `inferMatchCause` no longer maps plain `missed_pot` → "positional". Plain missed pot stays as direct potting issue (`inferredCause = null`). Upstream causes only inferred when optional `precededBy` field is provided with structured evidence.
-2. **Edit Last Frame is now non-destructive** — Phase 3 deleted the frame then re-logged it (unsafe). Phase 3.1 uses true edit semantics: frame preserved in state, `EditFrameView` opens with preloaded values, `editFrame()` only called on Save; Cancel is fully non-destructive.
-3. **Mixed Training uses match-derived ruleset evidence** — `matchAwareMixedSplit(profile, matches, now)` blends training split with ruleset-specific match error boosts; `computeRulesetMatchBoost(matches, ruleset, now)` aggregates decision-skill evidence per ruleset; `generateAdaptiveSession` passes `splitOverride` into `generateSession`.
-
-## Phase 3 scope
-
-- `src/match/index.ts` — full match module: types, MATCH_CONFIG, FRAME_LOSS_CATEGORIES (12), POSITIVE_EVENT_TYPES (6), all pure functions
-- `src/persistence/matchStorage.ts` — `loadMatches()` / `saveMatches()` using `"8bc:matches"` key
-- `src/engine/index.ts` — `generateSession` accepts `options?: { lfOverride?: LimitingFactors; splitOverride?: { blackball; international } }`
-- `src/App.tsx` — Matches tab (5-item nav), 7 match sub-views (including `matchEditFrame`), match+editFrame state + actions, `generateAdaptiveSession` replaces `generateSession` in `startSession`
-- Tests AW–BN (38 tests); BO–BZ (38 tests); 149 total tests A–BZ, all passing.
-
-## Key architectural decisions — Phase 3.1
-
-- **`inferMatchCause(category, skillId, precededBy?)`** — takes optional `precededBy`; `PRECEDED_BY_SKILL` map converts "poor_position" → "positional", "poor_speed" → "speed", etc. No inference without structured evidence.
-- **`FrameEvent.precededBy?: string`** — optional upstream context field; stored on the event for round-trip persistence.
-- **`EditFrameView`** — separate component from `LogFrameView`; preloads `frame.result`, `frame.keyEvents[0]?.category`, `frame.keyEvents[0]?.impact`. Save calls `saveFrameEdit()` → `editFrame()`. Cancel navigates back without any state mutation.
-- **`editLastFrame`** — now sets `editFrameId` and navigates to `"matchEditFrame"`. NO deletion, NO mutation.
-- **`computeRulesetMatchBoost(matches, ruleset, now)`** — sums decayed boost across all decision skills for one ruleset.
-- **`matchAwareMixedSplit`** — blends `mixedRulesetSplit(profile)` with match error fractions; influence scales with evidence volume (capped 30%); floor 25% always preserved.
-- **`generateAdaptiveSession`** — now also passes `splitOverride` for mixed mode.
+1. **Root-cause guessing removed** — `inferMatchCause` no longer maps plain `missed_pot` → "positional". Plain missed pot stays as direct potting issue (`inferredCause = null`). Upstream causes only inferred when optional `precededBy` field is provided.
+2. **Edit Last Frame is non-destructive** — `editLastFrame()` sets `editFrameId` and navigates to `matchEditFrame`. No deletion, no mutation. `editFrame()` only called on Save; Cancel is fully non-destructive.
+3. **Mixed Training uses match-derived ruleset evidence** — `matchAwareMixedSplit(profile, matches, now)` blends training split with ruleset-specific match error boosts; `generateAdaptiveSession` passes `splitOverride` for mixed mode.
 
 ## Key architectural decisions — Phases 1–3
 
@@ -49,7 +77,7 @@ description: Phase delivery status, key architecture decisions, and build/test c
 # Type-check
 cd artifacts/mockup-sandbox && npx tsc --noEmit
 
-# Tests (149 tests, A–BZ)
+# Tests (159 tests, A–BZ + CA–CJ)
 pnpm --filter @workspace/mockup-sandbox run test:engine
 
 # Full production build
@@ -59,6 +87,6 @@ cd artifacts/mockup-sandbox && PORT=3000 BASE_PATH=/mockup-sandbox pnpm run buil
 ## Import gotchas
 
 - `updateRulesMode` must be imported from `../persistence/profileStorage` in tests (not from engine)
-- `evaluatePlannedRoute`, `applyClearanceBallResult`, `ADAPTATION_SKILL_MAP`, `buildRootCauseEvents`, `selectMaintenanceSkill`, `decayRootCauseScore`, `ROOT_CAUSE_CONFIDENCE_MAP`, `LimitingFactors`, `mixedRulesetSplit` all exported from `./engine/index.ts`
-- Match module exports: `buildFrameEvent`, `buildMatchSummary`, `computeMatchPriorityBoost`, `computeRulesetMatchBoost`, `matchAwareLimitingFactor`, `matchAwareMixedSplit`, `generateAdaptiveSession`, `createMatch`, `addFrame`, `editFrame`, `deleteFrameFromMatch`, `completeMatch`, `deleteMatch`, `frameScore`, `FRAME_LOSS_CATEGORIES`, `POSITIVE_EVENT_TYPES` from `./match`
+- Display helpers (`ratingLevel`, `confidenceDisplay`, `rulesetBadgeLabel`, `impactLabel`, `displayToImpact`) are exported from `../App` — referenced in engine.test.ts
+- Match module exports: `buildFrameEvent`, `buildMatchSummary`, `computeMatchPriorityBoost`, `computeRulesetMatchBoost`, `matchAwareLimitingFactor`, `matchAwareMixedSplit`, `generateAdaptiveSession`, `createMatch`, `addFrame`, `editFrame`, `deleteFrameFromMatch`, `completeMatch`, `deleteMatch`, `frameScore`, `FRAME_LOSS_CATEGORIES`, `POSITIVE_EVENT_TYPES`
 - `App.tsx` imports `type FrameEvent, type Frame` from `./match` (needed for `saveFrameEdit` and `EditFrameView`)
