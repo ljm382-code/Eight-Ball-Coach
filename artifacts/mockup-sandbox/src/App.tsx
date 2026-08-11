@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
-import { Check, ChevronRight, Play, RotateCcw, TrendingDown, TrendingUp, Minus, X } from "lucide-react";
+import { Check, ChevronRight, Play, RotateCcw, TrendingDown, TrendingUp, Minus, X, BookOpen, Settings, Dumbbell, Trophy } from "lucide-react";
 import {
   ADAPTATION_SKILL_MAP, ASSESSMENT_CLEARANCE, ASSESSMENT_ITEMS, CLEARANCES, DRILLS,
   ERROR_CODES, RULESETS, SKILLS, SKILL_MAP,
@@ -21,74 +21,459 @@ import {
 } from "./match";
 import { getLegalBalls, isEightBallLegal } from "./rules";
 
-// ─── View types and palette ────────────────────────────────────────────────────
+// ─── View types ────────────────────────────────────────────────────────────────
 type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings" | "matches" | "matchSetup" | "matchActive" | "matchLogFrame" | "matchEditFrame" | "matchComplete" | "matchDetail";
-const C = { bg: "#0e1a15", panel: "#16261e", panel2: "#1d3025", line: "#2a4436", ink: "#edeae1", dim: "#9fb3a8", brass: "#c9a15a", chalk: "#6fa8c9", rust: "#b5533c", green: "#4e8b6b" };
+
+// ─── Design tokens ─────────────────────────────────────────────────────────────
+const C = {
+  bg:     "#0d1a14",
+  panel:  "#152019",
+  panel2: "#1b2c22",
+  panel3: "#223528",
+  line:   "#2b4035",
+  ink:    "#ede9de",
+  dim:    "#8aaa99",
+  muted:  "#607a6e",
+  brass:  "#c49b58",
+  brassD: "#9c7540",
+  chalk:  "#5d99b2",
+  rust:   "#a04840",
+  green:  "#3a7758",
+  greenD: "#285440",
+};
+const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
+const R  = { sm: 8, md: 12, lg: 16, xl: 24 } as const;
+
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
-const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings", matches: "Match History", matchSetup: "New Match", matchActive: "Match in Progress", matchLogFrame: "Log Frame", matchEditFrame: "Edit Frame", matchComplete: "Match Summary", matchDetail: "Match Detail" };
-/** Map a view to its parent nav tab so sub-views highlight the right nav item. */
+
+// ─── Display helpers (pure, UI-only) ──────────────────────────────────────────
+/** Map a numeric rating to a readable skill level label. */
+export function ratingLevel(rating: number): string {
+  if (rating < 35) return "Foundation";
+  if (rating < 50) return "Developing";
+  if (rating < 62) return "Intermediate";
+  if (rating < 74) return "Advanced";
+  if (rating < 86) return "Competitive";
+  return "Elite";
+}
+
+/** Map a confidence tier + stale flag to coaching-friendly copy. */
+export function confidenceDisplay(tier: string, stale: boolean): string {
+  if (stale) return "Evidence is stale — train to refresh";
+  if (tier === "Low")         return "Still learning your game";
+  if (tier === "Emerging")    return "Getting a clearer picture";
+  if (tier === "Established") return "Strong evidence";
+  if (tier === "Strong")      return "Strong evidence";
+  return "Still learning your game";
+}
+
+/** Map a ruleset ID to its badge label. */
+export function rulesetBadgeLabel(ruleset: RuleSetId): string {
+  return ruleset === "blackball" ? "BLACKBALL" : "INTERNATIONAL";
+}
+
+/** Map FrameImpact to user-friendly language. */
+export function impactLabel(impact: FrameImpact): string {
+  if (impact === "low")      return "Minor";
+  if (impact === "medium")   return "Important";
+  if (impact === "high")     return "Important";
+  if (impact === "decisive") return "Frame-deciding";
+  return impact;
+}
+
+/** Map simplified user choice back to FrameImpact. */
+export function displayToImpact(display: "Minor" | "Important" | "Frame-deciding"): FrameImpact {
+  if (display === "Minor")          return "low";
+  if (display === "Frame-deciding") return "decisive";
+  return "high";
+}
+
+/** Generate a one-line coaching takeaway for a completed match card. */
+export function matchCoachingLine(match: Match): string {
+  const lostEvents = match.frames.flatMap(f => f.keyEvents).filter(e => e.type === "error");
+  if (!lostEvents.length) return "Clean match — no significant errors logged.";
+  const bySkill = lostEvents.reduce<Record<string, number>>((acc, e) => {
+    if (e.skillId) { acc[e.skillId] = (acc[e.skillId] ?? 0) + 1; } return acc;
+  }, {});
+  const [topId] = Object.entries(bySkill).sort((a, b) => b[1] - a[1])[0] ?? [];
+  const name = topId ? SKILL_MAP[topId as SkillId]?.name ?? topId : null;
+  const count = topId ? bySkill[topId] : 0;
+  if (!name) return "Errors logged — see match detail.";
+  const lostFrames = match.frames.filter(f => f.result === "lost").length;
+  if (count >= 2 && lostFrames > 0) return `${name} was involved in ${count} of your lost frames.`;
+  return `${name} was the main challenge this match.`;
+}
+
+// ─── Nav structure ─────────────────────────────────────────────────────────────
+const NAV_ITEMS = [
+  { id: "today",    label: "Today",    icon: "◈", target: "dashboard" as View },
+  { id: "matches",  label: "Matches",  icon: "◉", target: "matches"   as View },
+  { id: "train",    label: "Train",    icon: "◆", target: "pickTime"  as View },
+  { id: "progress", label: "Progress", icon: "◇", target: "progress"  as View },
+  { id: "more",     label: "More",     icon: "…",  target: "settings"  as View },
+] as const;
+
+/** Map a view to its parent nav tab ID. */
 function navTab(view: View): string {
-  if (["matchSetup", "matchActive", "matchLogFrame", "matchEditFrame", "matchComplete", "matchDetail"].includes(view)) return "matches";
+  if (["matchSetup","matchActive","matchLogFrame","matchEditFrame","matchComplete","matchDetail"].includes(view)) return "matches";
+  if (["library","pickTime"].includes(view)) return "train";
+  if (view === "settings") return "more";
+  if (["dashboard","provisional","summary"].includes(view)) return "today";
+  if (view === "progress") return "progress";
   return view;
 }
 
+/** Views where bottom nav is hidden (full-focus flows). */
+const HIDE_NAV: View[] = ["session", "assessment"];
+
 // ─── Shared UI primitives ──────────────────────────────────────────────────────
-function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
-  return <section style={{ background: C.panel, border: `1px solid ${C.line}`, borderRadius: 14, padding: 18, ...style }}>{children}</section>;
-}
-function Label({ children }: { children: ReactNode }) {
-  return <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1, marginBottom: 7, textTransform: "uppercase" }}>{children}</div>;
-}
-function Button({ children, onClick, variant = "default", disabled = false, style }: { children: ReactNode; onClick?: () => void; variant?: "default" | "primary" | "success" | "danger" | "ghost"; disabled?: boolean; style?: CSSProperties }) {
-  const styles: Record<string, CSSProperties> = {
-    default: { background: C.panel2, border: `1px solid ${C.line}`, color: C.ink },
-    primary: { background: C.brass, color: C.bg },
-    success: { background: "#245c3e", color: C.ink },
-    danger:  { background: "#5c2f26", color: C.ink },
-    ghost:   { background: "transparent", color: C.dim },
+function Card({ children, style, onClick }: { children: ReactNode; style?: CSSProperties; onClick?: () => void }) {
+  const base: CSSProperties = {
+    background: C.panel, border: `1px solid ${C.line}`, borderRadius: R.lg,
+    padding: SP.lg, transition: "border-color .15s",
   };
-  return <button disabled={disabled} onClick={onClick} style={{ alignItems: "center", borderRadius: 10, cursor: disabled ? "not-allowed" : "pointer", display: "flex", fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 600, justifyContent: "center", minHeight: 46, opacity: disabled ? .5 : 1, padding: "12px 15px", width: "100%", ...styles[variant], ...style }}>{children}</button>;
+  return onClick
+    ? <button onClick={onClick} style={{ ...base, cursor: "pointer", textAlign: "left", width: "100%", ...style }}>{children}</button>
+    : <section style={{ ...base, ...style }}>{children}</section>;
 }
-function ProgressBar({ value, color = C.brass }: { value: number; color?: string }) {
-  return <div style={{ background: C.panel2, borderRadius: 5, height: 7, overflow: "hidden" }}><div style={{ background: color, height: "100%", transition: "width .35s ease", width: `${Math.max(0, Math.min(100, value))}%` }} /></div>;
+
+function SectionLabel({ children }: { children: ReactNode }) {
+  return <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1.4, marginBottom: SP.sm, textTransform: "uppercase" }}>{children}</div>;
 }
-function TableDiagram({ balls = [], size = 70 }: { balls?: { color?: string }[]; size?: number }) {
-  return <svg height={size} viewBox="0 0 170 100" width={size * 1.7}><rect fill={C.panel2} height="92" rx="6" stroke={C.brass} strokeWidth="2" width="162" x="4" y="4" />{[[6,6],[83,3],[160,6],[6,90],[83,96],[160,90]].map(([cx,cy],i) => <circle key={i} cx={cx} cy={cy} fill="#0a1310" r="6" />)}{balls.map((ball,i) => <circle key={i} cx={20+i*22} cy="50" fill={ball.color ?? C.chalk} r="8" stroke="#0a1310" strokeWidth="1.5" />)}</svg>;
+
+type ButtonVariant = "primary" | "success" | "danger" | "default" | "ghost" | "outline";
+function Btn({ children, onClick, variant = "default", disabled = false, style, type = "button" }:
+  { children: ReactNode; onClick?: () => void; variant?: ButtonVariant; disabled?: boolean; style?: CSSProperties; type?: "button" | "submit" }) {
+  const variantStyles: Record<ButtonVariant, CSSProperties> = {
+    primary: { background: C.brass,  color: C.bg,  border: "none" },
+    success: { background: C.green,  color: C.ink, border: "none" },
+    danger:  { background: C.rust,   color: C.ink, border: "none" },
+    default: { background: C.panel2, color: C.ink, border: `1px solid ${C.line}` },
+    ghost:   { background: "transparent", color: C.dim, border: "none" },
+    outline: { background: "transparent", color: C.brass, border: `1px solid ${C.brass}` },
+  };
+  return <button type={type} disabled={disabled} onClick={onClick} style={{
+    alignItems: "center", borderRadius: R.md, cursor: disabled ? "not-allowed" : "pointer",
+    display: "flex", fontFamily: "'Inter', sans-serif", fontSize: 15, fontWeight: 600,
+    justifyContent: "center", gap: SP.sm, minHeight: 50, opacity: disabled ? .45 : 1,
+    padding: "13px 18px", transition: "filter .12s, transform .1s", width: "100%",
+    ...variantStyles[variant], ...style,
+  }}>{children}</button>;
 }
+
+function ProgressBar({ value, color = C.brass, height = 6 }: { value: number; color?: string; height?: number }) {
+  return <div style={{ background: C.panel2, borderRadius: height, height, overflow: "hidden" }}>
+    <div style={{ background: color, borderRadius: height, height: "100%", transition: "width .4s ease", width: `${Math.max(0, Math.min(100, value))}%` }} />
+  </div>;
+}
+
+function RulesBadge({ ruleset, style }: { ruleset: RuleSetId; style?: CSSProperties }) {
+  return <span style={{
+    background: ruleset === "blackball" ? `${C.brass}22` : `${C.chalk}22`,
+    border: `1px solid ${ruleset === "blackball" ? C.brass : C.chalk}`,
+    borderRadius: R.sm, color: ruleset === "blackball" ? C.brass : C.chalk,
+    display: "inline-block", fontFamily: "'IBM Plex Mono', monospace",
+    fontSize: 9, fontWeight: 700, letterSpacing: 1.5, padding: "2px 8px", textTransform: "uppercase", ...style,
+  }}>{rulesetBadgeLabel(ruleset)}</span>;
+}
+
 function TrendIcon({ trend }: { trend: string }) {
-  if (trend === "up")   return <TrendingUp   color={C.green} size={14} />;
-  if (trend === "down") return <TrendingDown color={C.rust}  size={14} />;
-  return <Minus color={C.dim} size={14} />;
+  if (trend === "up")   return <TrendingUp   color={C.green} size={13} />;
+  if (trend === "down") return <TrendingDown color={C.rust}  size={13} />;
+  return <Minus color={C.muted} size={13} />;
 }
+
+function MetricPill({ label, value, color }: { label: string; value: string | number; color?: string }) {
+  return <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, padding: "10px 14px" }}>
+    <div style={{ color: C.muted, fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+    <div style={{ color: color ?? C.ink, fontSize: 15, fontWeight: 600 }}>{value}</div>
+  </div>;
+}
+
+function EmptyState({ icon, title, body }: { icon?: string; title: string; body: string }) {
+  return <div style={{ padding: "SP.xxl 0", textAlign: "center" }}>
+    {icon && <div style={{ fontSize: 36, marginBottom: SP.lg }}>{icon}</div>}
+    <div style={{ color: C.ink, fontWeight: 600, marginBottom: SP.sm }}>{title}</div>
+    <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, maxWidth: 280, margin: "0 auto" }}>{body}</div>
+  </div>;
+}
+
+// ─── Pool table SVG ────────────────────────────────────────────────────────────
+type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string };
+
+function PoolTable({
+  width = 280,
+  balls = [],
+  targetBalls = [],
+  selectedBall = null,
+}: {
+  width?: number;
+  balls?: BallSpec[];
+  targetBalls?: string[];
+  selectedBall?: string | null;
+}) {
+  const h = width * 0.56;
+  const pW = width * 0.08;   // frame padding
+  const bX = pW, bY = pW * 0.85;
+  const bW = width - pW * 2, bH = h - bY * 2;
+  const pR = pW * 0.42;      // pocket radius
+  // Pocket positions [x, y]
+  const pockets: [number, number][] = [
+    [bX, bY], [bX + bW / 2, bY - pR * 0.3], [bX + bW, bY],
+    [bX, bY + bH], [bX + bW / 2, bY + bH + pR * 0.3], [bX + bW, bY + bH],
+  ];
+  const ballR = width * 0.038;
+
+  return <svg viewBox={`0 0 ${width} ${h}`} width={width} height={h} style={{ display: "block", borderRadius: R.md }}>
+    {/* Table frame */}
+    <rect x={0} y={0} width={width} height={h} rx={pW * 0.7} fill="#2a1a0a" />
+    {/* Cushion rail */}
+    <rect x={pW * 0.35} y={pW * 0.35} width={width - pW * 0.7} height={h - pW * 0.7} rx={pW * 0.5} fill="#3d2510" />
+    {/* Baize surface */}
+    <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#1a4d33" />
+    {/* Baize subtle grain */}
+    <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="url(#baize)" opacity={0.08} />
+    {/* Centre line (faint) */}
+    <line x1={bX + bW / 2} y1={bY + 4} x2={bX + bW / 2} y2={bY + bH - 4} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
+    {/* Pockets */}
+    {pockets.map(([px, py], i) => (
+      <g key={i}>
+        <circle cx={px} cy={py} r={pR * 1.15} fill="#0d1a14" />
+        <circle cx={px} cy={py} r={pR * 0.75} fill="#060e0a" />
+      </g>
+    ))}
+    {/* Balls */}
+    {balls.map((b, i) => {
+      const sel = selectedBall === b.label;
+      return <g key={i}>
+        {sel && <circle cx={b.x * width} cy={b.y * h} r={ballR * 1.7} fill={C.brass} opacity={0.25} />}
+        <defs>
+          <radialGradient id={`bg${i}`} cx="35%" cy="30%" r="65%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity={0.35} />
+            <stop offset="100%" stopColor="#000000" stopOpacity={0.2} />
+          </radialGradient>
+        </defs>
+        <circle cx={b.x * width} cy={b.y * h} r={ballR} fill={b.color} stroke={sel ? C.brass : "#00000040"} strokeWidth={sel ? 1.5 : 0.8} />
+        <circle cx={b.x * width} cy={b.y * h} r={ballR} fill={`url(#bg${i})`} />
+        {b.highlight && <circle cx={b.x * width - ballR * 0.28} cy={b.y * h - ballR * 0.32} r={ballR * 0.28} fill="#ffffff" opacity={0.6} />}
+      </g>;
+    })}
+  </svg>;
+}
+
+/** Convert simple ball-color specs into BallSpec grid layout. */
+function simpleBalls(specs: { color?: string }[], tableWidth = 280): BallSpec[] {
+  const tableH = tableWidth * 0.56;
+  const pW = tableWidth * 0.08;
+  const bX = pW, bY = pW * 0.85;
+  const bW = tableWidth - pW * 2, bH = tableH - bY * 2;
+  const startX = (bX + 18) / tableWidth;
+  const stepX  = 22 / tableWidth;
+  const centerY = (bY + bH / 2) / tableH;
+  return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? C.chalk, highlight: true }));
+}
+
+/** Diagram for execution drills — two balls setup */
+function ExecDrillDiagram() {
+  const w = 260;
+  return <PoolTable width={w} balls={[
+    { x: 0.35, y: 0.5, color: "#e8e8e0", highlight: true },
+    { x: 0.62, y: 0.45, color: C.chalk, highlight: true },
+  ]} />;
+}
+
+/** Diagram for decision drills */
+function DecisionDrillDiagram() {
+  const w = 260;
+  return <PoolTable width={w} balls={[
+    { x: 0.3,  y: 0.5,  color: "#e8e8e0", highlight: true },
+    { x: 0.55, y: 0.38, color: C.brass,   highlight: true },
+    { x: 0.58, y: 0.62, color: "#c43333", highlight: true },
+    { x: 0.75, y: 0.45, color: "#111111", highlight: true },
+  ]} />;
+}
+
 function WhyThisDrill({ reason }: { reason?: string }) {
-  return reason ? <details style={{ marginBottom: 14 }}><summary style={{ color: C.dim, cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>Why this drill?</summary><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, marginTop: 7 }}>{reason}</div></details> : null;
-}
-function RulesBadge({ ruleset }: { ruleset: RuleSetId }) {
-  return <div style={{ background: ruleset === "blackball" ? C.brass : C.chalk, borderRadius: 4, color: C.bg, display: "inline-block", fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, fontWeight: 700, letterSpacing: 1.2, marginBottom: 10, padding: "3px 9px", textTransform: "uppercase" }}>{ruleset === "blackball" ? "BLACKBALL" : "INTERNATIONAL RULES"}</div>;
+  if (!reason) return null;
+  return <details style={{ marginBottom: SP.md }}>
+    <summary style={{ color: C.muted, cursor: "pointer", fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, userSelect: "none" }}>Why this drill?</summary>
+    <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, marginTop: SP.sm, paddingLeft: SP.md }}>{reason}</div>
+  </details>;
 }
 
 // ─── App shell ─────────────────────────────────────────────────────────────────
-function AppShell({ view, children, onNav, profile }: { view: View; children: ReactNode; onNav: (view: View) => void; profile: Profile }) {
-  const nav = [{ id: "dashboard" as const, label: "Today" }, { id: "matches" as const, label: "Matches" }, { id: "library" as const, label: "Library" }, { id: "progress" as const, label: "Progress" }, { id: "settings" as const, label: "Rules" }];
-  const modeLabel = profile.preferredRulesMode === "mixed" ? "Mixed Training" : RULESETS[profile.ruleset].name;
-  return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100vh" }}><style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.98)}`}</style><div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100vh" }}><header style={{ borderBottom: `1px solid ${C.line}`, padding: "18px 16px 11px" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1.5 }}>8-BALL COACH</div><div style={{ color: C.dim, fontSize: 13, marginTop: 2 }}>{titles[view]} <span style={{ color: C.line }}>·</span> {modeLabel}</div></header><main style={{ flex: 1, padding: 16, paddingBottom: 92 }}>{children}</main><nav style={{ background: C.panel, borderTop: `1px solid ${C.line}`, bottom: 0, display: "flex", position: "fixed", width: "min(100%, 520px)", zIndex: 5 }}>{nav.map((item) => <button key={item.id} onClick={() => onNav(item.id)} style={{ background: "transparent", border: 0, color: navTab(view) === item.id ? C.brass : C.dim, cursor: "pointer", flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: navTab(view) === item.id ? 700 : 500, padding: "15px 4px" }}>{item.label}</button>)}</nav></div></div>;
+function AppShell({ view, children, onNav, profile }: {
+  view: View; children: ReactNode; onNav: (view: View) => void; profile: Profile;
+}) {
+  const hideNav  = HIDE_NAV.includes(view);
+  const modeLabel = profile.preferredRulesMode === "mixed"
+    ? "Mixed Training"
+    : RULESETS[profile.ruleset].name;
+  const activeTab = navTab(view);
+
+  // Session / drill progress — compact top bar only
+  if (view === "session") {
+    return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100dvh" }}>
+      <style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button{font-family:inherit}button:hover:not(:disabled){filter:brightness(1.1)}button:active:not(:disabled){transform:scale(.97)}`}</style>
+      <div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100dvh" }}>
+        <header style={{ borderBottom: `1px solid ${C.line}`, padding: "14px 16px 10px", display: "flex", alignItems: "center", gap: SP.md }}>
+          <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1.5, flex: 1 }}>TRAINING</div>
+          <div style={{ color: C.muted, fontSize: 12 }}>{modeLabel}</div>
+        </header>
+        <main style={{ flex: 1, padding: "16px 16px 32px" }}>{children}</main>
+      </div>
+    </div>;
+  }
+
+  return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100dvh" }}>
+    <style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button{font-family:inherit}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.97)}`}</style>
+    <div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100dvh" }}>
+      {/* Top header */}
+      {view !== "onboarding" && <header style={{ borderBottom: `1px solid ${C.line}`, padding: "16px 16px 10px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 24, letterSpacing: 1.8 }}>8-BALL COACH</div>
+        <div style={{ background: `${C.panel2}`, border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, padding: "3px 10px", textTransform: "uppercase" }}>{modeLabel}</div>
+      </header>}
+
+      {/* Main content */}
+      <main style={{ flex: 1, padding: hideNav ? "16px 16px 32px" : "16px 16px 80px" }}>
+        {children}
+      </main>
+
+      {/* Bottom nav */}
+      {!hideNav && <nav style={{
+        background: C.panel, borderTop: `1px solid ${C.line}`, bottom: 0,
+        display: "flex", left: 0, position: "fixed",
+        width: "min(100vw, 520px)", zIndex: 10,
+        paddingBottom: "env(safe-area-inset-bottom, 0px)",
+      }}>
+        {NAV_ITEMS.map((item) => {
+          const active = activeTab === item.id;
+          return <button key={item.id} onClick={() => onNav(item.target)} style={{
+            background: "transparent", border: 0, color: active ? C.brass : C.muted,
+            cursor: "pointer", flex: 1, padding: "11px 4px 12px", display: "flex",
+            flexDirection: "column", alignItems: "center", gap: 4,
+            borderTop: active ? `2px solid ${C.brass}` : "2px solid transparent",
+            transition: "color .15s, border-color .15s",
+          }}>
+            <span style={{ fontSize: 16, lineHeight: 1 }}>{
+              item.id === "today"    ? <span style={{ fontFamily: "'Bebas Neue'", fontSize: 14 }}>TODAY</span>
+              : item.id === "matches"  ? <Trophy size={18} />
+              : item.id === "train"    ? <Dumbbell size={18} />
+              : item.id === "progress" ? <TrendingUp size={18} />
+              : <Settings size={18} />
+            }</span>
+            <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: active ? 700 : 500, letterSpacing: 0.3 }}>{item.label}</span>
+          </button>;
+        })}
+      </nav>}
+    </div>
+  </div>;
 }
 
-// ─── Onboarding ────────────────────────────────────────────────────────────────
+// ─── Onboarding (3 screens) ────────────────────────────────────────────────────
 const MODES_FOR_ONBOARDING: { mode: RulesMode; label: string; description: string }[] = [
-  { mode: "blackball",     label: "Blackball Rules",     description: "The compact, tactical game built around reds, yellows and the black." },
-  { mode: "international", label: "International Rules", description: "The internationally recognised 8-ball format with its own tactical rhythm." },
-  { mode: "mixed",         label: "Both",                description: "Your training will include both rulesets. Every rules-specific exercise will be clearly labelled." },
+  { mode: "blackball",     label: "Blackball",     description: "The compact, tactical game built around reds, yellows, and the black." },
+  { mode: "international", label: "International", description: "The internationally recognised 8-ball format with its own tactical rhythm." },
+  { mode: "mixed",         label: "Both",          description: "Train both rulesets. Every rules-specific exercise will be clearly labelled." },
 ];
+
 function Onboarding({ onChoose }: { onChoose: (mode: RulesMode) => void }) {
-  const [mode, setMode] = useState<RulesMode>("blackball");
-  return <div style={{ alignItems: "center", display: "flex", justifyContent: "center", minHeight: "100vh", padding: 18 }}><div style={{ maxWidth: 440, width: "100%" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 38, letterSpacing: 2, marginBottom: 8 }}>8-BALL COACH</div><h1 style={{ fontSize: 28, lineHeight: 1.1, margin: "0 0 14px" }}>Train the part of your game that is costing frames.</h1><p style={{ color: C.dim, fontSize: 15, lineHeight: 1.65, margin: "0 0 28px" }}>8-Ball Coach learns your game and adapts your training to fix the weaknesses that matter most.</p><Card style={{ marginBottom: 14 }}><Label>Which rules do you usually play?</Label><div style={{ display: "grid", gap: 9 }}>{MODES_FOR_ONBOARDING.map((item) => <button key={item.mode} onClick={() => setMode(item.mode)} style={{ background: mode === item.mode ? "#284735" : C.panel2, border: `1px solid ${mode === item.mode ? C.brass : C.line}`, borderRadius: 10, color: C.ink, cursor: "pointer", padding: 14, textAlign: "left" }}><div style={{ alignItems: "center", display: "flex", justifyContent: "space-between" }}><strong>{item.label}</strong>{mode === item.mode && <Check color={C.brass} size={18} />}</div><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.45, marginTop: 5 }}>{item.description}</div></button>)}</div></Card><Button variant="primary" onClick={() => onChoose(mode)}>Start a short assessment <ChevronRight size={17} /></Button><div style={{ color: C.dim, fontSize: 12, lineHeight: 1.5, marginTop: 14, textAlign: "center" }}>Your ratings are always shared. You can change your training preference in Settings at any time.</div></div></div>;
+  const [screen, setScreen] = useState<0 | 1 | 2>(0);
+  const [mode,   setMode]   = useState<RulesMode>("blackball");
+
+  const baseWrap: CSSProperties = {
+    alignItems: "center", background: C.bg, display: "flex", flexDirection: "column",
+    fontFamily: "'Inter', sans-serif", justifyContent: "center",
+    minHeight: "100dvh", padding: "32px 20px",
+  };
+
+  if (screen === 0) return <div style={baseWrap}>
+    <style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button{font-family:inherit}button:hover:not(:disabled){filter:brightness(1.1)}button:active:not(:disabled){transform:scale(.97)}`}</style>
+    <div style={{ maxWidth: 420, width: "100%" }}>
+      {/* Wordmark */}
+      <div style={{ marginBottom: SP.xl }}>
+        <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, letterSpacing: 3, lineHeight: 1 }}>8-BALL</div>
+        <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 52, letterSpacing: 3, lineHeight: 1, marginBottom: SP.sm }}>COACH</div>
+        <div style={{ background: C.brass, height: 2, width: 48, borderRadius: 1 }} />
+      </div>
+      <h1 style={{ color: C.ink, fontSize: 26, fontWeight: 700, lineHeight: 1.2, margin: "0 0 12px" }}>
+        Train what actually<br />costs you frames.
+      </h1>
+      <p style={{ color: C.dim, fontSize: 15, lineHeight: 1.65, margin: "0 0 40px" }}>
+        8-Ball Coach learns your game, identifies the skills costing you the most, and adapts every training session to fix them.
+      </p>
+      <Btn variant="primary" onClick={() => setScreen(1)} style={{ fontSize: 16, minHeight: 56 }}>
+        Get Started <ChevronRight size={18} />
+      </Btn>
+    </div>
+  </div>;
+
+  if (screen === 1) return <div style={baseWrap}>
+    <style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button{font-family:inherit}button:hover:not(:disabled){filter:brightness(1.1)}button:active:not(:disabled){transform:scale(.97)}`}</style>
+    <div style={{ maxWidth: 420, width: "100%" }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.4, marginBottom: SP.lg, textTransform: "uppercase" }}>How it works</div>
+      <h2 style={{ color: C.ink, fontSize: 24, fontWeight: 700, margin: "0 0 32px" }}>Simple cycle.<br />Real improvement.</h2>
+      {[
+        ["1", "Play", "Compete or practise matches."],
+        ["2", "Log",  "Record what decided the frame."],
+        ["3", "Train","8-Ball Coach builds sessions from your real weaknesses."],
+        ["4", "Improve", "Your profile sharpens as evidence builds."],
+        ["5", "Repeat",  "The cycle adapts as you improve."],
+      ].map(([n, title, body]) => <div key={n} style={{ display: "flex", gap: SP.lg, marginBottom: SP.xl }}>
+        <div style={{ background: C.brass, borderRadius: "50%", color: C.bg, flexShrink: 0, fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, height: 32, letterSpacing: 0.5, width: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>{n}</div>
+        <div>
+          <div style={{ color: C.ink, fontWeight: 600, marginBottom: 2 }}>{title}</div>
+          <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{body}</div>
+        </div>
+      </div>)}
+      <Btn variant="primary" onClick={() => setScreen(2)} style={{ marginTop: SP.sm, minHeight: 56 }}>
+        Choose my rules <ChevronRight size={18} />
+      </Btn>
+    </div>
+  </div>;
+
+  // Screen 2: rules picker
+  return <div style={baseWrap}>
+    <style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button{font-family:inherit}button:hover:not(:disabled){filter:brightness(1.1)}button:active:not(:disabled){transform:scale(.97)}`}</style>
+    <div style={{ maxWidth: 420, width: "100%" }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.4, marginBottom: SP.lg, textTransform: "uppercase" }}>Step 3 of 3</div>
+      <h2 style={{ color: C.ink, fontSize: 24, fontWeight: 700, margin: "0 0 8px" }}>Which rules do you play?</h2>
+      <p style={{ color: C.dim, fontSize: 14, lineHeight: 1.55, margin: "0 0 24px" }}>Your ratings are always shared. You can change this preference later in More.</p>
+      <div style={{ display: "grid", gap: SP.sm, marginBottom: SP.xl }}>
+        {MODES_FOR_ONBOARDING.map((item) => <button key={item.mode} onClick={() => setMode(item.mode)} style={{
+          background: mode === item.mode ? C.panel3 : C.panel,
+          border: `1px solid ${mode === item.mode ? C.brass : C.line}`,
+          borderRadius: R.lg, color: C.ink, cursor: "pointer", padding: "16px 18px", textAlign: "left",
+        }}>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+            <strong style={{ fontSize: 15 }}>{item.label}</strong>
+            {mode === item.mode && <Check color={C.brass} size={17} />}
+          </div>
+          <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.45 }}>{item.description}</div>
+        </button>)}
+      </div>
+      <Btn variant="primary" onClick={() => onChoose(mode)} style={{ minHeight: 56, fontSize: 16 }}>
+        Start short assessment <Play size={17} />
+      </Btn>
+      <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.5, marginTop: SP.lg, textAlign: "center" }}>
+        A quick 10-question check builds your starting profile.
+      </div>
+    </div>
+  </div>;
 }
 
 // ─── Skill radar ───────────────────────────────────────────────────────────────
 function SkillRadar({ profile, color = C.chalk }: { profile: Profile; color?: string }) {
   const data = SKILLS.map((s) => ({ skill: s.shortName, value: Math.round(profile.skills[s.id].rating) }));
-  return <Card style={{ height: 286, marginBottom: 14 }}><ResponsiveContainer height="100%" width="100%"><RadarChart data={data} outerRadius="69%"><PolarGrid stroke={C.line} /><PolarAngleAxis dataKey="skill" tick={{ fill: C.dim, fontSize: 9 }} /><Radar dataKey="value" fill={color} fillOpacity={.22} stroke={color} /></RadarChart></ResponsiveContainer></Card>;
+  return <Card style={{ height: 260, marginBottom: SP.lg }}>
+    <ResponsiveContainer height="100%" width="100%">
+      <RadarChart data={data} outerRadius="68%">
+        <PolarGrid stroke={C.line} />
+        <PolarAngleAxis dataKey="skill" tick={{ fill: C.muted, fontSize: 9 }} />
+        <Radar dataKey="value" fill={color} fillOpacity={.18} stroke={color} strokeWidth={1.5} />
+      </RadarChart>
+    </ResponsiveContainer>
+  </Card>;
 }
 
 // ─── Assessment ────────────────────────────────────────────────────────────────
@@ -99,90 +484,305 @@ function Assessment({ profile, onDone }: { profile: Profile; onDone: (profile: P
   const current = index === ASSESSMENT_ITEMS.length ? ASSESSMENT_CLEARANCE : ASSESSMENT_ITEMS[index];
   const activeRuleset: RuleSetId = profile.preferredRulesMode === "international" ? "international" : "blackball";
   const advance = (next: Profile) => { profileRef.current = next; index + 1 >= total ? onDone({ ...next, assessmentComplete: true }) : setIndex((v) => v + 1); };
-  return <div><div style={{ marginBottom: 16 }}><Label>Step {index + 1} of {total}</Label><ProgressBar value={index / total * 100} /></div>{current.type === "combined" ? <ClearanceRunner clearance={current} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} /> : <DrillRunner drill={current as Drill} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />}</div>;
+  return <div>
+    <div style={{ marginBottom: SP.lg }}>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
+        <SectionLabel>Assessment · {index + 1} of {total}</SectionLabel>
+        <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{Math.round(index / total * 100)}%</span>
+      </div>
+      <ProgressBar value={index / total * 100} color={C.brass} />
+    </div>
+    {current.type === "combined"
+      ? <ClearanceRunner clearance={current} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />
+      : <DrillRunner drill={current as Drill} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />}
+  </div>;
 }
 
 function Provisional({ profile, onContinue }: { profile: Profile; onContinue: () => void }) {
   const mean = SKILLS.reduce((sum, s) => sum + profile.skills[s.id].rating, 0) / SKILLS.length;
   const strengths = SKILLS.filter((s) => profile.skills[s.id].rating >= mean + 5).map((s) => s.name);
   const focus = SKILLS.filter((s) => profile.skills[s.id].rating < mean - 5).sort((a, b) => profile.skills[a.id].rating - profile.skills[b.id].rating).map((s) => s.name);
-  return <div><Card style={{ marginBottom: 14 }}><p style={{ lineHeight: 1.6, margin: 0 }}>Here's your starting picture. {strengths.length > 0 && <><strong style={{ color: C.brass }}>{strengths.slice(0, 2).join(" and ")}</strong> look like early strengths. </>}{focus.length > 0 && <><strong style={{ color: C.chalk }}>{focus.slice(0, 2).join(" and ")}</strong> are good places to start. </>}This is a rough sketch — confidence sharpens as you train.</p></Card><SkillRadar color={C.brass} profile={profile} /><Button variant="primary" onClick={onContinue}>Start your first training session <Play size={17} /></Button></div>;
+  return <div>
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Your starting profile</SectionLabel>
+      <p style={{ color: C.ink, lineHeight: 1.65, margin: "0 0 12px", fontSize: 15 }}>
+        {strengths.length > 0 && <><strong style={{ color: C.brass }}>{strengths.slice(0, 2).join(" and ")}</strong> look like early strengths. </>}
+        {focus.length > 0 && <><strong style={{ color: C.chalk }}>{focus.slice(0, 2).join(" and ")}</strong> are your first priority. </>}
+        This sharpens as you train.
+      </p>
+    </Card>
+    <SkillRadar color={C.brass} profile={profile} />
+    <Btn variant="primary" onClick={onContinue} style={{ minHeight: 56, fontSize: 16 }}>
+      Start your first session <Play size={17} />
+    </Btn>
+  </div>;
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
-function Dashboard({ profile, matches, onStart, onNav }: { profile: Profile; matches: Match[]; onStart: () => void; onNav: (view: View) => void }) {
-  const lf = matchAwareLimitingFactor(profile, matches);
+function Dashboard({ profile, matches, onStart, onNav }: {
+  profile: Profile; matches: Match[]; onStart: () => void; onNav: (view: View) => void;
+}) {
+  const lf      = matchAwareLimitingFactor(profile, matches);
   const weighting = sessionWeighting(profile, lf);
-  const recent = profile.sessions.slice(-3).reverse();
-  return <div><Card style={{ marginBottom: 14 }}><Label>Today's training</Label><div style={{ fontSize: 21, fontWeight: 700, marginBottom: 5 }}>{lf.primary ? lf.primary.name : "Build a broader picture"}</div><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 15px" }}>{lf.status === "insufficient" ? "Still gathering evidence — today's session samples across your game." : `${lf.status === "provisional" ? "Early signal: " : ""}${lf.primary?.name} is currently the biggest opportunity.`}</p><Button variant="primary" onClick={onStart}><Play size={17} /> Start training</Button></Card><div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}><Card><Label>Main focus</Label><div style={{ fontSize: 14 }}>{lf.primary?.name ?? "Still learning"}</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{lf.primary ? `${Math.round(lf.primary.rating)} / 100` : "More evidence needed"}</div></Card><Card><Label>Session balance</Label><div style={{ fontSize: 14 }}>{weighting.execWeight}% execution</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{weighting.decWeight}% decision work</div></Card></div><Card style={{ marginBottom: 14 }}><Label>Recent progress</Label>{!recent.length && <div style={{ color: C.dim, fontSize: 13 }}>No sessions yet. Your first session will start the feedback loop.</div>}{recent.map((s, i) => <div key={`${s.ts}-${i}`} style={{ borderBottom: i === recent.length - 1 ? 0 : `1px solid ${C.line}`, color: C.dim, fontSize: 13, padding: "9px 0" }}>{new Date(s.ts).toLocaleDateString()} — {s.summary.changeNote}</div>)}</Card><Button onClick={() => onNav("progress")}>View full skill profile <ChevronRight size={16} /></Button></div>;
+  const modeLabel = profile.preferredRulesMode === "mixed" ? "Mixed Training" : RULESETS[profile.ruleset].name;
+  const recent  = profile.sessions.slice(-3).reverse();
+  const recentMatch = matches.filter(m => m.completedAt != null).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0))[0] ?? null;
+
+  const focusCopy = lf.status === "insufficient"
+    ? "Building your profile — today's session samples across your game."
+    : lf.status === "provisional"
+    ? `Early signal: ${lf.primary?.name} looks like your biggest opportunity.`
+    : `${lf.primary?.name} is your current priority.`;
+
+  const coachReason = lf.status === "insufficient"
+    ? "Answer a few more sessions and your focus will sharpen."
+    : matches.filter(m => m.completedAt != null).length >= 2
+    ? `Recent match evidence points to ${lf.primary?.name ?? "execution"} as today's biggest lever.`
+    : lf.primary
+    ? `Your ${lf.primary.name} rating has the most room to lift your game right now.`
+    : "Session will sample broadly to build your profile.";
+
+  return <div>
+    {/* Hero training card */}
+    <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.brassD}` }}>
+      <SectionLabel>Today's Training</SectionLabel>
+      <div style={{ fontSize: 22, fontWeight: 700, lineHeight: 1.2, marginBottom: SP.sm }}>
+        {lf.primary ? lf.primary.name : "Build a broader picture"}
+        {lf.secondary && <span style={{ color: C.dim, fontSize: 15, fontWeight: 400 }}> + {lf.secondary.name}</span>}
+      </div>
+      <div style={{ alignItems: "center", color: C.muted, display: "flex", fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", gap: SP.sm, marginBottom: SP.md }}>
+        <span>30 min</span><span style={{ color: C.line }}>·</span><span>{modeLabel}</span>
+      </div>
+      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, margin: `0 0 ${SP.lg}px`, fontStyle: "italic" }}>"{coachReason}"</p>
+      <Btn variant="primary" onClick={onStart} style={{ minHeight: 54, fontSize: 16 }}>
+        <Play size={17} /> Start Training
+      </Btn>
+    </Card>
+
+    {/* Secondary cards grid */}
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: SP.md, marginBottom: SP.lg }}>
+      <Card><SectionLabel>Current Focus</SectionLabel>
+        <div style={{ color: C.ink, fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{lf.primary?.name ?? "Gathering evidence"}</div>
+        <div style={{ color: C.muted, fontSize: 12, lineHeight: 1.45 }}>{focusCopy}</div>
+      </Card>
+      <Card><SectionLabel>Session Mix</SectionLabel>
+        <div style={{ color: C.ink, fontSize: 14, fontWeight: 600, marginBottom: 4 }}>{weighting.execWeight}% execution</div>
+        <div style={{ color: C.muted, fontSize: 12 }}>{weighting.decWeight}% decision</div>
+      </Card>
+    </div>
+
+    {/* Recent match */}
+    {recentMatch && (() => {
+      const sc = frameScore(recentMatch);
+      const won = sc.player > sc.opponent;
+      return <Card style={{ marginBottom: SP.lg }} onClick={() => onNav("matches")}>
+        <SectionLabel>Recent Match</SectionLabel>
+        <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1, color: won ? C.brass : C.rust }}>{sc.player} – {sc.opponent}</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+            <RulesBadge ruleset={recentMatch.ruleset} />
+            <span style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700 }}>{won ? "WON" : "LOST"}</span>
+          </div>
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, fontStyle: "italic" }}>"{matchCoachingLine(recentMatch)}"</div>
+      </Card>;
+    })()}
+
+    {/* Recent sessions */}
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Recent Progress</SectionLabel>
+      {!recent.length
+        ? <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6 }}>No sessions yet — your first session starts the feedback loop.</div>
+        : recent.map((s, i) => <div key={`${s.ts}-${i}`} style={{
+            borderBottom: i < recent.length - 1 ? `1px solid ${C.line}` : "none",
+            color: C.dim, fontSize: 13, padding: "9px 0", lineHeight: 1.45,
+          }}>
+            <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{new Date(s.ts).toLocaleDateString()}</span>
+            <div style={{ marginTop: 2 }}>{s.summary.changeNote}</div>
+          </div>)
+      }
+    </Card>
+    <Btn variant="ghost" onClick={() => onNav("progress")} style={{ color: C.brass, justifyContent: "center" }}>
+      View full skill profile <ChevronRight size={16} />
+    </Btn>
+  </div>;
 }
 
-function PickTime({ onPick }: { onPick: (minutes: number) => void }) {
-  return <Card><Label>How much time do you have?</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 14px" }}>The session adjusts its balance, difficulty, and variety to fit.</p><div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>{[15, 30, 45, 60, 90].map((m) => <Button key={m} onClick={() => onPick(m)} style={{ fontSize: 17, minHeight: 64 }}>{m} min</Button>)}</div></Card>;
+// ─── Pick time / session setup ─────────────────────────────────────────────────
+function PickTime({ profile, matches, onPick, onBrowseLibrary }: {
+  profile: Profile; matches: Match[]; onPick: (minutes: number) => void; onBrowseLibrary: () => void;
+}) {
+  const lf = matchAwareLimitingFactor(profile, matches);
+  const modeLabel = profile.preferredRulesMode === "mixed" ? "Mixed Training" : RULESETS[profile.ruleset].name;
+  return <div>
+    {/* Priority summary */}
+    <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.panel3}` }}>
+      <SectionLabel>Your current priority</SectionLabel>
+      {lf.primary
+        ? <>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: SP.xs }}>{lf.primary.name}</div>
+            {lf.secondary && <div style={{ color: C.dim, fontSize: 13 }}>Also: {lf.secondary.name}</div>}
+          </>
+        : <div style={{ color: C.dim, fontSize: 14 }}>Building evidence — session will sample broadly.</div>}
+      <div style={{ marginTop: SP.md }}>
+        <div style={{ background: `${C.panel2}`, border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.muted, display: "inline-block", fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, padding: "3px 10px", textTransform: "uppercase" }}>{modeLabel}</div>
+      </div>
+    </Card>
+
+    {/* Duration picker */}
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>How much time?</SectionLabel>
+      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: `0 0 ${SP.md}px` }}>The session adjusts its balance and variety to fit your available time.</p>
+      <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "repeat(5, 1fr)" }}>
+        {[15, 30, 45, 60, 90].map((m) => <button key={m} onClick={() => onPick(m)} style={{
+          background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+          color: C.ink, cursor: "pointer", fontFamily: "'Bebas Neue', sans-serif",
+          fontSize: 20, letterSpacing: 0.5, minHeight: 64, padding: "8px 4px",
+          transition: "border-color .12s, background .12s",
+        }}>
+          {m}<span style={{ display: "block", fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, color: C.muted, letterSpacing: 1 }}>MIN</span>
+        </button>)}
+      </div>
+    </Card>
+
+    <Btn variant="ghost" onClick={onBrowseLibrary} style={{ color: C.dim, justifyContent: "center", fontSize: 13 }}>
+      <BookOpen size={15} /> Browse drill library
+    </Btn>
+  </div>;
 }
 
 // ─── Drill runner ──────────────────────────────────────────────────────────────
-function ErrorGrid({ onPick }: { onPick: (code: string) => void }) {
-  return <div><Label>What went wrong?</Label><div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>{ERROR_CODES.map((code) => <Button key={code} onClick={() => onPick(code)}>{code}</Button>)}</div></div>;
-}
-
-function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: { drill: Drill; profile: Profile; source: "assessment" | "training"; activeRuleset: RuleSetId; onComplete: (profile: Profile, entry: Attempt & { skillId: SkillId }) => void }) {
-  const [errorOpen, setErrorOpen] = useState(false);
-  const [feedback, setFeedback] = useState<{ option: DecisionOption; updated: Profile; value: number } | null>(null);
-  const activeOptions = drill.rulesetOptions?.[activeRuleset] ?? drill.options ?? [];
-  const finish = (value: number, reportedError?: string) => {
-    const rulesetTag = drill.rulesContext ?? null;
-    onComplete(applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, reportedError, ruleset: rulesetTag }), { skillId: drill.skillId, value, drillId: drill.id, difficulty: drill.difficulty, ts: Date.now(), reportedError, ruleset: rulesetTag });
-  };
-  if (drill.type === "execution") return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: C.chalk }, { color: C.brass }]} /></div>{drill.rulesContext && <RulesBadge ruleset={drill.rulesContext} />}<div style={{ fontSize: 18, fontWeight: 700 }}>{drill.name}</div><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "5px 0" }}>{drill.desc}</div><div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, marginBottom: 12 }}>Difficulty {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name}</div><WhyThisDrill reason={drill.reason} />{!errorOpen ? <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}><Button variant="success" onClick={() => finish(1)}><Check size={19} /> Success</Button><Button variant="danger" onClick={() => setErrorOpen(true)}><X size={19} /> Failed</Button></div> : <ErrorGrid onPick={(code) => finish(0, code)} />}</Card>;
-  const rulesetForBadge = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
-  if (!feedback) return <Card><div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}><TableDiagram balls={[{ color: C.brass }, { color: C.chalk }, { color: C.rust }]} /></div>{rulesetForBadge && <RulesBadge ruleset={rulesetForBadge} />}<div style={{ fontSize: 18, fontWeight: 700 }}>{drill.name}</div><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "5px 0 14px" }}>{drill.desc}</div><WhyThisDrill reason={drill.reason} /><div style={{ display: "grid", gap: 8 }}>{activeOptions.map((option) => <Button key={option.key} onClick={() => { const value = decisionValue(option.tier as DecisionTier); const rulesetTag = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null); setFeedback({ option, updated: applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, tier: option.tier, ruleset: rulesetTag }), value }); }} style={{ justifyContent: "flex-start", textAlign: "left" }}>{option.label}</Button>)}</div></Card>;
-  return <Card><Label>{feedback.option.tier === "optimal" ? "Strong choice" : feedback.option.tier === "acceptable" ? "Reasonable choice" : feedback.option.tier === "highrisk" ? "High risk" : "Not the best option"}</Label><p style={{ lineHeight: 1.6, margin: "0 0 16px" }}>{feedback.option.rationale}</p><Button variant="primary" onClick={() => onComplete(feedback.updated, { skillId: drill.skillId, value: feedback.value, drillId: drill.id, difficulty: drill.difficulty, tier: feedback.option.tier, ts: Date.now(), ruleset: drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null) })}>Continue <ChevronRight size={17} /></Button></Card>;
-}
-
-// Import DecisionTier for type assertion
 type DecisionTier = "optimal" | "acceptable" | "highrisk" | "poor";
 
-// ─── Clearance runner ──────────────────────────────────────────────────────────
-const smallButton: CSSProperties = { background: "transparent", border: 0, color: C.brass, cursor: "pointer", fontSize: 16, padding: "2px 7px" };
+function ErrorGrid({ onPick }: { onPick: (code: string) => void }) {
+  const labels: Record<string, string> = {
+    MISS: "Missed pot", POSITION: "Lost position", SPEED: "Poor speed",
+    SPIN: "Spin/control", PATTERN: "Pattern play", DECISION: "Decision",
+    SAFETY: "Safety", OTHER: "Other",
+  };
+  return <div>
+    <SectionLabel>What went wrong?</SectionLabel>
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+      {ERROR_CODES.map((code) => <button key={code} onClick={() => onPick(code)} style={{
+        background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+        color: C.ink, cursor: "pointer", fontSize: 13, fontFamily: "'Inter', sans-serif",
+        padding: "12px 10px", textAlign: "center", fontWeight: 500,
+      }}>{labels[code] ?? code}</button>)}
+    </div>
+  </div>;
+}
 
+const TIER_LABELS: Record<string, { label: string; color: string }> = {
+  optimal:    { label: "Strong Choice",   color: C.green },
+  acceptable: { label: "Reasonable",      color: C.chalk },
+  highrisk:   { label: "High Risk",       color: C.brass },
+  poor:       { label: "Poor Choice",     color: C.rust },
+};
+
+function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
+  drill: Drill; profile: Profile; source: "assessment" | "training"; activeRuleset: RuleSetId;
+  onComplete: (profile: Profile, entry: Attempt & { skillId: SkillId }) => void;
+}) {
+  const [errorOpen, setErrorOpen] = useState(false);
+  const [feedback, setFeedback]   = useState<{ option: DecisionOption; updated: Profile; value: number } | null>(null);
+  const activeOptions = drill.rulesetOptions?.[activeRuleset] ?? drill.options ?? [];
+  const rulesetForBadge = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
+
+  const finish = (value: number, reportedError?: string) => {
+    const rulesetTag = drill.rulesContext ?? null;
+    onComplete(
+      applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, reportedError, ruleset: rulesetTag }),
+      { skillId: drill.skillId, value, drillId: drill.id, difficulty: drill.difficulty, ts: Date.now(), reportedError, ruleset: rulesetTag }
+    );
+  };
+
+  if (drill.type === "execution") return <div>
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
+      <ExecDrillDiagram />
+    </div>
+    <Card>
+      {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+        DIFFICULTY {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+      </div>
+      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
+      <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
+      <WhyThisDrill reason={drill.reason} />
+      {!errorOpen
+        ? <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+            <Btn variant="success" onClick={() => finish(1)} style={{ minHeight: 56 }}><Check size={20} /> Success</Btn>
+            <Btn variant="danger"  onClick={() => setErrorOpen(true)} style={{ minHeight: 56 }}><X size={20} /> Failed</Btn>
+          </div>
+        : <ErrorGrid onPick={(code) => finish(0, code)} />}
+    </Card>
+  </div>;
+
+  if (!feedback) return <div>
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
+      <DecisionDrillDiagram />
+    </div>
+    <Card>
+      {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+        DECISION · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+      </div>
+      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
+      <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
+      <WhyThisDrill reason={drill.reason} />
+      <SectionLabel>What would you do?</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm }}>
+        {activeOptions.map((option) => <button key={option.key} onClick={() => {
+          const value = decisionValue(option.tier as DecisionTier);
+          const rulesetTag = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
+          setFeedback({ option, updated: applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, tier: option.tier, ruleset: rulesetTag }), value });
+        }} style={{
+          background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+          color: C.ink, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+          fontSize: 14, padding: "14px 16px", textAlign: "left", fontWeight: 500,
+        }}>{option.label}</button>)}
+      </div>
+    </Card>
+  </div>;
+
+  const tier = TIER_LABELS[feedback.option.tier] ?? TIER_LABELS["acceptable"];
+  return <Card>
+    <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>
+      <div style={{ color: tier.color, fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: SP.sm }}>{tier.label}</div>
+      <p style={{ color: C.dim, lineHeight: 1.65, margin: 0, fontSize: 14 }}>{feedback.option.rationale}</p>
+    </div>
+    <Btn variant="primary" onClick={() => onComplete(feedback.updated, {
+      skillId: drill.skillId, value: feedback.value, drillId: drill.id,
+      difficulty: drill.difficulty, tier: feedback.option.tier, ts: Date.now(),
+      ruleset: drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null),
+    })}>Continue <ChevronRight size={17} /></Btn>
+  </Card>;
+}
+
+// ─── Clearance runner ──────────────────────────────────────────────────────────
+const smallBtn: CSSProperties = { background: "transparent", border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.brass, cursor: "pointer", fontSize: 14, padding: "4px 10px" };
 type ClearanceEntry = Attempt & { skillId?: SkillId; observedSkill?: SkillId; type?: string; chainNarrative?: string };
 
-function ClearanceRunner({
-  clearance, profile, source, activeRuleset, onComplete,
-}: {
-  clearance: Clearance;
-  profile: Profile;
-  source: "assessment" | "training";
+function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete }: {
+  clearance: Clearance; profile: Profile; source: "assessment" | "training";
   activeRuleset: RuleSetId;
   onComplete: (profile: Profile, entries: ClearanceEntry[]) => void;
 }) {
-  const initialRemaining = useMemo(
-    () => clearance.balls.filter((b) => b.role === "target" || b.role === "black").map((b) => b.id),
-    [clearance]
-  );
-
-  // Route tracking: three distinct lists (never infer potted from attempted)
+  const initialRemaining = useMemo(() => clearance.balls.filter((b) => b.role === "target" || b.role === "black").map((b) => b.id), [clearance]);
   const [remaining,  setRemaining]  = useState<string[]>(initialRemaining);
   const [attempted,  setAttempted]  = useState<string[]>([]);
   const [potted,     setPotted]     = useState<string[]>([]);
-
-  // Mutable refs for profile and entries so updates don't trigger re-renders
   const profileRef  = useRef(profile);
   const entriesRef  = useRef<ClearanceEntry[]>([]);
   const endedRef    = useRef(false);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
-
   const [phase, setPhase]               = useState<"choose" | "plan" | "play">(clearance.planEligible ? "choose" : "play");
   const [planned, setPlanned]           = useState<string[]>(initialRemaining);
   const [current, setCurrent]           = useState<string | null>(null);
   const [errorOpen, setErrorOpen]       = useState(false);
   const [adaptationOpen, setAdaptation] = useState(false);
-
   const ballMap = useMemo(() => Object.fromEntries(clearance.balls.map((b) => [b.id, b])), [clearance]);
 
-  // Complete the clearance — safe to call multiple times (guarded by endedRef)
   const complete = useCallback(() => {
     if (endedRef.current) return;
     endedRef.current = true;
@@ -194,29 +794,19 @@ function ClearanceRunner({
     onCompleteRef.current(profileRef.current, finalEntries);
   }, [clearance.difficulty]);
 
-  // Auto-complete when all balls are potted
   useEffect(() => {
-    if (phase === "play" && remaining.length === 0 && !adaptationOpen) {
-      complete();
-    }
+    if (phase === "play" && remaining.length === 0 && !adaptationOpen) complete();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [remaining.length, phase, adaptationOpen]);
 
-  // Legal targets: derived from current remaining + rules module.
-  // remaining is in state so this correctly recomputes when balls are potted.
   const legalTargets = useMemo(() => {
     const targetBalls = remaining.filter((id) => ballMap[id]?.role === "target");
     const blackBalls  = remaining.filter((id) => ballMap[id]?.role === "black");
     const tableState = {
-      ruleset: activeRuleset,
-      groupAssignment: "assigned" as const,
-      playerGroup: "yellow" as const,
-      opponentGroup: "red" as const,
-      balls: clearance.balls.map((b) => ({ ...b })),
-      cueBallInHand: false,
-      freeShotActive: false,
-      playerBallsRemaining: targetBalls.length,
-      opponentBallsRemaining: 0,
+      ruleset: activeRuleset, groupAssignment: "assigned" as const,
+      playerGroup: "yellow" as const, opponentGroup: "red" as const,
+      balls: clearance.balls.map((b) => ({ ...b })), cueBallInHand: false,
+      freeShotActive: false, playerBallsRemaining: targetBalls.length, opponentBallsRemaining: 0,
     };
     const legal = getLegalBalls(tableState);
     const legalIds = new Set(legal.map((b) => b.id));
@@ -230,177 +820,139 @@ function ClearanceRunner({
     if (!selectedId) return;
     const ball = ballMap[selectedId];
     const now = Date.now();
-
-    // Record execution evidence — tagged with activeRuleset (clearances are rules-sensitive)
-    profileRef.current = applySkillUpdate(
-      profileRef.current, ball.execSkill, value,
-      { drillId: clearance.id, difficulty: clearance.difficulty, source, clearance: true, ballId: ball.id, reportedError, ruleset: activeRuleset },
-      now
-    );
-    entriesRef.current.push({
-      ts: now, value, difficulty: clearance.difficulty, drillId: clearance.id,
-      source, clearance: true, ballId: ball.id, reportedError,
-      skillId: ball.execSkill, observedSkill: ball.execSkill, ruleset: activeRuleset,
-    });
-
-    // Always record in attemptedRoute
+    profileRef.current = applySkillUpdate(profileRef.current, ball.execSkill, value, { drillId: clearance.id, difficulty: clearance.difficulty, source, clearance: true, ballId: ball.id, reportedError, ruleset: activeRuleset }, now);
+    entriesRef.current.push({ ts: now, value, difficulty: clearance.difficulty, drillId: clearance.id, source, clearance: true, ballId: ball.id, reportedError, skillId: ball.execSkill, observedSkill: ball.execSkill, ruleset: activeRuleset });
     setAttempted((prev) => [...prev, ball.id]);
     setCurrent(null);
     setErrorOpen(false);
-
     if (value === 1) {
-      // SUCCESS: ball is potted — remove from remaining, add to potted
       setPotted((prev) => [...prev, ball.id]);
       setRemaining((prev) => prev.filter((id) => id !== ball.id));
-      // Completion detected by useEffect watching remaining.length
     } else {
-      // FAILURE: ball stays in remaining (attempted but not potted)
-      if (clearance.failureMode === "end_clearance") {
-        complete();
-        return;
-      }
-      // continue_from_position: ball remains available for retry
-      if (clearance.adaptationEligible && reportedError === "POSITION") {
-        setAdaptation(true);
-      }
+      if (clearance.failureMode === "end_clearance") { complete(); return; }
+      if (clearance.adaptationEligible && reportedError === "POSITION") setAdaptation(true);
     }
   };
 
-  // ── Phase: choose to plan or play ──────────────────────────────────────────
-  if (phase === "choose") {
-    return <Card>
-      <div style={{ fontSize: 18, fontWeight: 700 }}>{clearance.name}</div>
-      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5 }}>Would you like to plan your clearance order first, or just play?</p>
-      <div style={{ display: "grid", gap: 8 }}>
-        <Button variant="primary" onClick={() => setPhase("plan")}>Plan the clearance</Button>
-        <Button onClick={() => setPhase("play")}>Just play</Button>
-      </div>
-    </Card>;
-  }
+  // Build ball specs for pool table SVG
+  const clearanceBalls: BallSpec[] = useMemo(() => {
+    const count = clearance.balls.length;
+    return clearance.balls.map((b, i) => {
+      const col = potted.includes(b.id) ? `${C.green}66`
+        : b.role === "obstacle" ? "#44444488"
+        : b.group === "black" ? "#111111"
+        : b.group === "red" ? C.rust
+        : "#d4a017";
+      const xFrac = 0.15 + (i / Math.max(count - 1, 1)) * 0.7;
+      return { x: xFrac, y: 0.5, color: col, highlight: !potted.includes(b.id) && b.role !== "obstacle", label: b.id };
+    });
+  }, [clearance.balls, potted]);
 
-  // ── Phase: plan ───────────────────────────────────────────────────────────
-  if (phase === "plan") {
-    return <Card>
-      <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 5 }}>Plan your order</div>
-      <p style={{ color: C.dim, fontSize: 13, marginBottom: 12 }}>Reorder to match your intended route. Your plan is scored against authored route quality — not awarded automatically.</p>
-      <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
-        {planned.map((id, idx) => (
-          <div key={id} style={{ alignItems: "center", background: C.panel2, borderRadius: 8, display: "flex", justifyContent: "space-between", padding: "9px 12px" }}>
-            <span>{idx + 1}. {ballMap[id]?.label ?? id}</span>
-            <span style={{ display: "flex", gap: 4 }}>
-              <button onClick={() => { if (!idx) return; const c = [...planned]; [c[idx-1],c[idx]]=[c[idx],c[idx-1]]; setPlanned(c); }} style={smallButton}>↑</button>
-              <button onClick={() => { if (idx === planned.length-1) return; const c = [...planned]; [c[idx+1],c[idx]]=[c[idx],c[idx+1]]; setPlanned(c); }} style={smallButton}>↓</button>
-            </span>
-          </div>
-        ))}
-      </div>
-      <Button variant="primary" onClick={() => {
-        // Evaluate plan quality against authored preferred/acceptable routes
+  if (phase === "choose") return <Card>
+    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.sm }}>{clearance.name}</div>
+    <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: `0 0 ${SP.lg}px` }}>Would you like to plan your clearance order first, or just play?</p>
+    <div style={{ display: "grid", gap: SP.sm }}>
+      <Btn variant="primary" onClick={() => setPhase("plan")}>Plan the clearance</Btn>
+      <Btn onClick={() => setPhase("play")}>Just play</Btn>
+    </div>
+  </Card>;
+
+  if (phase === "plan") return <Card>
+    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.xs }}>Plan your order</div>
+    <p style={{ color: C.dim, fontSize: 13, marginBottom: SP.md, lineHeight: 1.55 }}>Reorder to match your intended route. Your plan is scored against the authored route quality.</p>
+    <div style={{ display: "grid", gap: SP.sm, marginBottom: SP.lg }}>
+      {planned.map((id, idx) => (
+        <div key={id} style={{ alignItems: "center", background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, display: "flex", justifyContent: "space-between", padding: "11px 14px" }}>
+          <span style={{ color: C.ink, fontSize: 14 }}><span style={{ color: C.brass, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginRight: 8 }}>{idx + 1}.</span>{ballMap[id]?.label ?? id}</span>
+          <span style={{ display: "flex", gap: SP.xs }}>
+            <button onClick={() => { if (!idx) return; const c = [...planned]; [c[idx-1],c[idx]]=[c[idx],c[idx-1]]; setPlanned(c); }} style={smallBtn}>↑</button>
+            <button onClick={() => { if (idx === planned.length-1) return; const c = [...planned]; [c[idx+1],c[idx]]=[c[idx],c[idx+1]]; setPlanned(c); }} style={smallBtn}>↓</button>
+          </span>
+        </div>
+      ))}
+    </div>
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+      <Btn variant="primary" onClick={() => {
         const planResult = evaluatePlannedRoute(planned, clearance);
         const now = Date.now();
-        profileRef.current = applySkillUpdate(
-          profileRef.current, "pattern", planResult.value,
-          { drillId: clearance.id, source: "planDecision", difficulty: clearance.difficulty, tier: planResult.tier, ruleset: activeRuleset },
-          now
-        );
-        entriesRef.current.push({
-          ts: now, value: planResult.value, difficulty: clearance.difficulty,
-          drillId: clearance.id, source: "planDecision", tier: planResult.tier,
-          skillId: "pattern", ruleset: activeRuleset,
-        });
+        profileRef.current = applySkillUpdate(profileRef.current, "pattern", planResult.value, { drillId: clearance.id, source: "planDecision", difficulty: clearance.difficulty, tier: planResult.tier, ruleset: activeRuleset }, now);
+        entriesRef.current.push({ ts: now, value: planResult.value, difficulty: clearance.difficulty, drillId: clearance.id, source: "planDecision", tier: planResult.tier, skillId: "pattern", ruleset: activeRuleset });
         setPhase("play");
-      }}>Confirm plan</Button>
-    </Card>;
-  }
-
-  // ── Phase: adaptation ─────────────────────────────────────────────────────
-  if (adaptationOpen) {
-    return <Card>
-      <div style={{ fontSize: 18, fontWeight: 700 }}>Position lost</div>
-      <p style={{ color: C.dim, fontSize: 13, marginBottom: 12 }}>What's your plan from here?</p>
-      <div style={{ display: "grid", gap: 8 }}>
-        {["Re-plan clearance", "Continue original route", "Develop a problem ball", "Play safe", "Other"].map((choice) => (
-          <Button key={choice} onClick={() => {
-            // Route adaptation to the correct decision skill
-            const decSkill: SkillId = ADAPTATION_SKILL_MAP[choice] ?? "pattern";
-            const tier: DecisionTier = choice === clearance.preferredAdaptation ? "optimal" : choice === "Other" ? "highrisk" : "acceptable";
-            const value = decisionValue(tier);
-            const now = Date.now();
-            // Adaptation decision updates its decision skill; does NOT penalise any execution skill
-            profileRef.current = applySkillUpdate(
-              profileRef.current, decSkill, value,
-              { drillId: clearance.id, source: "adaptation", difficulty: clearance.difficulty, tier, ruleset: activeRuleset },
-              now
-            );
-            entriesRef.current.push({
-              ts: now, value, difficulty: clearance.difficulty,
-              drillId: clearance.id, source: "adaptation", type: "adaptation",
-              skillId: decSkill, tier, ruleset: activeRuleset,
-            });
-            setAdaptation(false);
-            // remaining unchanged — clearance continues from current position
-          }}>{choice}</Button>
-        ))}
-      </div>
-    </Card>;
-  }
-
-  // ── Phase: play — ball selection ──────────────────────────────────────────
-  if (!selectedId) {
-    return <Card>
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
-        <TableDiagram balls={clearance.balls.map((b) => ({
-          color: potted.includes(b.id) ? C.green
-            : b.role === "obstacle" ? "#444"
-            : b.group === "black" ? "#111"
-            : b.group === "red" ? C.rust
-            : "#d9c089",
-        }))} />
-      </div>
-      <div style={{ color: C.dim, fontSize: 12 }}>{clearance.name} · {potted.length}/{initialRemaining.length} potted</div>
-      <div style={{ fontSize: 18, fontWeight: 700, margin: "5px 0 13px" }}>Which ball are you playing?</div>
-      <div style={{ display: "grid", gap: 8 }}>
-        {legalTargets.map((id) => <Button key={id} onClick={() => setCurrent(id)} style={{ justifyContent: "flex-start" }}>{ballMap[id]?.label ?? id}</Button>)}
-      </div>
-      {attempted.length > potted.length && (
-        <div style={{ color: C.dim, fontSize: 12, marginTop: 10 }}>
-          {attempted.length - potted.length} miss{attempted.length - potted.length === 1 ? "" : "es"} so far
-        </div>
-      )}
-    </Card>;
-  }
-
-  // ── Phase: play — executing a shot ─────────────────────────────────────────
-  const ball = ballMap[selectedId];
-  return <Card>
-    <div style={{ display: "flex", justifyContent: "center", marginBottom: 10 }}>
-      <TableDiagram balls={clearance.balls.map((item) => ({
-        color: item.id === selectedId ? C.brass
-          : potted.includes(item.id) ? C.green
-          : item.role === "obstacle" ? "#444"
-          : item.group === "red" ? C.rust
-          : C.panel2,
-      }))} />
+      }}>Confirm Plan</Btn>
+      <Btn onClick={() => setPhase("play")}>Just Play</Btn>
     </div>
-    <div style={{ color: C.dim, fontSize: 12 }}>{clearance.name}</div>
-    <div style={{ fontSize: 18, fontWeight: 700, margin: "5px 0" }}>Pot the {ball?.label ?? selectedId}</div>
-    <div style={{ color: C.dim, fontSize: 12, marginBottom: 13 }}>Skill in focus: {ball ? SKILL_MAP[ball.execSkill].name : "—"}</div>
-    {!errorOpen
-      ? <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-          <Button variant="success" onClick={() => applyResult(1)}><Check size={19} /> Success</Button>
-          <Button variant="danger"  onClick={() => setErrorOpen(true)}><X size={19} /> Failed</Button>
-        </div>
-      : <ErrorGrid onPick={(code) => applyResult(0, code)} />
-    }
   </Card>;
+
+  if (adaptationOpen) return <Card>
+    <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>
+      <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, marginBottom: SP.xs }}>POSITION LOST</div>
+      <div style={{ color: C.dim, fontSize: 14 }}>What's your plan from here?</div>
+    </div>
+    <div style={{ display: "grid", gap: SP.sm }}>
+      {["Re-plan clearance", "Continue original route", "Develop a problem ball", "Play safe", "Other"].map((choice) => (
+        <button key={choice} onClick={() => {
+          const decSkill: SkillId = ADAPTATION_SKILL_MAP[choice] ?? "pattern";
+          const tier: DecisionTier = choice === clearance.preferredAdaptation ? "optimal" : choice === "Other" ? "highrisk" : "acceptable";
+          const value = decisionValue(tier);
+          const now = Date.now();
+          profileRef.current = applySkillUpdate(profileRef.current, decSkill, value, { drillId: clearance.id, source: "adaptation", difficulty: clearance.difficulty, tier, ruleset: activeRuleset }, now);
+          entriesRef.current.push({ ts: now, value, difficulty: clearance.difficulty, drillId: clearance.id, source: "adaptation", type: "adaptation", skillId: decSkill, tier, ruleset: activeRuleset });
+          setAdaptation(false);
+        }} style={{
+          background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+          color: C.ink, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+          fontSize: 14, padding: "14px 16px", textAlign: "left", fontWeight: 500,
+        }}>{choice}</button>
+      ))}
+    </div>
+  </Card>;
+
+  // Ball selection
+  if (!selectedId) return <div>
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.md }}>
+      <PoolTable width={280} balls={clearanceBalls} />
+    </div>
+    <Card>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.lg }}>
+        <div>
+          <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{clearance.name}</div>
+          <div style={{ fontSize: 17, fontWeight: 700 }}>Which ball?</div>
+        </div>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12 }}>{potted.length}/{initialRemaining.length}</div>
+      </div>
+      <div style={{ display: "grid", gap: SP.sm }}>
+        {legalTargets.map((id) => <Btn key={id} onClick={() => setCurrent(id)} style={{ justifyContent: "flex-start" }}>{ballMap[id]?.label ?? id}</Btn>)}
+      </div>
+      {attempted.length > potted.length && <div style={{ color: C.muted, fontSize: 12, marginTop: SP.md, fontFamily: "'IBM Plex Mono', monospace" }}>{attempted.length - potted.length} miss{attempted.length - potted.length !== 1 ? "es" : ""} recorded</div>}
+    </Card>
+  </div>;
+
+  // Shot execution
+  const ball = ballMap[selectedId];
+  const shotBalls = clearanceBalls.map(b => b.label === selectedId ? { ...b, color: C.brass } : b);
+  return <div>
+    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.md }}>
+      <PoolTable width={280} balls={shotBalls} selectedBall={selectedId} />
+    </div>
+    <Card>
+      <div style={{ marginBottom: SP.lg }}>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 2 }}>{clearance.name}</div>
+        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 4 }}>Pot the {ball?.label ?? selectedId}</div>
+        <div style={{ color: C.muted, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}>SKILL: {ball ? SKILL_MAP[ball.execSkill].name.toUpperCase() : "—"}</div>
+      </div>
+      {!errorOpen
+        ? <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+            <Btn variant="success" onClick={() => applyResult(1)} style={{ minHeight: 60 }}><Check size={20} /> Success</Btn>
+            <Btn variant="danger"  onClick={() => setErrorOpen(true)} style={{ minHeight: 60 }}><X size={20} /> Failed</Btn>
+          </div>
+        : <ErrorGrid onPick={(code) => applyResult(0, code)} />}
+    </Card>
+  </div>;
 }
 
 // ─── Session runner ────────────────────────────────────────────────────────────
-function SessionRunner({
-  profile, generated, onFinish,
-}: {
-  profile: Profile;
-  generated: ReturnType<typeof generateSession>;
+function SessionRunner({ profile, generated, onFinish }: {
+  profile: Profile; generated: ReturnType<typeof generateSession>;
   onFinish: (profile: Profile, summary: SessionSummary, rootCauseEvents: RootCauseEvent[]) => void;
 }) {
   const [index, setIndex] = useState(0);
@@ -421,78 +973,345 @@ function SessionRunner({
     }
     const nextRuleset = generated.drillRulesets[index + 1];
     if (profile.preferredRulesMode === "mixed" && nextRuleset && currentRuleset && nextRuleset !== currentRuleset) {
-      setShowTransition(`Next: ${nextRuleset === "international" ? "International Rules" : "Blackball Rules"}`);
-      setTimeout(() => { setShowTransition(null); setIndex((v) => v + 1); }, 1800);
+      setShowTransition(nextRuleset === "international" ? "International Rules" : "Blackball");
+      setTimeout(() => { setShowTransition(null); setIndex((v) => v + 1); }, 2000);
     } else {
       setIndex((v) => v + 1);
     }
   };
 
-  if (showTransition) {
-    return <Card style={{ textAlign: "center" }}><div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 12, marginBottom: 8 }}>SWITCHING RULESETS</div><div style={{ fontSize: 18, fontWeight: 700 }}>{showTransition}</div></Card>;
-  }
+  const pct = index / generated.drills.length * 100;
+
+  // Ruleset transition card
+  if (showTransition) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 300 }}>
+    <div style={{ textAlign: "center", padding: SP.xl }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, marginBottom: SP.lg, textTransform: "uppercase" }}>Switching Ruleset</div>
+      <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 2, marginBottom: SP.sm }}>NEXT</div>
+      <div style={{ color: C.ink, fontSize: 22, fontWeight: 700 }}>{showTransition}</div>
+    </div>
+  </div>;
 
   return <div>
-    <Label>Drill {index + 1} of {generated.drills.length}</Label>
-    <ProgressBar color={C.chalk} value={index / generated.drills.length * 100} />
+    <div style={{ marginBottom: SP.lg }}>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
+        <SectionLabel>Drill {index + 1} of {generated.drills.length}</SectionLabel>
+        <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{Math.round(pct)}%</span>
+      </div>
+      <ProgressBar color={C.chalk} value={pct} height={5} />
+    </div>
     {current.type === "combined"
       ? <ClearanceRunner key={`${current.id}-${index}`} clearance={current} profile={profileRef.current} source="training" activeRuleset={activeRuleset} onComplete={complete} />
       : <DrillRunner     key={`${current.id}-${index}`} drill={current}     profile={profileRef.current} source="training" activeRuleset={activeRuleset} onComplete={complete} />}
   </div>;
 }
 
-// ─── Summary ───────────────────────────────────────────────────────────────────
-function Summary({ summary, onDone }: { summary: SessionSummary; onDone: () => void }) {
-  return <div><Card style={{ marginBottom: 14 }}><Label>Today's session</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.todayWentWell.length ? `Your ${summary.todayWentWell.join(" and ")} held up well today.` : "A mixed session across several skills."}</p><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: "10px 0 0" }}>{summary.todayLimited.length ? `Most of today's difficulty traced back to ${summary.todayLimited.join(" and ")} — today's snapshot, not a rewrite of your profile.` : "Nothing stood out as a clear limiter in today's session."}</p></Card>{summary.chainNarratives.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Error-chain note</Label>{summary.chainNarratives.map((note, i) => <p key={i} style={{ color: C.chalk, lineHeight: 1.55, margin: i ? "9px 0 0" : 0 }}>{note}</p>)}</Card>}{summary.adaptations.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Adaptation</Label><p style={{ color: C.brass, lineHeight: 1.55, margin: 0 }}>You made a decision after position was lost. That choice is credited to the correct decision skill, separately from the execution result.</p></Card>}<Card style={{ marginBottom: 14 }}><Label>What changes next</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.changeNote}</p></Card><Button variant="primary" onClick={onDone}>Back to today</Button></div>;
+// ─── Session summary ───────────────────────────────────────────────────────────
+function Summary({ summary, onDone, onProgress }: {
+  summary: SessionSummary; onDone: () => void; onProgress: () => void;
+}) {
+  return <div>
+    <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 2, marginBottom: SP.xl }}>SESSION COMPLETE</div>
+
+    {summary.todayWentWell.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>What held up well</SectionLabel>
+      <p style={{ color: C.ink, lineHeight: 1.65, margin: 0, fontSize: 14 }}>
+        Your {summary.todayWentWell.join(" and ")} held up well today.
+      </p>
+    </Card>}
+
+    {summary.todayLimited.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>What limited you</SectionLabel>
+      <p style={{ color: C.dim, lineHeight: 1.65, margin: 0, fontSize: 14 }}>
+        Most of today's difficulty traced back to {summary.todayLimited.join(" and ")} — today's snapshot, not a permanent verdict.
+      </p>
+    </Card>}
+
+    {summary.chainNarratives.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Key insight</SectionLabel>
+      {summary.chainNarratives.map((note, i) => <p key={i} style={{ color: C.chalk, lineHeight: 1.6, margin: i ? "8px 0 0" : 0, fontSize: 14 }}>{note}</p>)}
+    </Card>}
+
+    {summary.adaptations.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Adaptation noted</SectionLabel>
+      <p style={{ color: C.brass, lineHeight: 1.6, margin: 0, fontSize: 14 }}>You made a decision after losing position. That choice is credited to the correct decision skill, separately from execution.</p>
+    </Card>}
+
+    <Card style={{ marginBottom: SP.xl }}>
+      <SectionLabel>What changes next</SectionLabel>
+      <p style={{ color: C.ink, lineHeight: 1.65, margin: 0, fontSize: 14 }}>{summary.changeNote}</p>
+    </Card>
+
+    <Btn variant="primary" onClick={onDone} style={{ marginBottom: SP.sm, minHeight: 54 }}>Return to Today</Btn>
+    <Btn variant="ghost" onClick={onProgress} style={{ color: C.dim }}>View Progress</Btn>
+  </div>;
 }
 
-// ─── Progress ──────────────────────────────────────────────────────────────────
+// ─── Progress view ─────────────────────────────────────────────────────────────
 function ProgressView({ profile }: { profile: Profile }) {
-  const lf = limitingFactor(profile);
+  const lf       = limitingFactor(profile);
   const weighting = sessionWeighting(profile, lf);
-  const isMixed = profile.preferredRulesMode === "mixed";
-  return <div><SkillRadar profile={profile} /><Card style={{ marginBottom: 14 }}><Label>Execution vs decision</Label><div style={{ display: "grid", gap: 10 }}><div><div style={{ color: C.dim, fontSize: 12, marginBottom: 5 }}>Execution <strong style={{ color: C.ink }}>{Math.round(weighting.exec)}</strong></div><ProgressBar color={C.chalk} value={weighting.exec} /></div><div><div style={{ color: C.dim, fontSize: 12, marginBottom: 5 }}>Decision <strong style={{ color: C.ink }}>{Math.round(weighting.dec)}</strong></div><ProgressBar color={C.brass} value={weighting.dec} /></div></div></Card><Card style={{ marginBottom: 14 }}><Label>Current focus</Label><div style={{ fontSize: 15 }}>{lf.primary ? `${lf.primary.name}${lf.status === "provisional" ? " · early signal" : ""}` : "Still gathering enough evidence for a clear focus"}</div>{lf.secondary && <div style={{ color: C.dim, fontSize: 13, marginTop: 6 }}>Also worth attention: {lf.secondary.name}</div>}</Card><Card><Label>All skills</Label>{SKILLS.map((skill) => { const s = profile.skills[skill.id]; const confidence = computeConfidence(s.attempts); const bbConf = isMixed && skill.type === "decision" ? computeRulesetConfidence(profile, skill.id, "blackball") : null; const intConf = isMixed && skill.type === "decision" ? computeRulesetConfidence(profile, skill.id, "international") : null; return <div key={skill.id} style={{ borderBottom: `1px solid ${C.line}`, padding: "10px 0" }}><div style={{ alignItems: "center", display: "flex", justifyContent: "space-between" }}><div><div style={{ alignItems: "center", display: "flex", fontSize: 13, gap: 6 }}>{skill.name}<TrendIcon trend={trendFor(profile.ratingHistory, skill.id)} /></div><div style={{ color: C.dim, fontSize: 11, marginTop: 4 }}>{confidenceLabel(confidence.tier, isStale(s))} · {s.attempts.length} attempts</div>{bbConf && <div style={{ color: C.dim, fontSize: 10, marginTop: 2 }}>BB: {bbConf.tier} · INT: {intConf?.tier ?? "Low"}</div>}</div><div style={{ color: C.brass, fontFamily: "'IBM Plex Mono', monospace", fontSize: 15 }}>{Math.round(s.rating)}</div></div></div>; })}</Card></div>;
+  const isMixed  = profile.preferredRulesMode === "mixed";
+  const execSkills = SKILLS.filter(s => s.type === "execution");
+  const decSkills  = SKILLS.filter(s => s.type === "decision");
+
+  return <div>
+    {/* Current focus card */}
+    <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.brassD}` }}>
+      <SectionLabel>Current Focus</SectionLabel>
+      {lf.primary
+        ? <>
+            <div style={{ fontSize: 20, fontWeight: 700, marginBottom: SP.xs }}>{lf.primary.name}</div>
+            {lf.status === "provisional" && <div style={{ color: C.brass, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace", marginBottom: SP.xs }}>EARLY SIGNAL</div>}
+            {lf.secondary && <div style={{ color: C.dim, fontSize: 14, marginBottom: SP.sm }}>Also: {lf.secondary.name}</div>}
+            <div style={{ color: C.muted, fontSize: 13 }}>Confirmed current limiter</div>
+          </>
+        : <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.55 }}>Still gathering enough evidence for a clear focus. Keep training.</div>}
+    </Card>
+
+    {/* Radar chart */}
+    <SkillRadar profile={profile} />
+
+    {/* Session balance */}
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Training balance</SectionLabel>
+      <div style={{ display: "grid", gap: SP.md }}>
+        <div>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.xs }}>
+            <span style={{ color: C.dim, fontSize: 13 }}>Execution</span>
+            <span style={{ color: C.ink, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>{Math.round(weighting.exec)}</span>
+          </div>
+          <ProgressBar color={C.chalk} value={weighting.exec} />
+        </div>
+        <div>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.xs }}>
+            <span style={{ color: C.dim, fontSize: 13 }}>Decision</span>
+            <span style={{ color: C.ink, fontFamily: "'IBM Plex Mono', monospace", fontSize: 13, fontWeight: 600 }}>{Math.round(weighting.dec)}</span>
+          </div>
+          <ProgressBar color={C.brass} value={weighting.dec} />
+        </div>
+      </div>
+    </Card>
+
+    {/* Shot-making skills */}
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Shot-Making</SectionLabel>
+      {execSkills.map((skill) => {
+        const s = profile.skills[skill.id];
+        const confidence = computeConfidence(s.attempts);
+        const level = ratingLevel(s.rating);
+        const trend  = trendFor(profile.ratingHistory, skill.id);
+        return <div key={skill.id} style={{ borderBottom: `1px solid ${C.line}`, padding: "12px 0" }}>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.xs }}>
+            <div style={{ alignItems: "center", display: "flex", gap: SP.sm }}>
+              <span style={{ color: C.ink, fontSize: 14, fontWeight: 500 }}>{skill.name}</span>
+              <TrendIcon trend={trend} />
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: C.brass, fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 600 }}>{Math.round(s.rating)}</div>
+              <div style={{ color: C.muted, fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 0.5 }}>{level}</div>
+            </div>
+          </div>
+          <ProgressBar value={s.rating} color={C.chalk} height={4} />
+          <div style={{ color: C.muted, fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", marginTop: SP.xs }}>{confidenceDisplay(confidence.tier, isStale(s))}</div>
+        </div>;
+      })}
+    </Card>
+
+    {/* Decision skills */}
+    <Card>
+      <SectionLabel>Table-Reading</SectionLabel>
+      {decSkills.map((skill) => {
+        const s = profile.skills[skill.id];
+        const confidence = computeConfidence(s.attempts);
+        const level = ratingLevel(s.rating);
+        const trend  = trendFor(profile.ratingHistory, skill.id);
+        const bbConf  = isMixed ? computeRulesetConfidence(profile, skill.id, "blackball") : null;
+        const intConf = isMixed ? computeRulesetConfidence(profile, skill.id, "international") : null;
+        return <div key={skill.id} style={{ borderBottom: `1px solid ${C.line}`, padding: "12px 0" }}>
+          <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.xs }}>
+            <div style={{ alignItems: "center", display: "flex", gap: SP.sm }}>
+              <span style={{ color: C.ink, fontSize: 14, fontWeight: 500 }}>{skill.name}</span>
+              <TrendIcon trend={trend} />
+            </div>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ color: C.brass, fontFamily: "'IBM Plex Mono', monospace", fontSize: 14, fontWeight: 600 }}>{Math.round(s.rating)}</div>
+              <div style={{ color: C.muted, fontSize: 10, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 0.5 }}>{level}</div>
+            </div>
+          </div>
+          <ProgressBar value={s.rating} color={C.brass} height={4} />
+          <div style={{ alignItems: "center", display: "flex", gap: SP.sm, marginTop: SP.xs }}>
+            <div style={{ color: C.muted, fontSize: 11, fontFamily: "'IBM Plex Mono', monospace" }}>{confidenceDisplay(confidence.tier, isStale(s))}</div>
+            {isMixed && bbConf && <div style={{ display: "flex", gap: SP.xs }}>
+              <RulesBadge ruleset="blackball" style={{ fontSize: 8, padding: "1px 5px" }} />
+              <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>{bbConf.tier}</span>
+              <RulesBadge ruleset="international" style={{ fontSize: 8, padding: "1px 5px" }} />
+              <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>{intConf?.tier ?? "Low"}</span>
+            </div>}
+          </div>
+        </div>;
+      })}
+    </Card>
+  </div>;
 }
 
-// ─── Library ───────────────────────────────────────────────────────────────────
+// ─── Library view ──────────────────────────────────────────────────────────────
 function LibraryView({ profile }: { profile: Profile }) {
+  const [filter, setFilter] = useState<"all" | "execution" | "decision">("all");
   const mode = profile.preferredRulesMode;
   const rulesets: RuleSetId[] = mode === "mixed" ? ["blackball", "international"] : [mode];
-  const groups = SKILLS.map((skill) => ({ skill, drills: DRILLS.filter((d) => d.skillId === skill.id && rulesets.some((r) => d.rulesets.includes(r))) })).filter((g) => g.drills.length);
-  return <div>{groups.map(({ skill, drills }) => <Card key={skill.id} style={{ marginBottom: 12 }}><Label>{skill.name} {skill.priority && <span style={{ color: C.brass }}>· priority</span>}</Label>{drills.map((d) => <div key={d.id} style={{ borderBottom: `1px solid ${C.line}`, color: C.dim, fontSize: 13, padding: "8px 0" }}><div style={{ alignItems: "center", display: "flex", gap: 8 }}><span style={{ color: C.ink }}>{d.name}</span>{d.rulesContext && <span style={{ background: d.rulesContext === "blackball" ? C.brass : C.chalk, borderRadius: 3, color: C.bg, fontSize: 9, fontWeight: 700, padding: "1px 5px" }}>{d.rulesContext === "blackball" ? "BB" : "INT"}</span>}</div><div style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, marginTop: 3 }}>difficulty {d.difficulty} · {d.type}</div></div>)}</Card>)}<Card><Label>Clearances</Label>{CLEARANCES.filter((c) => rulesets.some((r) => c.rulesets.includes(r))).map((c) => <div key={c.id} style={{ color: C.dim, fontSize: 13, padding: "7px 0" }}>{c.name} <span style={{ color: C.line, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>· difficulty {c.difficulty} · {c.balls.filter((b) => b.role === "target").length} targets + {c.balls.filter((b) => b.role === "obstacle").length} obstacles</span></div>)}</Card></div>;
+
+  const groups = SKILLS.map((skill) => {
+    const drills = DRILLS.filter((d) =>
+      d.skillId === skill.id &&
+      rulesets.some((r) => d.rulesets.includes(r)) &&
+      (filter === "all" || d.type === filter || (filter === "decision" && d.type !== "execution"))
+    );
+    return { skill, drills };
+  }).filter((g) => g.drills.length);
+
+  const clearances = CLEARANCES.filter((c) => rulesets.some((r) => c.rulesets.includes(r)));
+
+  return <div>
+    {/* Filter tabs */}
+    <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, display: "flex", marginBottom: SP.lg, padding: 3 }}>
+      {(["all", "execution", "decision"] as const).map((f) => <button key={f} onClick={() => setFilter(f)} style={{
+        background: filter === f ? C.panel3 : "transparent",
+        border: filter === f ? `1px solid ${C.line}` : "1px solid transparent",
+        borderRadius: R.sm, color: filter === f ? C.ink : C.dim, cursor: "pointer",
+        flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: filter === f ? 600 : 400,
+        padding: "8px 4px", textTransform: "capitalize",
+      }}>{f}</button>)}
+    </div>
+
+    {groups.map(({ skill, drills }) => <Card key={skill.id} style={{ marginBottom: SP.md }}>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.md }}>
+        <SectionLabel>{skill.name}</SectionLabel>
+        {skill.priority && <span style={{ background: `${C.brass}22`, border: `1px solid ${C.brassD}`, borderRadius: R.sm, color: C.brass, fontSize: 9, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, padding: "2px 7px" }}>PRIORITY</span>}
+      </div>
+      {drills.map((d, i) => <div key={d.id} style={{ borderBottom: i < drills.length - 1 ? `1px solid ${C.line}` : "none", padding: "10px 0" }}>
+        <div style={{ alignItems: "center", display: "flex", gap: SP.sm, marginBottom: 3 }}>
+          <span style={{ color: C.ink, fontSize: 14, fontWeight: 500 }}>{d.name}</span>
+          {d.rulesContext && <RulesBadge ruleset={d.rulesContext} />}
+        </div>
+        <div style={{ alignItems: "center", color: C.muted, display: "flex", fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, gap: SP.md, letterSpacing: 0.5 }}>
+          <span>DIFF {d.difficulty}/10</span>
+          <span style={{ textTransform: "uppercase" }}>{d.type}</span>
+        </div>
+      </div>)}
+    </Card>)}
+
+    {(filter === "all" || filter === "execution") && clearances.length > 0 && <Card>
+      <SectionLabel>Clearances</SectionLabel>
+      {clearances.map((c, i) => <div key={c.id} style={{ borderBottom: i < clearances.length - 1 ? `1px solid ${C.line}` : "none", padding: "10px 0" }}>
+        <div style={{ color: C.ink, fontSize: 14, fontWeight: 500, marginBottom: 3 }}>{c.name}</div>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 0.5 }}>
+          DIFF {c.difficulty} · {c.balls.filter(b => b.role === "target").length} targets · {c.balls.filter(b => b.role === "obstacle").length} obstacles
+        </div>
+      </div>)}
+    </Card>}
+  </div>;
 }
 
-// ─── Settings ──────────────────────────────────────────────────────────────────
-function SettingsView({ profile, onMode, onReset }: { profile: Profile; onMode: (mode: RulesMode) => void; onReset: () => void }) {
-  return <div><Card style={{ marginBottom: 14 }}><Label>Preferred rules</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Changing your preference keeps all your skill ratings and history. It only changes the content of future sessions.</p>{MODES_FOR_ONBOARDING.map((item) => <button key={item.mode} onClick={() => onMode(item.mode)} style={{ alignItems: "center", background: profile.preferredRulesMode === item.mode ? "#284735" : C.panel2, border: `1px solid ${profile.preferredRulesMode === item.mode ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", marginBottom: 8, padding: 13, textAlign: "left", width: "100%" }}><span><strong>{item.label}</strong><span style={{ color: C.dim, display: "block", fontSize: 12, marginTop: 4 }}>{item.description}</span></span>{profile.preferredRulesMode === item.mode && <Check color={C.brass} size={18} />}</button>)}</Card>{profile.preferredRulesMode !== "mixed" && <Card style={{ marginBottom: 14 }}><Label>Rules notes</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{RULESETS[profile.ruleset].unsupportedNote}</p></Card>}<Card><Label>Local profile</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Your profile is stored on this device.</p><Button variant="danger" onClick={onReset}><RotateCcw size={16} /> Reset profile</Button></Card></div>;
+// ─── Settings / More ───────────────────────────────────────────────────────────
+function SettingsView({ profile, onMode, onReset, onLibrary }: {
+  profile: Profile; onMode: (mode: RulesMode) => void; onReset: () => void; onLibrary: () => void;
+}) {
+  return <div>
+    {/* Training mode */}
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Preferred Training Mode</SectionLabel>
+      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: `0 0 ${SP.md}px` }}>Changing your preference keeps all your skill ratings and history. It only changes future session content.</p>
+      {MODES_FOR_ONBOARDING.map((item) => <button key={item.mode} onClick={() => onMode(item.mode)} style={{
+        alignItems: "center", background: profile.preferredRulesMode === item.mode ? C.panel3 : C.panel2,
+        border: `1px solid ${profile.preferredRulesMode === item.mode ? C.brass : C.line}`,
+        borderRadius: R.md, color: C.ink, cursor: "pointer", display: "flex",
+        justifyContent: "space-between", marginBottom: SP.sm, padding: "13px 16px", textAlign: "left", width: "100%",
+      }}>
+        <span>
+          <strong style={{ fontSize: 14 }}>{item.label}</strong>
+          <span style={{ color: C.dim, display: "block", fontSize: 12, marginTop: 3, lineHeight: 1.45 }}>{item.description}</span>
+        </span>
+        {profile.preferredRulesMode === item.mode && <Check color={C.brass} size={18} />}
+      </button>)}
+    </Card>
+
+    {/* Rules notes */}
+    {profile.preferredRulesMode !== "mixed" && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Rules notes</SectionLabel>
+      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{RULESETS[profile.ruleset].unsupportedNote}</p>
+    </Card>}
+
+    {/* Drill library link */}
+    <Card style={{ marginBottom: SP.lg }} onClick={onLibrary}>
+      <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between" }}>
+        <div>
+          <div style={{ color: C.ink, fontWeight: 600, marginBottom: 3 }}>Drill Library</div>
+          <div style={{ color: C.dim, fontSize: 13 }}>Browse all drills and clearances.</div>
+        </div>
+        <ChevronRight color={C.muted} size={18} />
+      </div>
+    </Card>
+
+    {/* Reset */}
+    <Card>
+      <SectionLabel>Local profile</SectionLabel>
+      <p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: `0 0 ${SP.md}px` }}>Your profile and match history are stored on this device.</p>
+      <Btn variant="danger" onClick={onReset} style={{ maxWidth: 220 }}><RotateCcw size={16} /> Reset profile</Btn>
+    </Card>
+  </div>;
 }
 
-// ─── Match view components ─────────────────────────────────────────────────────
-
+// ─── Match views ───────────────────────────────────────────────────────────────
 function MatchHistoryView({ matches, activeMatchId, onNew, onContinue, onDetail }: {
-  matches: Match[]; activeMatchId: string | null; onNew: () => void; onContinue: () => void; onDetail: (id: string) => void;
+  matches: Match[]; activeMatchId: string | null;
+  onNew: () => void; onContinue: () => void; onDetail: (id: string) => void;
 }) {
   const activeMatch = matches.find(m => m.id === activeMatchId) ?? null;
   const completed   = matches.filter(m => m.completedAt != null).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+
   return <div>
-    {activeMatch && <Card style={{ marginBottom: 14, border: `1px solid ${C.brass}` }}>
-      <Label>Active match</Label>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
-        {RULESETS[activeMatch.ruleset].name.split(" ")[0]} · {frameScore(activeMatch).player}–{frameScore(activeMatch).opponent}
-        {activeMatch.opponent && <span style={{ color: C.dim, fontWeight: 400 }}> vs {activeMatch.opponent}</span>}
+    {/* Active match banner */}
+    {activeMatch && <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.brass}` }}>
+      <SectionLabel>Active Match</SectionLabel>
+      <div style={{ alignItems: "baseline", display: "flex", gap: SP.sm, marginBottom: SP.md }}>
+        <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, letterSpacing: 1, lineHeight: 1 }}>
+          {frameScore(activeMatch).player} – {frameScore(activeMatch).opponent}
+        </div>
+        <RulesBadge ruleset={activeMatch.ruleset} />
+        {activeMatch.opponent && <span style={{ color: C.dim, fontSize: 13 }}>vs {activeMatch.opponent}</span>}
       </div>
-      <Button variant="primary" onClick={onContinue}>Continue match</Button>
+      <Btn variant="primary" onClick={onContinue}>Continue Match</Btn>
     </Card>}
-    <Button variant={activeMatch ? "default" : "primary"} onClick={onNew} style={{ marginBottom: 14 }}>+ New Match</Button>
-    {!completed.length && !activeMatch && <Card><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6 }}>No completed matches yet. Log your first match to see how real play shapes your training focus.</div></Card>}
+
+    <Btn variant={activeMatch ? "outline" : "primary"} onClick={onNew} style={{ marginBottom: SP.lg, minHeight: 52 }}>
+      + Log Match
+    </Btn>
+
+    {!completed.length && !activeMatch && <EmptyState
+      icon="🎱"
+      title="No matches yet"
+      body="Log your first match and 8-Ball Coach will start learning what costs you frames."
+    />}
+
     {completed.map(m => {
-      const sc = frameScore(m); const won = sc.player > sc.opponent;
-      return <button key={m.id} onClick={() => onDetail(m.id)} style={{ background: "transparent", border: 0, cursor: "pointer", marginBottom: 10, padding: 0, textAlign: "left", width: "100%" }}>
-        <Card><div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
-          <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{new Date(m.completedAt!).toLocaleDateString()} · {RULESETS[m.ruleset].name.split(" ")[0]}{m.opponent && ` · vs ${m.opponent}`}</div>
-          <div style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700 }}>{won ? "WON" : "LOST"}</div>
-        </div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1 }}>{sc.player}–{sc.opponent}</div></Card>
-      </button>;
+      const sc  = frameScore(m);
+      const won = sc.player > sc.opponent;
+      return <Card key={m.id} onClick={() => onDetail(m.id)} style={{ marginBottom: SP.md, cursor: "pointer" }}>
+        <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 1, color: won ? C.brass : C.rust, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: SP.xs }}>
+            <RulesBadge ruleset={m.ruleset} />
+            <div style={{ display: "flex", gap: SP.xs }}>
+              <span style={{ background: `${C.panel2}`, border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, padding: "2px 7px", textTransform: "uppercase" }}>{m.competitionType}</span>
+              <span style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700, alignSelf: "center" }}>{won ? "WON" : "LOST"}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ color: C.muted, fontSize: 12, marginBottom: SP.xs, fontFamily: "'IBM Plex Mono', monospace" }}>
+          {new Date(m.completedAt!).toLocaleDateString()}{m.opponent ? ` · vs ${m.opponent}` : ""}
+        </div>
+        <div style={{ color: C.dim, fontSize: 13, fontStyle: "italic" }}>"{matchCoachingLine(m)}"</div>
+      </Card>;
     })}
   </div>;
 }
@@ -506,52 +1325,130 @@ function MatchSetupView({ onStart, onCancel }: {
   const [opponent,  setOpponent]  = useState("");
   const [format,    setFormat]    = useState("");
   const [eventName, setEventName] = useState("");
-  const inpStyle: CSSProperties = { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 8, color: C.ink, fontFamily: "'Inter', sans-serif", fontSize: 14, outline: "none", padding: "10px 12px", width: "100%" };
+  const inpStyle: CSSProperties = {
+    background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+    color: C.ink, fontFamily: "'Inter', sans-serif", fontSize: 14,
+    outline: "none", padding: "12px 14px", width: "100%",
+  };
+  const selCard = (active: boolean): CSSProperties => ({
+    alignItems: "center", background: active ? C.panel3 : C.panel2,
+    border: `1px solid ${active ? C.brass : C.line}`, borderRadius: R.md,
+    color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between",
+    padding: "14px 16px", textAlign: "left" as const,
+  });
+
   return <div>
-    <Card style={{ marginBottom: 12 }}><Label>Ruleset</Label>
-      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-        {(["blackball", "international"] as RuleSetId[]).map(r => <button key={r} onClick={() => setRuleset(r)} style={{ alignItems: "center", background: ruleset === r ? "#284735" : C.panel2, border: `1px solid ${ruleset === r ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", padding: "12px 10px" }}><span style={{ fontSize: 13 }}>{r === "blackball" ? "Blackball" : "International"}</span>{ruleset === r && <Check color={C.brass} size={16} />}</button>)}
+    <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 26, letterSpacing: 1.5, marginBottom: SP.xl }}>START MATCH</div>
+
+    <Card style={{ marginBottom: SP.md }}>
+      <SectionLabel>Ruleset</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+        {(["blackball", "international"] as RuleSetId[]).map(r => <button key={r} onClick={() => setRuleset(r)} style={selCard(ruleset === r)}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 2 }}>{r === "blackball" ? "Blackball" : "International"}</div>
+            <RulesBadge ruleset={r} />
+          </div>
+          {ruleset === r && <Check color={C.brass} size={17} />}
+        </button>)}
       </div>
     </Card>
-    <Card style={{ marginBottom: 12 }}><Label>Context</Label>
-      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
-        {(["competition", "practice"] as MatchEnvironment[]).map(ct => <button key={ct} onClick={() => setCompetitionType(ct)} style={{ alignItems: "center", background: competitionType === ct ? "#284735" : C.panel2, border: `1px solid ${competitionType === ct ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", padding: "12px 10px" }}><span style={{ fontSize: 13 }}>{ct === "competition" ? "Competition" : "Practice"}</span>{competitionType === ct && <Check color={C.brass} size={16} />}</button>)}
+
+    <Card style={{ marginBottom: SP.md }}>
+      <SectionLabel>Context</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+        {(["competition", "practice"] as MatchEnvironment[]).map(ct => <button key={ct} onClick={() => setCompetitionType(ct)} style={selCard(competitionType === ct)}>
+          <span style={{ fontSize: 14, fontWeight: 600 }}>{ct === "competition" ? "Competition" : "Practice"}</span>
+          {competitionType === ct && <Check color={C.brass} size={17} />}
+        </button>)}
       </div>
     </Card>
-    <Card style={{ marginBottom: 14 }}><Label>Optional details</Label>
-      <div style={{ display: "grid", gap: 8 }}>
-        <input value={opponent}  onChange={e => setOpponent(e.target.value)}  placeholder="Opponent name"        style={inpStyle} />
+
+    <Card style={{ marginBottom: SP.xl }}>
+      <SectionLabel>Optional details</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm }}>
+        <input value={opponent}  onChange={e => setOpponent(e.target.value)}  placeholder="Opponent name" style={inpStyle} />
         <input value={format}    onChange={e => setFormat(e.target.value)}    placeholder="Format (e.g. best of 7)" style={inpStyle} />
-        <input value={eventName} onChange={e => setEventName(e.target.value)} placeholder="Event / venue"         style={inpStyle} />
+        <input value={eventName} onChange={e => setEventName(e.target.value)} placeholder="Event or venue" style={inpStyle} />
       </div>
     </Card>
-    <Button variant="primary" onClick={() => onStart({ ruleset, competitionType, opponent: opponent || undefined, format: format || undefined, eventName: eventName || undefined })} style={{ marginBottom: 10 }}>Start Match</Button>
-    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+
+    <Btn variant="primary" onClick={() => onStart({ ruleset, competitionType, opponent: opponent || undefined, format: format || undefined, eventName: eventName || undefined })} style={{ marginBottom: SP.sm, minHeight: 56 }}>
+      Start Match
+    </Btn>
+    <Btn variant="ghost" onClick={onCancel} style={{ color: C.dim }}>Cancel</Btn>
   </div>;
 }
 
 function MatchActiveView({ match, onLog, onEditLast, onEnd }: {
   match: Match; onLog: () => void; onEditLast: () => void; onEnd: () => void;
 }) {
-  const sc = frameScore(match); const frames = [...match.frames].reverse();
+  const sc = frameScore(match);
+  const frames = [...match.frames].reverse();
+
   return <div>
-    <Card style={{ marginBottom: 14, textAlign: "center" }}>
-      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 56, letterSpacing: 2, color: C.brass, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
-      <div style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>{RULESETS[match.ruleset].name} · {match.competitionType}{match.opponent && ` · vs ${match.opponent}`}</div>
-    </Card>
-    <Button variant="primary" onClick={onLog} style={{ marginBottom: 10 }}>+ Log Frame</Button>
-    {match.frames.length > 0 && <Button onClick={onEditLast} style={{ marginBottom: 14 }}>Edit last frame</Button>}
-    {frames.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Frames played</Label>
-      {frames.map(f => { const ev = f.keyEvents[0]; const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
-        return <div key={f.id} style={{ borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-          <div><span style={{ color: f.result === "won" ? C.green : C.rust, fontWeight: 700 }}>{f.result === "won" ? "W" : "L"}</span><span style={{ color: C.dim, fontSize: 13 }}> · Frame {f.frameNumber}{ev && ` · ${catLabel}`}</span></div>
-          {ev && <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{ev.impact}</div>}
+    {/* Score hero */}
+    <div style={{ padding: `${SP.xl}px 0 ${SP.lg}px`, textAlign: "center" }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1.5, marginBottom: SP.md, textTransform: "uppercase" }}>Match in progress</div>
+      <div style={{ display: "flex", alignItems: "flex-end", justifyContent: "center", gap: SP.xl }}>
+        <div>
+          <div style={{ color: C.muted, fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, marginBottom: SP.xs }}>YOU</div>
+          <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 72, letterSpacing: 2, lineHeight: 1 }}>{sc.player}</div>
+        </div>
+        <div style={{ color: C.line, fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, paddingBottom: 8 }}>–</div>
+        <div>
+          <div style={{ color: C.muted, fontSize: 11, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, marginBottom: SP.xs }}>OPP</div>
+          <div style={{ color: C.ink, fontFamily: "'Bebas Neue', sans-serif", fontSize: 72, letterSpacing: 2, lineHeight: 1 }}>{sc.opponent}</div>
+        </div>
+      </div>
+      <div style={{ color: C.muted, fontSize: 12, marginTop: SP.md, display: "flex", alignItems: "center", justifyContent: "center", gap: SP.sm }}>
+        <RulesBadge ruleset={match.ruleset} />
+        <span style={{ color: C.line }}>·</span>
+        <span style={{ textTransform: "capitalize" }}>{match.competitionType}</span>
+        {match.opponent && <><span style={{ color: C.line }}>·</span><span>vs {match.opponent}</span></>}
+      </div>
+    </div>
+
+    {/* Primary actions */}
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr", marginBottom: SP.lg }}>
+      <Btn variant="success" onClick={onLog} style={{ minHeight: 64, fontSize: 17, flexDirection: "column", gap: 4 }}>
+        <Check size={22} /><span>Won Frame</span>
+      </Btn>
+      <Btn variant="danger" onClick={onLog} style={{ minHeight: 64, fontSize: 17, flexDirection: "column", gap: 4 }}>
+        <X size={22} /><span>Lost Frame</span>
+      </Btn>
+    </div>
+
+    {/* Secondary actions */}
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr", marginBottom: SP.lg }}>
+      {match.frames.length > 0 && <Btn onClick={onEditLast} style={{ fontSize: 13, color: C.dim }}>Edit Last Frame</Btn>}
+      <Btn variant="ghost" onClick={() => {}} style={{ fontSize: 13, color: C.muted, border: `1px solid ${C.line}`, borderRadius: R.md }}>View Frames</Btn>
+    </div>
+
+    {/* Frame log */}
+    {frames.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Frames played</SectionLabel>
+      {frames.map(f => {
+        const ev = f.keyEvents[0];
+        const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
+        return <div key={f.id} style={{ alignItems: "center", borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "9px 0" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: SP.sm }}>
+            <span style={{ background: f.result === "won" ? `${C.green}22` : `${C.rust}22`, border: `1px solid ${f.result === "won" ? C.green : C.rust}`, borderRadius: 4, color: f.result === "won" ? C.green : C.rust, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, fontWeight: 700, padding: "2px 6px" }}>{f.result === "won" ? "W" : "L"}</span>
+            <span style={{ color: C.dim, fontSize: 13 }}>Frame {f.frameNumber}{catLabel && ` · ${catLabel}`}</span>
+          </div>
+          {ev && <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, textTransform: "uppercase" }}>{impactLabel(ev.impact)}</span>}
         </div>;
       })}
     </Card>}
-    <Button variant="danger" onClick={onEnd}>End Match</Button>
+
+    <Btn variant="ghost" onClick={onEnd} style={{ color: C.rust, border: `1px solid ${C.rust}22`, borderRadius: R.md }}>End Match</Btn>
   </div>;
 }
+
+const IMPACT_CHOICES: { display: "Minor" | "Important" | "Frame-deciding"; sub: string }[] = [
+  { display: "Minor",          sub: "Minor setback" },
+  { display: "Important",      sub: "Cost you ground" },
+  { display: "Frame-deciding", sub: "Decisive mistake" },
+];
 
 function LogFrameView({ match, onDone, onCancel }: {
   match: Match;
@@ -564,100 +1461,164 @@ function LogFrameView({ match, onDone, onCancel }: {
   const catLabel = category ? (FRAME_LOSS_CATEGORIES.find(c => c.key === category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === category)?.label ?? category) : "";
 
   if (!result) return <div>
-    <Card style={{ marginBottom: 14 }}><Label>Frame result</Label>
-      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-        <Button variant="success" onClick={() => setResult("won")}  style={{ minHeight: 80, fontSize: 18 }}><Check size={22} /> Won</Button>
-        <Button variant="danger"  onClick={() => setResult("lost")} style={{ minHeight: 80, fontSize: 18 }}><X    size={22} /> Lost</Button>
-      </div>
-    </Card>
-    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+    <div style={{ color: C.ink, fontSize: 18, fontWeight: 700, marginBottom: SP.lg }}>Did you win the frame?</div>
+    <div style={{ display: "grid", gap: SP.md, gridTemplateColumns: "1fr 1fr", marginBottom: SP.lg }}>
+      <Btn variant="success" onClick={() => setResult("won")}  style={{ minHeight: 80, fontSize: 18, flexDirection: "column", gap: SP.sm }}><Check size={24} />WON</Btn>
+      <Btn variant="danger"  onClick={() => setResult("lost")} style={{ minHeight: 80, fontSize: 18, flexDirection: "column", gap: SP.sm }}><X    size={24} />LOST</Btn>
+    </div>
+    <Btn variant="ghost" onClick={onCancel} style={{ color: C.muted }}>Cancel</Btn>
   </div>;
 
   if (result === "lost" && category === null) return <div>
-    <Card style={{ marginBottom: 10 }}><Label>What cost you the frame? (optional)</Label>
-      <div style={{ display: "grid", gap: 7, gridTemplateColumns: "1fr 1fr" }}>
-        {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "10px 8px", textAlign: "left" }}>{cat.label}</button>)}
-      </div>
-    </Card>
-    <Button onClick={() => onDone("lost")} style={{ marginBottom: 8 }}>Skip — log result only</Button>
-    <Button variant="ghost" onClick={() => setResult(null)}>Back</Button>
+    <div style={{ color: C.ink, fontSize: 16, fontWeight: 700, marginBottom: SP.sm }}>What decided it?</div>
+    <div style={{ color: C.dim, fontSize: 13, marginBottom: SP.lg }}>Optional — tap to add context, or skip.</div>
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr", marginBottom: SP.lg }}>
+      {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{
+        background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+        color: C.ink, cursor: "pointer", fontSize: 13, fontFamily: "'Inter', sans-serif",
+        fontWeight: 500, padding: "13px 10px", textAlign: "center",
+      }}>{cat.label}</button>)}
+    </div>
+    <Btn onClick={() => onDone("lost")} style={{ marginBottom: SP.sm }}>Skip — log loss only</Btn>
+    <Btn variant="ghost" onClick={() => setResult(null)} style={{ color: C.dim }}>Back</Btn>
   </div>;
 
   if (result === "won" && category === null) return <div>
-    <Card style={{ marginBottom: 10 }}><Label>Any standout moments? (optional)</Label>
-      <div style={{ display: "grid", gap: 8 }}>
-        {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "11px 12px", textAlign: "left" }}>{ev.label}</button>)}
-      </div>
-    </Card>
-    <Button onClick={() => onDone("won")} style={{ marginBottom: 8 }}>Skip — log win only</Button>
-    <Button variant="ghost" onClick={() => setResult(null)}>Back</Button>
+    <div style={{ color: C.ink, fontSize: 16, fontWeight: 700, marginBottom: SP.sm }}>What went well?</div>
+    <div style={{ color: C.dim, fontSize: 13, marginBottom: SP.lg }}>Optional — select a highlight or skip.</div>
+    <div style={{ display: "grid", gap: SP.sm, marginBottom: SP.lg }}>
+      {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{
+        background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+        color: C.ink, cursor: "pointer", fontSize: 14, fontFamily: "'Inter', sans-serif",
+        fontWeight: 500, padding: "13px 16px", textAlign: "left",
+      }}>{ev.label}</button>)}
+    </div>
+    <Btn onClick={() => onDone("won")} style={{ marginBottom: SP.sm }}>Skip — log win only</Btn>
+    <Btn variant="ghost" onClick={() => setResult(null)} style={{ color: C.dim }}>Back</Btn>
   </div>;
 
   return <div>
-    <Card style={{ marginBottom: 12 }}>
-      <Label>Confirm</Label>
-      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>{result === "won" ? "Won" : "Lost"} · {catLabel}</div>
-      <Label>Impact level</Label>
-      <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
-        {(["low", "medium", "high", "decisive"] as FrameImpact[]).map(imp => <button key={imp} onClick={() => setImpact(imp)} style={{ alignItems: "center", background: impact === imp ? "#284735" : C.panel2, border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: 8, color: C.ink, cursor: "pointer", display: "flex", fontSize: 12, justifyContent: "space-between", padding: "9px 10px", textTransform: "capitalize" }}>{imp}{impact === imp && <Check size={13} color={C.brass} />}</button>)}
-      </div>
-    </Card>
-    <Button variant="primary" onClick={() => { if (category && impact) onDone(result, { category, impact, type: result === "lost" ? "error" : "positive" }); }} style={{ marginBottom: 8 }}>Done</Button>
-    <Button variant="ghost" onClick={() => setCategory(null)}>Back</Button>
+    <div style={{ color: C.ink, fontSize: 16, fontWeight: 700, marginBottom: SP.xs }}>{result === "won" ? "Won" : "Lost"} · {catLabel}</div>
+    <div style={{ color: C.dim, fontSize: 13, marginBottom: SP.lg }}>How costly was it?</div>
+    <div style={{ display: "grid", gap: SP.sm, marginBottom: SP.lg }}>
+      {IMPACT_CHOICES.map(({ display, sub }) => {
+        const imp = displayToImpact(display);
+        return <button key={display} onClick={() => setImpact(imp)} style={{
+          alignItems: "center", background: impact === imp ? C.panel3 : C.panel2,
+          border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: R.md,
+          color: C.ink, cursor: "pointer", display: "flex", fontFamily: "'Inter', sans-serif",
+          justifyContent: "space-between", padding: "14px 16px",
+        }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{display}</div>
+            <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>
+          </div>
+          {impact === imp && <Check color={C.brass} size={17} />}
+        </button>;
+      })}
+    </div>
+    <Btn variant="primary" onClick={() => { if (category && impact) onDone(result, { category, impact, type: result === "lost" ? "error" : "positive" }); }} disabled={!impact} style={{ marginBottom: SP.sm, minHeight: 54 }}>Done</Btn>
+    <Btn variant="ghost" onClick={() => setCategory(null)} style={{ color: C.dim }}>Back</Btn>
   </div>;
 }
 
 function MatchCompleteView({ summary, onDone }: { summary: MatchSummary; onDone: () => void }) {
   const won = summary.playerFrames > summary.opponentFrames;
   return <div>
-    <Card style={{ marginBottom: 14 }}>
-      <Label>Match result</Label>
-      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, letterSpacing: 1.5, color: won ? C.brass : C.rust, marginBottom: 10 }}>{summary.playerFrames} – {summary.opponentFrames}</div>
-      <p style={{ color: C.ink, fontSize: 14, lineHeight: 1.65, margin: 0 }}>{summary.matchNarrative}</p>
+    <div style={{ marginBottom: SP.xl, textAlign: "center" }}>
+      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, marginBottom: SP.md }}>FINAL SCORE</div>
+      <div style={{ color: won ? C.brass : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, letterSpacing: 3, lineHeight: 1 }}>
+        {summary.playerFrames} – {summary.opponentFrames}
+      </div>
+      <div style={{ color: won ? C.green : C.rust, fontSize: 13, fontWeight: 700, marginTop: SP.sm }}>{won ? "MATCH WON" : "MATCH LOST"}</div>
+    </div>
+
+    <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Match Takeaway</SectionLabel>
+      <p style={{ color: C.ink, fontSize: 14, lineHeight: 1.7, margin: 0 }}>{summary.matchNarrative}</p>
     </Card>
-    {summary.matchWeaknesses.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Key issues today</Label>
-      {summary.matchWeaknesses.map((w, i) => <div key={i} style={{ borderBottom: i < summary.matchWeaknesses.length - 1 ? `1px solid ${C.line}` : 0, display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
-        <div style={{ fontSize: 13 }}>{w.label}</div>
-        <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{w.count}× · {w.avgImpact}</div>
+
+    {summary.matchWeaknesses.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Key issues</SectionLabel>
+      {summary.matchWeaknesses.map((w, i) => <div key={i} style={{ borderBottom: i < summary.matchWeaknesses.length - 1 ? `1px solid ${C.line}` : "none", alignItems: "center", display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
+        <div style={{ color: C.ink, fontSize: 14 }}>{w.label}</div>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{w.count}× · {w.avgImpact}</div>
       </div>)}
     </Card>}
-    {summary.matchVsTrainingNote && <Card style={{ marginBottom: 14, border: `1px solid ${C.chalk}` }}><Label>Training vs match</Label><p style={{ color: C.chalk, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{summary.matchVsTrainingNote}</p></Card>}
-    <Card style={{ marginBottom: 14 }}><Label>Updated training focus</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.lfChange}</p></Card>
-    <Button variant="primary" onClick={onDone}>Done</Button>
+
+    {summary.matchVsTrainingNote && <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.chalk}44` }}>
+      <SectionLabel>Training vs match</SectionLabel>
+      <p style={{ color: C.chalk, fontSize: 13, lineHeight: 1.6, margin: 0 }}>{summary.matchVsTrainingNote}</p>
+    </Card>}
+
+    <Card style={{ marginBottom: SP.xl }}>
+      <SectionLabel>What changes next</SectionLabel>
+      <p style={{ color: C.ink, fontSize: 14, lineHeight: 1.7, margin: 0 }}>{summary.lfChange}</p>
+    </Card>
+
+    <Btn variant="primary" onClick={onDone} style={{ minHeight: 54 }}>Done</Btn>
   </div>;
 }
 
 function MatchDetailView({ match, onDelete, onBack }: { match: Match; onDelete: () => void; onBack: () => void }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const sc = frameScore(match); const won = sc.player > sc.opponent;
+  const sc = frameScore(match);
+  const won = sc.player > sc.opponent;
+
   return <div>
-    <button onClick={onBack} style={{ background: "transparent", border: 0, color: C.brass, cursor: "pointer", fontSize: 14, marginBottom: 14, padding: 0 }}>← Back to matches</button>
-    <Card style={{ marginBottom: 14 }}>
-      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, letterSpacing: 1.5, color: won ? C.brass : C.rust, marginBottom: 6 }}>{sc.player} – {sc.opponent}</div>
-      <div style={{ color: C.dim, fontSize: 12 }}>{match.completedAt ? new Date(match.completedAt).toLocaleDateString() : "In progress"} · {RULESETS[match.ruleset].name} · {match.competitionType}</div>
-      {match.opponent && <div style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>vs {match.opponent}{match.format && ` · ${match.format}`}{match.eventName && ` · ${match.eventName}`}</div>}
+    <button onClick={onBack} style={{ background: "transparent", border: 0, color: C.brass, cursor: "pointer", fontSize: 14, fontFamily: "'Inter', sans-serif", marginBottom: SP.lg, padding: 0, display: "flex", alignItems: "center", gap: SP.xs }}>
+      ← Back to matches
+    </button>
+
+    <Card style={{ marginBottom: SP.lg }}>
+      <div style={{ alignItems: "flex-start", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
+        <div style={{ color: won ? C.brass : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 44, letterSpacing: 1.5, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: SP.xs }}>
+          <RulesBadge ruleset={match.ruleset} />
+          <span style={{ background: `${C.panel2}`, border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, padding: "2px 7px", textTransform: "uppercase" }}>{match.competitionType}</span>
+          <span style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700 }}>{won ? "WON" : "LOST"}</span>
+        </div>
+      </div>
+      <div style={{ color: C.muted, fontSize: 12, fontFamily: "'IBM Plex Mono', monospace" }}>
+        {match.completedAt ? new Date(match.completedAt).toLocaleDateString() : "In progress"}
+        {match.opponent && ` · vs ${match.opponent}`}
+        {match.format && ` · ${match.format}`}
+        {match.eventName && ` · ${match.eventName}`}
+      </div>
     </Card>
-    {match.frames.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Frames</Label>
-      {match.frames.map(f => { const ev = f.keyEvents[0]; const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
-        return <div key={f.id} style={{ borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "9px 0" }}>
-          <div><span style={{ color: f.result === "won" ? C.green : C.rust, fontWeight: 700, fontSize: 13 }}>Frame {f.frameNumber} {f.result === "won" ? "W" : "L"}</span>{ev && <div style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>{catLabel}</div>}</div>
-          {ev && <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, alignSelf: "center" }}>{ev.impact}</div>}
+
+    {match.frames.length > 0 && <Card style={{ marginBottom: SP.lg }}>
+      <SectionLabel>Frames</SectionLabel>
+      {match.frames.map((f) => {
+        const ev = f.keyEvents[0];
+        const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
+        return <div key={f.id} style={{ alignItems: "center", borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "10px 0" }}>
+          <div>
+            <div style={{ alignItems: "center", display: "flex", gap: SP.sm }}>
+              <span style={{ background: f.result === "won" ? `${C.green}22` : `${C.rust}22`, border: `1px solid ${f.result === "won" ? C.green : C.rust}`, borderRadius: 4, color: f.result === "won" ? C.green : C.rust, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, fontWeight: 700, padding: "2px 6px" }}>Frame {f.frameNumber} {f.result === "won" ? "W" : "L"}</span>
+            </div>
+            {ev && <div style={{ color: C.dim, fontSize: 12, marginTop: 3 }}>{catLabel}</div>}
+          </div>
+          {ev && <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, textTransform: "uppercase", alignSelf: "center" }}>{impactLabel(ev.impact)}</div>}
         </div>;
       })}
     </Card>}
+
     {!confirmDelete
-      ? <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete match</Button>
-      : <Card style={{ border: `1px solid ${C.rust}` }}><div style={{ color: C.ink, fontSize: 13, marginBottom: 12 }}>Delete this match? Its coaching influence disappears immediately.</div>
-          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}><Button variant="danger" onClick={onDelete}>Delete</Button><Button onClick={() => setConfirmDelete(false)}>Cancel</Button></div>
+      ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)} style={{ color: C.rust, border: `1px solid ${C.rust}33`, borderRadius: R.md }}>Delete match</Btn>
+      : <Card style={{ border: `1px solid ${C.rust}66` }}>
+          <div style={{ color: C.ink, fontSize: 14, marginBottom: SP.lg, lineHeight: 1.55 }}>Delete this match? Its coaching influence disappears immediately.</div>
+          <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+            <Btn variant="danger" onClick={onDelete}>Delete</Btn>
+            <Btn onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+          </div>
         </Card>}
   </div>;
 }
 
-// ─── Edit Frame view ──────────────────────────────────────────────────────────
-
+// ─── Edit frame view ───────────────────────────────────────────────────────────
 function EditFrameView({ frame, match, onSave, onCancel }: {
-  frame: Frame;
-  match: Match;
+  frame: Frame; match: Match;
   onSave: (frameId: string, result: FrameResult, event?: { category: string; impact: FrameImpact; type: "error" | "positive" }) => void;
   onCancel: () => void;
 }) {
@@ -667,53 +1628,59 @@ function EditFrameView({ frame, match, onSave, onCancel }: {
   const [impact,   setImpact]   = useState<FrameImpact | null>(existingEvent?.impact ?? null);
   const catLabel = category ? (FRAME_LOSS_CATEGORIES.find(c => c.key === category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === category)?.label ?? category) : "";
 
-  // Result picker
-  const resultPicker = <div>
-    <Card style={{ marginBottom: 12 }}><Label>Frame result</Label>
-      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-        <Button variant={result === "won"  ? "success" : "default"} onClick={() => { setResult("won");  if (result !== "won")  { setCategory(existingEvent?.type === "positive" ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 72 }}><Check size={18} /> Won</Button>
-        <Button variant={result === "lost" ? "danger"  : "default"} onClick={() => { setResult("lost"); if (result !== "lost") { setCategory(existingEvent?.type === "error"    ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 72 }}><X    size={18} /> Lost</Button>
-      </div>
-    </Card>
-  </div>;
+  const resultPicker = <Card style={{ marginBottom: SP.md }}>
+    <SectionLabel>Frame result</SectionLabel>
+    <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+      <Btn variant={result === "won" ? "success" : "default"} onClick={() => { setResult("won");  if (result !== "won")  { setCategory(existingEvent?.type === "positive" ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 60 }}><Check size={18} /> Won</Btn>
+      <Btn variant={result === "lost" ? "danger" : "default"} onClick={() => { setResult("lost"); if (result !== "lost") { setCategory(existingEvent?.type === "error"    ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 60 }}><X    size={18} /> Lost</Btn>
+    </div>
+  </Card>;
 
-  // Category picker — only shown when result is chosen and category is null
   if (result === "lost" && category === null) return <div>
     {resultPicker}
-    <Card style={{ marginBottom: 10 }}><Label>What cost you the frame? (optional)</Label>
-      <div style={{ display: "grid", gap: 7, gridTemplateColumns: "1fr 1fr" }}>
-        {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "10px 8px", textAlign: "left" }}>{cat.label}</button>)}
+    <Card style={{ marginBottom: SP.md }}>
+      <SectionLabel>What cost you the frame?</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+        {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, color: C.ink, cursor: "pointer", fontSize: 13, fontFamily: "'Inter', sans-serif", fontWeight: 500, padding: "12px 10px", textAlign: "center" }}>{cat.label}</button>)}
       </div>
     </Card>
-    <Button onClick={() => onSave(frame.id, "lost")} style={{ marginBottom: 8 }}>Save — result only</Button>
-    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+    <Btn onClick={() => onSave(frame.id, "lost")} style={{ marginBottom: SP.sm }}>Save — result only</Btn>
+    <Btn variant="ghost" onClick={onCancel} style={{ color: C.dim }}>Cancel — keep original</Btn>
   </div>;
 
   if (result === "won" && category === null) return <div>
     {resultPicker}
-    <Card style={{ marginBottom: 10 }}><Label>Any standout moments? (optional)</Label>
-      <div style={{ display: "grid", gap: 8 }}>
-        {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "11px 12px", textAlign: "left" }}>{ev.label}</button>)}
+    <Card style={{ marginBottom: SP.md }}>
+      <SectionLabel>Any standout moments?</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm }}>
+        {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, color: C.ink, cursor: "pointer", fontSize: 14, fontFamily: "'Inter', sans-serif", fontWeight: 500, padding: "13px 16px", textAlign: "left" }}>{ev.label}</button>)}
       </div>
     </Card>
-    <Button onClick={() => onSave(frame.id, "won")} style={{ marginBottom: 8 }}>Save — result only</Button>
-    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+    <Btn onClick={() => onSave(frame.id, "won")} style={{ marginBottom: SP.sm }}>Save — result only</Btn>
+    <Btn variant="ghost" onClick={onCancel} style={{ color: C.dim }}>Cancel — keep original</Btn>
   </div>;
 
   return <div>
     {resultPicker}
-    {category !== null && <Card style={{ marginBottom: 12 }}>
-      <Label>Event — <span style={{ color: C.ink }}>{catLabel}</span></Label>
-      <button onClick={() => setCategory(null)} style={{ background: "transparent", border: 0, color: C.dim, cursor: "pointer", fontSize: 12, padding: "4px 0" }}>← Change event</button>
-      <div style={{ marginTop: 10 }}>
-        <Label>Impact level</Label>
-        <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
-          {(["low", "medium", "high", "decisive"] as FrameImpact[]).map(imp => <button key={imp} onClick={() => setImpact(imp)} style={{ alignItems: "center", background: impact === imp ? "#284735" : C.panel2, border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: 8, color: C.ink, cursor: "pointer", display: "flex", fontSize: 12, justifyContent: "space-between", padding: "9px 10px", textTransform: "capitalize" }}>{imp}{impact === imp && <Check size={13} color={C.brass} />}</button>)}
-        </div>
+    {category !== null && <Card style={{ marginBottom: SP.md }}>
+      <SectionLabel>Event — <span style={{ color: C.ink, textTransform: "none" }}>{catLabel}</span></SectionLabel>
+      <button onClick={() => setCategory(null)} style={{ background: "transparent", border: 0, color: C.dim, cursor: "pointer", fontSize: 12, fontFamily: "'Inter', sans-serif", padding: "2px 0", marginBottom: SP.md }}>← Change event</button>
+      <SectionLabel>How costly was it?</SectionLabel>
+      <div style={{ display: "grid", gap: SP.sm }}>
+        {IMPACT_CHOICES.map(({ display, sub }) => {
+          const imp = displayToImpact(display);
+          return <button key={display} onClick={() => setImpact(imp)} style={{ alignItems: "center", background: impact === imp ? C.panel3 : C.panel2, border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: R.md, color: C.ink, cursor: "pointer", display: "flex", fontFamily: "'Inter', sans-serif", justifyContent: "space-between", padding: "12px 16px" }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 600 }}>{display}</div>
+              <div style={{ color: C.muted, fontSize: 12, marginTop: 2 }}>{sub}</div>
+            </div>
+            {impact === imp && <Check color={C.brass} size={17} />}
+          </button>;
+        })}
       </div>
     </Card>}
-    <Button variant="primary" onClick={() => onSave(frame.id, result, category && impact ? { category, impact, type: result === "lost" ? "error" : "positive" } : undefined)} style={{ marginBottom: 8 }}>Save changes</Button>
-    <Button variant="ghost" onClick={onCancel}>Cancel — keep original</Button>
+    <Btn variant="primary" onClick={() => onSave(frame.id, result, category && impact ? { category, impact, type: result === "lost" ? "error" : "positive" } : undefined)} style={{ marginBottom: SP.sm, minHeight: 54 }}>Save changes</Btn>
+    <Btn variant="ghost" onClick={onCancel} style={{ color: C.dim }}>Cancel — keep original</Btn>
   </div>;
 }
 
@@ -732,10 +1699,9 @@ export default function App() {
   const [editFrameId,   setEditFrameId]   = useState<string | null>(null);
 
   useEffect(() => { saveProfile(profile); }, [profile]);
-  useEffect(() => { saveMatches(matches); }, [matches]);
+  useEffect(() => { saveMatches(matches);  }, [matches]);
 
   const chooseMode   = (mode: RulesMode) => { setProfile(newProfile(mode)); setView("assessment"); };
-  // Session generation now flows through match-aware limiting factor
   const startSession = (minutes: number) => { setGenerated(generateAdaptiveSession(profile, matches, minutes)); setView("session"); };
 
   const finishSession = (updated: Profile, sessionSummary: SessionSummary, newRcEvents: RootCauseEvent[]) => {
@@ -776,7 +1742,6 @@ export default function App() {
     if (!activeMatchId) return;
     const m = matches.find(mx => mx.id === activeMatchId);
     if (!m || m.frames.length === 0) return;
-    // Frame is NOT deleted — edit is non-destructive until Save is confirmed
     setEditFrameId(m.frames[m.frames.length - 1].id);
     setView("matchEditFrame");
   };
@@ -821,9 +1786,9 @@ export default function App() {
   if (view === "onboarding") return <Onboarding onChoose={chooseMode} />;
   if (view === "assessment")  return <AppShell view={view} onNav={nav} profile={profile}><Assessment  profile={profile} onDone={(next) => { setProfile(next); setView("provisional"); }} /></AppShell>;
   if (view === "provisional") return <AppShell view={view} onNav={nav} profile={profile}><Provisional profile={profile} onContinue={() => setView("dashboard")} /></AppShell>;
-  if (view === "pickTime")    return <AppShell view={view} onNav={nav} profile={profile}><PickTime onPick={startSession} /></AppShell>;
+  if (view === "pickTime")    return <AppShell view={view} onNav={nav} profile={profile}><PickTime profile={profile} matches={matches} onPick={startSession} onBrowseLibrary={() => setView("library")} /></AppShell>;
   if (view === "session" && generated)   return <AppShell view={view} onNav={nav} profile={profile}><SessionRunner profile={profile} generated={generated} onFinish={finishSession} /></AppShell>;
-  if (view === "summary" && summary)     return <AppShell view={view} onNav={nav} profile={profile}><Summary summary={summary} onDone={() => setView("dashboard")} /></AppShell>;
+  if (view === "summary" && summary)     return <AppShell view={view} onNav={nav} profile={profile}><Summary summary={summary} onDone={() => setView("dashboard")} onProgress={() => setView("progress")} /></AppShell>;
 
   // Match sub-views
   if (view === "matchSetup")  return <AppShell view={view} onNav={nav} profile={profile}><MatchSetupView  onStart={startNewMatch} onCancel={() => setView("matches")} /></AppShell>;
@@ -851,6 +1816,6 @@ export default function App() {
     {view === "matches"   && <MatchHistoryView matches={matches} activeMatchId={activeMatchId} onNew={() => setView("matchSetup")} onContinue={() => setView("matchActive")} onDetail={(id) => { setDetailMatchId(id); setView("matchDetail"); }} />}
     {view === "progress"  && <ProgressView profile={profile} />}
     {view === "library"   && <LibraryView  profile={profile} />}
-    {view === "settings"  && <SettingsView profile={profile} onMode={(mode) => setProfile(updateRulesMode(profile, mode))} onReset={() => { clearProfile(); setProfile(newProfile()); setView("onboarding"); }} />}
+    {view === "settings"  && <SettingsView profile={profile} onMode={(mode) => setProfile(updateRulesMode(profile, mode))} onReset={() => { clearProfile(); setProfile(newProfile()); setView("onboarding"); }} onLibrary={() => setView("library")} />}
   </AppShell>;
 }

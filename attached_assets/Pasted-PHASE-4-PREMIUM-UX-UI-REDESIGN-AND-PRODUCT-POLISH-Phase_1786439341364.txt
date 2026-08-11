@@ -1,0 +1,1407 @@
+PHASE 4 — PREMIUM UX/UI REDESIGN AND PRODUCT POLISH
+
+Phases 1, 2, 2.1, 3 and 3.1 are complete.
+
+The functional intelligence core is now FROZEN.
+
+Current baseline includes:
+
+- 8-Ball Coach product identity
+- Blackball Rules
+- International Rules
+- Mixed Training mode
+- adaptive training engine
+- shared execution profile
+- ruleset-specific decision evidence/confidence
+- real-match intelligence
+- match/frame logging
+- frame-impact weighting
+- match-aware limiting factors
+- safe frame editing
+- ruleset-aware Mixed allocation
+- local persistence
+- 149 deterministic tests passing
+- clean TypeScript
+- clean production build
+- GitHub source control
+
+DO NOT redesign, rewrite, simplify, or retune the coaching engine.
+
+The only objective of Phase 4 is:
+
+MAKE THE EXISTING APP FEEL LIKE A PREMIUM, MODERN, MOBILE-FIRST 8-BALL COACHING PRODUCT.
+
+This is a UX/UI and interaction-polish phase.
+
+Do NOT add:
+- authentication
+- backend/database
+- cloud persistence
+- payments
+- video analysis
+- AI computer vision
+- opponent scouting
+- tournament management
+- new adaptive algorithms
+- new match-analysis logic
+
+==================================================
+1. PRIMARY DESIGN GOAL
+==================================================
+
+8-Ball Coach should feel:
+
+- premium
+- serious
+- modern
+- focused
+- calm
+- sports-performance oriented
+- unmistakably related to cue sports
+
+It should NOT feel like:
+
+- a generic SaaS dashboard
+- a school/trivia app
+- a bright corporate app
+- a cartoon game
+- a casino/gambling app
+- a cluttered analytics tool
+
+The experience should feel closer to:
+
+a modern performance-coaching app
++
+a high-end cue-sports visual identity
+
+==================================================
+2. PRESERVE FUNCTIONAL BEHAVIOUR
+==================================================
+
+This is critical.
+
+Do NOT change:
+
+- skill definitions
+- rating calculations
+- confidence calculations
+- limiting-factor logic
+- root-cause logic
+- match-priority logic
+- Mixed allocation logic
+- session-generation behavior
+- rules legality
+- ruleset logic
+- persistence semantics
+- test expectations
+
+Only change engine-related code if required for presentational integration and only if behavior remains identical.
+
+All existing 149 tests must remain green.
+
+==================================================
+3. BEFORE REDESIGNING
+==================================================
+
+First:
+
+1. Inspect the current rendered app on mobile dimensions.
+2. Identify every current screen/state.
+3. Create a concise UI inventory.
+4. Note where UI is currently:
+   - visually weak
+   - cramped
+   - unclear
+   - repetitive
+   - inconsistent
+   - overly text-heavy
+5. Preserve all current flows.
+
+Then implement the redesign.
+
+Do not replace functioning flows with different product logic.
+
+==================================================
+4. DESIGN LANGUAGE
+==================================================
+
+Use a refined cue-sports-inspired palette.
+
+Maintain the existing dark direction but make it more sophisticated.
+
+Suggested palette direction:
+
+Background:
+deep charcoal / near-black green
+
+Surface:
+subtle layered dark green-charcoal
+
+Primary accent:
+muted brass / warm gold
+
+Secondary accent:
+cool chalk blue
+
+Positive:
+controlled emerald / baize green
+
+Negative:
+muted burgundy / rust
+
+Text:
+warm off-white rather than pure white
+
+Avoid:
+- neon colors
+- excessive gradients
+- glassmorphism everywhere
+- huge shadows
+- overly bright outlines
+
+Use gradients only very subtly where they add depth.
+
+==================================================
+5. TYPOGRAPHY
+==================================================
+
+Improve hierarchy.
+
+Use:
+
+Display / headings:
+strong condensed or athletic-feeling sans-serif
+
+Body:
+clean modern sans-serif
+
+Data / small labels:
+monospaced or compact technical style where useful
+
+Avoid making everything uppercase.
+
+Use uppercase only for:
+
+- small section labels
+- ruleset badges
+- compact status labels
+
+Main titles should remain highly readable.
+
+==================================================
+6. SPACING AND LAYOUT
+==================================================
+
+Introduce a consistent spacing system.
+
+Examples:
+
+4
+8
+12
+16
+24
+32
+
+Cards should have:
+
+- consistent padding
+- consistent radius
+- subtle borders
+- clear hierarchy
+
+Avoid cards nested inside cards unnecessarily.
+
+Mobile width should feel intentional rather than like desktop content squeezed into 480px.
+
+==================================================
+7. APP SHELL
+==================================================
+
+Create a polished mobile app shell.
+
+Include:
+
+- safe-area awareness
+- fixed/sticky bottom navigation
+- clean top header behavior
+- consistent horizontal padding
+- full-height in-session flows
+
+The navigation should remain simple.
+
+Recommended primary tabs:
+
+TODAY
+MATCHES
+TRAIN
+PROGRESS
+MORE
+
+If current structure requires Library/Rules access, place them logically under Train or More rather than overcrowding the bottom bar.
+
+Do NOT remove functionality.
+
+==================================================
+8. TODAY / DASHBOARD REDESIGN
+==================================================
+
+The dashboard should answer immediately:
+
+1. What should I train today?
+2. Why?
+3. How am I doing?
+4. What changed recently?
+
+Primary hero card:
+
+TODAY'S TRAINING
+
+Show:
+
+- primary focus
+- secondary focus if relevant
+- estimated duration
+- ruleset/mode
+- short coaching reason
+- large Start Training button
+
+Example:
+
+TODAY'S TRAINING
+
+Speed Control + Positional Execution
+
+30 min · Mixed Training
+
+"Three recent match breakdowns started with poor cue-ball speed."
+
+[ START TRAINING ]
+
+Do not show raw algorithmic weights here unless useful.
+
+==================================================
+9. DASHBOARD SECONDARY CARDS
+==================================================
+
+Below Today's Training, use compact cards such as:
+
+CURRENT FOCUS
+
+RECENT MATCH
+
+RECENT PROGRESS
+
+NEXT DEVELOPMENT AREA
+
+Keep this concise.
+
+Do not turn Today into a full analytics screen.
+
+==================================================
+10. CURRENT FOCUS CARD
+==================================================
+
+Display:
+
+Main Focus
+Supporting Focus
+Status
+
+Example:
+
+MAIN FOCUS
+Speed / Touch Control
+
+Supporting:
+Positional Execution
+
+Status:
+Confirmed current limiter
+
+Use plain coaching language.
+
+Do not expose raw evidence-score formulas.
+
+==================================================
+11. MATCHES TAB
+==================================================
+
+Redesign Matches as a clean performance-log experience.
+
+Top section:
+
+[ + Log Match ]
+
+Recent matches beneath.
+
+Each match card should show:
+
+- score prominently
+- opponent if entered
+- ruleset badge
+- practice/competition badge
+- date
+- one-line coaching takeaway
+
+Example:
+
+5–3
+vs Maria
+
+BLACKBALL · COMPETITION
+
+"Speed control was involved in 2 of your lost frames."
+
+Cards should be easy to scan.
+
+==================================================
+12. START MATCH EXPERIENCE
+==================================================
+
+Keep it fast.
+
+Use large segmented controls / selection cards.
+
+Fields:
+
+Ruleset
+- Blackball
+- International
+
+Context
+- Practice
+- Competition
+
+Optional:
+- Opponent
+- Format
+- Event
+
+Primary CTA:
+
+START MATCH
+
+Do not make optional fields visually dominant.
+
+==================================================
+13. ACTIVE MATCH VIEW
+==================================================
+
+Make the score the visual focus.
+
+Example:
+
+YOU        OPPONENT
+
+  4    –    3
+
+Below:
+
+[ WON FRAME ]
+[ LOST FRAME ]
+
+These should be very large touch targets.
+
+Secondary actions:
+
+Edit last frame
+View frames
+End match
+
+Ruleset badge should remain visible.
+
+Avoid unnecessary data while match is in progress.
+
+==================================================
+14. LOG FRAME UX
+==================================================
+
+Frame logging must remain extremely fast.
+
+First state:
+
+Did you win the frame?
+
+[ WON ]
+[ LOST ]
+
+Then optional quick context.
+
+For a lost frame:
+
+WHAT DECIDED IT?
+
+Use large icon/label tiles:
+
+Missed pot
+Lost position
+Poor speed
+Spin/control
+Pattern
+Tactical choice
+Safety
+Break
+8-ball
+Foul
+Opponent clearance
+Other
+
+Keep it to one screen where possible.
+
+==================================================
+15. IMPACT UX
+==================================================
+
+Do not ask the player:
+
+"Choose impact coefficient"
+
+Use intuitive language.
+
+If impact needs user input, present:
+
+How costly was it?
+
+Minor
+Important
+Frame-deciding
+
+Map these internally to existing impact values.
+
+If impact is already inferred adequately from context, avoid asking.
+
+Do not add unnecessary taps.
+
+==================================================
+16. POSITIVE FRAME LOGGING
+==================================================
+
+For a won frame, optional:
+
+WHAT WENT WELL?
+
+Examples:
+
+Clearance
+Strong potting
+Good position
+Safety
+Tactical recovery
+8-ball finish
+Break
+
+Keep optional.
+
+Include:
+
+SKIP
+
+Prominently enough that the player does not feel forced to analyse every won frame.
+
+==================================================
+17. MATCH COMPLETE SCREEN
+==================================================
+
+Make this feel rewarding but analytical.
+
+Show:
+
+FINAL SCORE
+
+5 – 3
+
+Then:
+
+MATCH TAKEAWAY
+
+Example:
+
+"Your potting held up well. Two of your lost frames began with poor cue-ball speed, so Speed Control has stronger evidence as your current training focus."
+
+Then:
+
+WHAT CHANGES NEXT
+
+"Your next training session will spend more time on speed control and positional routes."
+
+Buttons:
+
+DONE
+VIEW MATCH DETAILS
+
+==================================================
+18. MATCH DETAIL
+==================================================
+
+Use a clear summary hierarchy.
+
+Show:
+
+- score
+- opponent
+- date
+- ruleset
+- practice/competition
+- coaching summary
+
+Then a frame list.
+
+Each frame row:
+
+Frame 1  ✓
+Frame 2  ✕  Position
+Frame 3  ✓
+Frame 4  ✕  8-ball
+
+Do not expose internal diagnostic data by default.
+
+Tap a frame for deeper detail only if the functionality already exists.
+
+==================================================
+19. TRAIN TAB / SESSION SETUP
+==================================================
+
+Make training session start feel deliberate.
+
+Show:
+
+YOUR CURRENT PRIORITY
+
+Then duration chips:
+
+15
+30
+45
+60
+90
+
+If Mixed mode:
+
+TRAINING MODE
+Mixed
+
+Optionally show expected mix:
+
+Shared skills
+Blackball
+International
+
+Do not expose exact allocation percentages unless useful.
+
+Primary CTA:
+
+BUILD MY SESSION
+
+or
+
+START SESSION
+
+==================================================
+20. SESSION GENERATION TRANSITION
+==================================================
+
+Replace generic loading with a lightweight coaching message.
+
+Example:
+
+BUILDING YOUR SESSION
+
+"Recent match evidence points to Speed Control as today's biggest lever."
+
+Use subtle motion if available.
+
+Do not artificially delay loading.
+
+==================================================
+21. IN-DRILL EXPERIENCE — PRIORITY
+==================================================
+
+This is one of the most important surfaces.
+
+Make it:
+
+- full-screen
+- distraction-free
+- high contrast
+- thumb-friendly
+
+Show:
+
+ruleset badge if applicable
+drill name
+short instruction
+table diagram
+attempt progress
+
+Bottom action area:
+
+SUCCESS
+FAILED
+
+Buttons should be large.
+
+Do not show bottom navigation during active training.
+
+==================================================
+22. DRILL CARD / TABLE VISUAL
+==================================================
+
+Upgrade the current crude table diagram.
+
+Create a reusable cue-sports table component with:
+
+- realistic pool-table proportions
+- proper six pockets
+- subtle cushion depth
+- baize surface
+- ball placement by x/y coordinates
+- distinct red/yellow/black/cue-ball styling
+- target-zone support
+- route-arrow support if data exists
+- obstacle styling
+- selected-ball emphasis
+
+Do not require image assets for every drill.
+
+Use SVG/CSS so diagrams remain crisp and reusable.
+
+==================================================
+23. BALL VISUAL LANGUAGE
+==================================================
+
+Use clean recognizable balls.
+
+Blackball/UK-style:
+
+- reds
+- yellows
+- black 8
+- white cue ball
+
+Avoid American numbered solids/stripes unless required later.
+
+8-ball should be visually distinct.
+
+Do not overdecorate.
+
+==================================================
+24. DECISION DRILL UX
+==================================================
+
+Display:
+
+scenario title
+ruleset badge
+table diagram
+question
+
+Choices should be large cards, not small generic buttons.
+
+After selection:
+
+Show feedback card with:
+
+STRONG CHOICE
+REASONABLE
+HIGH RISK
+POOR CHOICE
+
+Then rationale.
+
+Use coaching tone, not exam tone.
+
+==================================================
+25. CLEARANCE PLANNING UX
+==================================================
+
+Improve the current reorder interface.
+
+Prefer:
+
+tap balls in order
+
+rather than primarily using up/down arrows.
+
+If feasible within current data model:
+
+- user taps ball IDs on the table
+- selected sequence appears as numbered chips
+
+Allow:
+
+Undo
+Reset
+Confirm Plan
+Just Play
+
+Do not change the underlying route-scoring logic.
+
+==================================================
+26. ADAPTATION PROMPT
+==================================================
+
+When position is lost:
+
+Show a compact full-screen/overlay coaching decision:
+
+POSITION LOST
+
+What now?
+
+Re-plan
+Develop problem ball
+Play safe
+Continue route
+Other
+
+One tap.
+
+Return immediately to the drill.
+
+Preserve current decision-skill mapping.
+
+==================================================
+27. ERROR CLASSIFICATION
+==================================================
+
+Redesign the failure-classification grid.
+
+Use icons + text where appropriate.
+
+Examples:
+
+MISS
+POSITION
+SPEED
+SPIN
+PATTERN
+DECISION
+SAFETY
+OTHER
+
+Keep it extremely quick.
+
+One tap should close it.
+
+Do not add forms.
+
+==================================================
+28. SESSION PROGRESS
+==================================================
+
+Show compact persistent context:
+
+Drill 3 of 6
+
+and optionally estimated progress/time.
+
+Do not clutter the top bar.
+
+==================================================
+29. SESSION COMPLETE
+==================================================
+
+Make this feel like a coaching debrief.
+
+Sections:
+
+SESSION COMPLETE
+
+WHAT HELD UP WELL
+
+WHAT LIMITED YOU
+
+KEY INSIGHT
+
+WHAT CHANGES NEXT
+
+Use concise paragraphs.
+
+Include:
+
+RETURN TO TODAY
+VIEW PROGRESS
+
+Do not dump raw stats.
+
+==================================================
+30. PROGRESS TAB
+==================================================
+
+Redesign Progress into layered information.
+
+Top:
+
+CURRENT PROFILE
+
+Then:
+
+SHOT-MAKING
+TABLE-READING
+
+Then:
+
+CURRENT FOCUS
+
+Then:
+
+ALL SKILLS
+
+Do not lead with the radar chart if it is visually confusing.
+
+Radar may remain as a secondary view.
+
+==================================================
+31. SKILL CARDS
+==================================================
+
+Each skill should show:
+
+skill name
+rating/level
+trend
+confidence language
+small progress bar
+
+Example:
+
+SPEED CONTROL
+
+Developing · 56
+
+↑ Improving
+
+Strong evidence
+
+Do not overemphasize the raw number.
+
+==================================================
+32. SKILL LEVEL LANGUAGE
+==================================================
+
+Translate numbers into meaningful levels.
+
+Use the existing level concepts where appropriate:
+
+Foundation
+Developing
+Intermediate
+Advanced
+Competitive
+Elite
+
+Do not change calculation logic.
+
+This is display mapping only.
+
+==================================================
+33. CONFIDENCE PRESENTATION
+==================================================
+
+Keep plain-language confidence.
+
+Examples:
+
+Still learning your game
+Getting a clearer picture
+Strong evidence
+
+Use subtle secondary text.
+
+Do not expose numeric confidence scores by default.
+
+==================================================
+34. RULESET-SPECIFIC PROGRESS
+==================================================
+
+For decision skills, when relevant:
+
+TACTICAL DECISION-MAKING
+
+Overall
+Blackball
+International
+
+Use a compact segmented/detail view.
+
+Only show ruleset-specific lines when enough evidence exists or Mixed mode is enabled.
+
+Avoid duplicate giant skill cards.
+
+==================================================
+35. RULES / MORE AREA
+==================================================
+
+Keep rules reference secondary.
+
+Create a polished More/Rules area including:
+
+Preferred training mode
+Blackball Rules
+International Rules
+Both / Mixed
+
+Rules reference
+Drill Library
+Settings
+Reset local data if already supported
+
+Do not add accounts/auth.
+
+==================================================
+36. DRILL LIBRARY
+==================================================
+
+Redesign the library as searchable/browsable cards.
+
+Filters:
+
+Execution
+Decision
+Combined
+
+Skill filters.
+
+Ruleset badge where relevant.
+
+Each card:
+
+Title
+Skill
+Difficulty
+Type
+
+Tap to view full drill details.
+
+Do not change adaptive assignment behavior.
+
+==================================================
+37. RULESET BADGES
+==================================================
+
+Use text labels.
+
+Examples:
+
+BLACKBALL
+
+INTERNATIONAL
+
+SHARED
+
+They must not depend on colour alone.
+
+Use consistent badge components throughout:
+
+training
+match history
+drill library
+scenario screens
+
+==================================================
+38. MIXED TRAINING UX
+==================================================
+
+Mixed should feel intentional.
+
+Onboarding/settings:
+
+BOTH
+
+Description:
+
+"Train both Blackball and International Rules. Rules-specific exercises are clearly labelled."
+
+During a session:
+
+Shared drills need no interruption.
+
+When switching:
+
+NEXT
+INTERNATIONAL RULES
+
+or
+
+NEXT
+BLACKBALL
+
+Use a lightweight transition card.
+
+==================================================
+39. EMPTY STATES
+==================================================
+
+Create thoughtful empty states.
+
+Examples:
+
+No matches yet
+
+"Log your first match and 8-Ball Coach will start learning what costs you frames."
+
+No sessions yet
+
+"Complete your first training session to start building your profile."
+
+Do not use generic "No data" messages.
+
+==================================================
+40. ONBOARDING REDESIGN
+==================================================
+
+Create a premium but short onboarding.
+
+Screen 1:
+
+8-BALL COACH
+
+TRAIN WHAT ACTUALLY COSTS YOU FRAMES
+
+Short subtitle.
+
+CTA:
+GET STARTED
+
+Screen 2:
+
+HOW IT WORKS
+
+1. Play
+2. Log what happened
+3. Train your real weaknesses
+4. Improve
+5. Repeat
+
+Screen 3:
+
+WHICH RULES DO YOU PLAY?
+
+Blackball
+International
+Both
+
+Do not make onboarding longer than necessary.
+
+==================================================
+41. BRANDING
+==================================================
+
+Use consistently:
+
+8-BALL COACH
+
+Not:
+
+Blackball Coach
+
+Not:
+
+8 Ball Coach without hyphen unless UI typography requires otherwise.
+
+Create a simple temporary wordmark/icon if needed using CSS/SVG.
+
+Do not spend excessive time designing a final brand logo.
+
+==================================================
+42. RESPONSIVE DESIGN
+==================================================
+
+Primary target:
+
+phone
+
+Secondary:
+
+tablet
+
+Desktop should still work.
+
+Test at minimum around:
+
+390px
+430px
+768px
+
+Avoid overflow and clipped bottom actions.
+
+==================================================
+43. ACCESSIBILITY
+==================================================
+
+Maintain:
+
+- sufficient contrast
+- readable font sizes
+- minimum ~44px touch targets
+- visible focus states
+- meaningful button labels
+- ruleset badges using text, not just color
+
+Do not sacrifice usability for aesthetics.
+
+==================================================
+44. MOTION
+==================================================
+
+Use subtle motion only.
+
+Allowed:
+
+- card transitions
+- progress animation
+- success feedback
+- modal/overlay entrance
+
+Avoid:
+
+- constant floating animations
+- excessive bounce
+- distracting background movement
+
+Respect reduced-motion preference if practical.
+
+==================================================
+45. COMPONENT SYSTEM
+==================================================
+
+Refactor repeated visual patterns into reusable components.
+
+Examples:
+
+AppShell
+TopBar
+BottomNav
+Card
+SectionHeader
+PrimaryButton
+SecondaryButton
+RulesBadge
+SkillCard
+MatchCard
+MetricPill
+TableView
+EmptyState
+ProgressBar
+SegmentedControl
+ModalSheet
+
+Do not over-engineer.
+
+Keep component responsibilities clear.
+
+==================================================
+46. STYLE ARCHITECTURE
+==================================================
+
+The current UI uses a lot of inline styling.
+
+For Phase 4, move toward a maintainable styling approach already compatible with the project.
+
+Prefer:
+
+- reusable CSS classes
+- CSS modules
+- existing Tailwind setup if already functional
+
+Do not introduce a large new UI framework.
+
+Do not add Material UI, Chakra, Ant Design, etc.
+
+Avoid unnecessary dependency growth.
+
+==================================================
+47. PERFORMANCE
+==================================================
+
+Keep the app lightweight.
+
+Do not add heavy animation libraries unless already installed and genuinely needed.
+
+Prefer CSS/SVG.
+
+Do not add large image assets unnecessarily.
+
+==================================================
+48. STATE / LOGIC SEPARATION
+==================================================
+
+While refactoring UI, do not move business logic into components.
+
+Rules logic stays in rules modules.
+
+Match logic stays in match modules.
+
+Adaptive logic stays in engine.
+
+Persistence stays in persistence layer.
+
+UI should consume these functions.
+
+==================================================
+49. NO ALGORITHM CHANGES
+==================================================
+
+If a visual redesign appears to require changing the coaching algorithm:
+
+STOP.
+
+Find a presentation-layer solution instead.
+
+Phase 4 may consume new display helpers derived from existing data, but may not change underlying ratings/recommendations.
+
+==================================================
+50. REGRESSION TESTS
+==================================================
+
+All existing 149 tests must remain passing.
+
+Do not change their expected logic.
+
+Add UI-focused tests only where the current project test setup makes this practical without introducing heavy new infrastructure.
+
+At minimum add pure/display-helper tests for any new derived UI mapping such as:
+
+rating → level
+confidence → display copy
+ruleset → badge copy
+
+Do not spend large amounts of time building a complex end-to-end test harness in this phase.
+
+==================================================
+51. MANUAL FLOW VERIFICATION
+==================================================
+
+Manually verify these flows in the rendered app:
+
+A. New-user onboarding
+
+B. Blackball onboarding
+
+C. International onboarding
+
+D. Both/Mixed onboarding
+
+E. Start training
+
+F. Complete execution drill
+
+G. Fail execution drill + classify error
+
+H. Complete decision drill
+
+I. Plan a clearance
+
+J. Adapt after lost position
+
+K. Complete session
+
+L. Start match
+
+M. Log won frame
+
+N. Log lost frame
+
+O. Edit last frame + Save
+
+P. Edit last frame + Cancel
+
+Q. End match
+
+R. View match summary
+
+S. View match history/detail
+
+T. Progress view
+
+U. Switch preferred rules mode
+
+V. Browse drill library
+
+==================================================
+52. VISUAL QUALITY GATE
+==================================================
+
+Phase 4 should not be considered complete until:
+
+- app feels visually coherent
+- no screen still looks like a raw prototype
+- mobile hierarchy is clear
+- primary CTAs are obvious
+- table diagrams are significantly improved
+- match logging remains fast
+- in-drill interactions remain one-tap oriented
+- ruleset labels are obvious
+- Mixed mode is understandable
+- Progress is readable
+- empty states are intentional
+- layout works on phone and tablet
+- no major overflow/clipping exists
+
+==================================================
+53. FUNCTIONAL QUALITY GATE
+==================================================
+
+Before commit:
+
+- all 149 existing tests pass
+- TypeScript passes
+- production build passes
+- runtime works
+- local persistence still works
+- match history still works
+- adaptive sessions still use match evidence
+- ruleset switching still works
+- safe frame editing still works
+- Mixed Training still works
+- no engine behaviour changed
+
+==================================================
+54. SOURCE CONTROL
+==================================================
+
+Preserve the Phase 3.1 baseline before changes.
+
+After the redesign passes all gates:
+
+commit and push to origin/main using:
+
+"Redesign 8-Ball Coach mobile experience"
+
+Verify the GitHub remote contains the Phase 4 milestone.
+
+==================================================
+55. FINAL REPORT
+==================================================
+
+Report only:
+
+- Design system changes
+- Navigation changes
+- Dashboard redesign
+- Match logging redesign
+- Training UX redesign
+- Table/ball diagram improvements
+- Progress redesign
+- Rules/Mixed-mode presentation
+- Drill library redesign
+- Empty states
+- Accessibility improvements
+- Responsive verification
+- Existing 149 test result
+- Any new display/UI helper tests
+- Typecheck
+- Build
+- Runtime
+- Git commit hash
+- GitHub push/sync status
+- Remaining UX limitations
+
+STOP after the Phase 4 milestone.
+
+Do NOT begin Phase 5.
+Do NOT change adaptive logic.
+Do NOT add authentication.
+Do NOT add cloud persistence.
+Do NOT add video/AI analysis.

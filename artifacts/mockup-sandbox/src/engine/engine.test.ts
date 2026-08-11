@@ -1311,4 +1311,100 @@ function addErrorEvent(match: Match, category: string, impact: FrameImpact, ts =
   assert.ok(split.international > split.blackball, `BZ-4: INT must be the majority after 10 decisive INT errors (INT ${split.international.toFixed(3)} vs BB ${split.blackball.toFixed(3)})`);
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, and Phase 3.1 BO–BZ all passed ✓");
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 4 — Display helper tests CA–CJ
+// ═════════════════════════════════════════════════════════════════════════════
+import {
+  ratingLevel, confidenceDisplay, rulesetBadgeLabel, impactLabel, displayToImpact,
+} from "../App";
+
+// ── CA: ratingLevel boundaries ────────────────────────────────────────────────
+{
+  assert.equal(ratingLevel(0),   "Foundation",    "CA-1: 0 → Foundation");
+  assert.equal(ratingLevel(34),  "Foundation",    "CA-2: 34 → Foundation");
+  assert.equal(ratingLevel(35),  "Developing",    "CA-3: 35 → Developing");
+  assert.equal(ratingLevel(49),  "Developing",    "CA-4: 49 → Developing");
+  assert.equal(ratingLevel(50),  "Intermediate",  "CA-5: 50 → Intermediate");
+  assert.equal(ratingLevel(61),  "Intermediate",  "CA-6: 61 → Intermediate");
+  assert.equal(ratingLevel(62),  "Advanced",      "CA-7: 62 → Advanced");
+  assert.equal(ratingLevel(73),  "Advanced",      "CA-8: 73 → Advanced");
+  assert.equal(ratingLevel(74),  "Competitive",   "CA-9: 74 → Competitive");
+  assert.equal(ratingLevel(85),  "Competitive",   "CA-10: 85 → Competitive");
+  assert.equal(ratingLevel(86),  "Elite",         "CA-11: 86 → Elite");
+  assert.equal(ratingLevel(100), "Elite",         "CA-12: 100 → Elite");
+}
+
+// ── CB: ratingLevel covers all non-overlapping ranges ─────────────────────────
+{
+  const levels = [0, 34, 35, 49, 50, 61, 62, 73, 74, 85, 86, 100].map(ratingLevel);
+  const unique = new Set(levels).size;
+  assert.equal(unique, 6, "CB: exactly 6 distinct level strings must exist");
+}
+
+// ── CC: confidenceDisplay — stale overrides tier ──────────────────────────────
+{
+  assert.equal(confidenceDisplay("Strong", true),      "Evidence is stale — train to refresh", "CC-1: stale always returns stale copy");
+  assert.equal(confidenceDisplay("Established", true), "Evidence is stale — train to refresh", "CC-2: stale overrides Established");
+  assert.equal(confidenceDisplay("Low", true),         "Evidence is stale — train to refresh", "CC-3: stale overrides Low");
+}
+
+// ── CD: confidenceDisplay — tier-to-copy mapping ─────────────────────────────
+{
+  assert.equal(confidenceDisplay("Low",         false), "Still learning your game",    "CD-1: Low → learning copy");
+  assert.equal(confidenceDisplay("Emerging",    false), "Getting a clearer picture",   "CD-2: Emerging → clearer picture");
+  assert.equal(confidenceDisplay("Established", false), "Strong evidence",             "CD-3: Established → strong evidence");
+  assert.equal(confidenceDisplay("Strong",      false), "Strong evidence",             "CD-4: Strong → strong evidence");
+  assert.notEqual(confidenceDisplay("Low", false), confidenceDisplay("Established", false), "CD-5: Low and Established must differ");
+}
+
+// ── CE: rulesetBadgeLabel produces correct label strings ──────────────────────
+{
+  assert.equal(rulesetBadgeLabel("blackball"),     "BLACKBALL",      "CE-1: blackball badge label");
+  assert.equal(rulesetBadgeLabel("international"), "INTERNATIONAL",  "CE-2: international badge label");
+  assert.notEqual(rulesetBadgeLabel("blackball"), rulesetBadgeLabel("international"), "CE-3: labels must differ");
+}
+
+// ── CF: impactLabel user-friendly text ────────────────────────────────────────
+{
+  assert.equal(impactLabel("low"),      "Minor",          "CF-1: low → Minor");
+  assert.equal(impactLabel("medium"),   "Important",      "CF-2: medium → Important");
+  assert.equal(impactLabel("high"),     "Important",      "CF-3: high → Important");
+  assert.equal(impactLabel("decisive"), "Frame-deciding", "CF-4: decisive → Frame-deciding");
+}
+
+// ── CG: impactLabel does not expose raw internal values ───────────────────────
+{
+  const raw: string[] = ["low", "medium", "high", "decisive"];
+  for (const r of raw) {
+    assert.notEqual(impactLabel(r as any), r, `CG: impactLabel('${r}') must translate to friendly text, not return raw value`);
+  }
+}
+
+// ── CH: displayToImpact round-trips correctly ─────────────────────────────────
+{
+  assert.equal(displayToImpact("Minor"),          "low",      "CH-1: Minor → low");
+  assert.equal(displayToImpact("Important"),      "high",     "CH-2: Important → high");
+  assert.equal(displayToImpact("Frame-deciding"), "decisive", "CH-3: Frame-deciding → decisive");
+}
+
+// ── CI: displayToImpact ↔ impactLabel are consistent ─────────────────────────
+{
+  // Minor → low → Minor
+  assert.equal(impactLabel(displayToImpact("Minor")),          "Minor",          "CI-1: Minor round-trip");
+  // Frame-deciding → decisive → Frame-deciding
+  assert.equal(impactLabel(displayToImpact("Frame-deciding")), "Frame-deciding", "CI-2: Frame-deciding round-trip");
+  // Important → high → Important
+  assert.equal(impactLabel(displayToImpact("Important")),      "Important",      "CI-3: Important round-trip");
+}
+
+// ── CJ: display helpers are pure (no mutation, no side effects) ───────────────
+{
+  const r1 = ratingLevel(55); const r2 = ratingLevel(55);
+  assert.equal(r1, r2, "CJ-1: ratingLevel is deterministic");
+  const c1 = confidenceDisplay("Emerging", false); const c2 = confidenceDisplay("Emerging", false);
+  assert.equal(c1, c2, "CJ-2: confidenceDisplay is deterministic");
+  const b1 = rulesetBadgeLabel("blackball"); const b2 = rulesetBadgeLabel("blackball");
+  assert.equal(b1, b2, "CJ-3: rulesetBadgeLabel is deterministic");
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, and Phase 4 display helpers CA–CJ all passed ✓");
