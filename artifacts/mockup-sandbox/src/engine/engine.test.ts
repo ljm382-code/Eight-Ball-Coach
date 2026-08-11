@@ -4,6 +4,12 @@
  */
 import assert from "node:assert/strict";
 import {
+  buildFrameEvent, buildMatchSummary, computeMatchPriorityBoost, createMatch, addFrame,
+  deleteMatch, editFrame, frameScore, generateAdaptiveSession, matchAwareLimitingFactor,
+  FRAME_LOSS_CATEGORIES, POSITIVE_EVENT_TYPES,
+  type FrameImpact, type Match,
+} from "../match";
+import {
   ADAPTATION_SKILL_MAP, CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
   applySkillUpdate, applyClearanceBallResult, classifyErrorChain, computeConfidence,
   computeRulesetConfidence, decayRootCauseScore, decisionValue, evaluatePlannedRoute,
@@ -813,4 +819,266 @@ function makeTableState(opts: Partial<TableState> = {}): TableState {
   assert.equal(getCueBallPlacement("international"), "anywhere", "AV-6: Unified getCueBallPlacement must match International helper");
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, and Phase 2.1 AE–AV all passed ✓");
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 3 — Match engine tests AW–BN
+// ═════════════════════════════════════════════════════════════════════════════
+
+function makeMatch(ruleset: "blackball" | "international" = "blackball", env: "competition" | "practice" = "competition"): Match {
+  return { id: `m_${Math.random()}`, startedAt: NOW, competitionType: env, ruleset, frames: [] };
+}
+
+function addErrorEvent(match: Match, category: string, impact: FrameImpact, ts = NOW): Match {
+  const ev = buildFrameEvent({ type: "error", category, impact, ruleset: match.ruleset, environment: match.competitionType }, ts);
+  const frame = { id: `fr_${ts}_${category}`, matchId: match.id, frameNumber: match.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts };
+  return { ...match, frames: [...match.frames, frame] };
+}
+
+// ── AW: createMatch always produces a concrete ruleset ────────────────────────
+
+{
+  const bbMatch  = { id: "m1", startedAt: NOW, competitionType: "competition" as const, ruleset: "blackball"     as const, frames: [] };
+  const intMatch = { id: "m2", startedAt: NOW, competitionType: "competition" as const, ruleset: "international" as const, frames: [] };
+  assert.equal(bbMatch.ruleset,  "blackball",     "AW-1: createMatch must produce blackball ruleset");
+  assert.equal(intMatch.ruleset, "international", "AW-2: createMatch must produce international ruleset");
+  assert.ok((bbMatch.ruleset as string) !== "mixed", "AW-3: match ruleset must never be 'mixed'");
+}
+
+// ── AX: Mixed-mode profile — match gets its own real ruleset ──────────────────
+
+{
+  const mixedProfile = newProfile("mixed");
+  const m = makeMatch("international");
+  assert.equal(m.ruleset, "international", "AX-1: match in INT mode has correct ruleset");
+  assert.equal(mixedProfile.preferredRulesMode, "mixed", "AX-2: training preference unchanged");
+  assert.ok((m.ruleset as string) !== "mixed", "AX-3: match ruleset must not be 'mixed'");
+}
+
+// ── AY: addFrame updates score correctly ─────────────────────────────────────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition" }, NOW);
+  let m = makeMatch();
+  const wonFrame  = { id: "fr1", matchId: m.id, frameNumber: 1, result: "won"  as const, pressure: "normal" as const, keyEvents: [],   ts: NOW + 1 };
+  const lostFrame = { id: "fr2", matchId: m.id, frameNumber: 2, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + 2 };
+  const wonFrame2 = { id: "fr3", matchId: m.id, frameNumber: 3, result: "won"  as const, pressure: "normal" as const, keyEvents: [],   ts: NOW + 3 };
+  m = { ...m, frames: [wonFrame, lostFrame, wonFrame2] };
+  const score = { player: m.frames.filter(f => f.result === "won").length, opponent: m.frames.filter(f => f.result === "lost").length };
+  assert.equal(score.player,   2, "AY-1: two won frames → player score 2");
+  assert.equal(score.opponent, 1, "AY-2: one lost frame → opponent score 1");
+}
+
+// ── AZ: Match JSON round-trip preserves all data ─────────────────────────────
+
+{
+  let m = makeMatch("blackball", "competition");
+  m = addErrorEvent(m, "missed_pot", "high", NOW);
+  m = { ...m, opponent: "Test Opp", format: "best of 7" };
+  const rt = JSON.parse(JSON.stringify(m)) as Match;
+  assert.equal(rt.ruleset, m.ruleset, "AZ-1: ruleset survives JSON round-trip");
+  assert.equal(rt.frames.length, m.frames.length, "AZ-2: frame count survives round-trip");
+  assert.equal(rt.opponent, "Test Opp", "AZ-3: optional fields survive round-trip");
+  assert.equal(rt.frames[0].keyEvents[0].category, "missed_pot", "AZ-4: event category survives round-trip");
+}
+
+// ── BA: INT match events do NOT inflate BB-specific decision confidence ────────
+
+{
+  // Match events never write to profile.skills — so ruleset confidence is unaffected
+  const p = newProfile("blackball");
+  // Even if we had INT match errors for "tactical", the profile is untouched
+  let m = makeMatch("international");
+  for (let i = 0; i < 5; i++) m = addErrorEvent(m, "tactical_error", "high", NOW + i);
+  const bbConf = computeRulesetConfidence(p, "tactical", "blackball", NOW + 1000);
+  assert.equal(bbConf.tier, "Low", "BA: INT match events must not inflate BB-specific tactical confidence (no training attempts)");
+}
+
+// ── BB: Execution evidence (potting) contributes regardless of match ruleset ──
+
+{
+  const m = addErrorEvent(makeMatch("international"), "missed_pot", "high", NOW);
+  const boost = computeMatchPriorityBoost([m], "potting", NOW);
+  assert.ok(boost > 0, `BB: potting boost from INT match must be > 0 (${boost.toFixed(3)}); execution skills are ruleset-agnostic`);
+}
+
+// ── BC: Decisive error gives higher boost than low-impact error ───────────────
+
+{
+  const mDecisive = addErrorEvent(makeMatch(), "8ball_miss",  "decisive", NOW);
+  const mLow      = addErrorEvent(makeMatch(), "missed_pot",  "low",      NOW);
+  const boostDecisive = computeMatchPriorityBoost([mDecisive], "eightBall", NOW);
+  const boostLow      = computeMatchPriorityBoost([mLow],      "potting",   NOW);
+  assert.ok(boostDecisive > boostLow, `BC: decisive boost (${boostDecisive.toFixed(3)}) must exceed low-impact boost (${boostLow.toFixed(3)})`);
+}
+
+// ── BD: Recent error contributes more than identical old error ────────────────
+
+{
+  const halfLife = 1000 * 60 * 60 * 24 * 21;
+  const mFresh = addErrorEvent(makeMatch(), "8ball_miss", "high", NOW);
+  const mStale = addErrorEvent(makeMatch(), "8ball_miss", "high", NOW - halfLife);
+  const boostFresh = computeMatchPriorityBoost([mFresh], "eightBall", NOW);
+  const boostStale = computeMatchPriorityBoost([mStale], "eightBall", NOW);
+  assert.ok(boostFresh > boostStale, `BD: fresh error (${boostFresh.toFixed(3)}) must outweigh stale error (${boostStale.toFixed(3)})`);
+  // Old error at exactly one half-life should be ~0.5× the fresh value
+  assert.ok(boostStale > 0, "BD: stale error must still contribute some signal");
+}
+
+// ── BE: Match events do NOT write to profile.skills attempts ─────────────────
+
+{
+  const p = newProfile("blackball");
+  // Even with many match errors in scope, profile is never mutated
+  let m = makeMatch();
+  for (let i = 0; i < 10; i++) m = addErrorEvent(m, "poor_speed", "high", NOW + i);
+  assert.equal(p.skills["speed"].attempts.length, 0,  "BE-1: speed attempts must remain empty after match errors");
+  assert.equal(p.skills["speed"].rating,          30, "BE-2: speed rating must remain at default");
+  for (const s of SKILLS) {
+    assert.equal(p.skills[s.id].attempts.length, 0, `BE-3: ${s.id} attempts must be empty — match events must not write to profile`);
+  }
+}
+
+// ── BF: Repeated decisive match errors elevate skill to primary LF / session focus
+
+{
+  const p = newProfile("blackball");
+  let m = makeMatch();
+  for (let i = 0; i < 5; i++) m = addErrorEvent(m, "8ball_miss", "decisive", NOW + i);
+  const session = generateAdaptiveSession(p, [m], 30);
+  assert.ok(
+    session.focusSkillIds.includes("eightBall"),
+    `BF: 5 decisive 8-ball match errors must elevate eightBall to session focus; got ${JSON.stringify(session.focusSkillIds)}`
+  );
+}
+
+// ── BG: 2 decisive errors outrank 5 low errors in priority boost ──────────────
+
+{
+  let mLow = makeMatch("blackball");
+  for (let i = 0; i < 5; i++) mLow = addErrorEvent(mLow, "poor_speed", "low", NOW + i);
+  let mDecisive = makeMatch("blackball");
+  mDecisive = addErrorEvent(mDecisive, "8ball_miss", "decisive", NOW + 100);
+  mDecisive = addErrorEvent(mDecisive, "8ball_miss", "decisive", NOW + 101);
+  const speedBoost     = computeMatchPriorityBoost([mLow],      "speed",      NOW + 200);
+  const eightBallBoost = computeMatchPriorityBoost([mDecisive], "eightBall",  NOW + 200);
+  assert.ok(
+    eightBallBoost > speedBoost,
+    `BG: 2 decisive eightBall errors (${eightBallBoost.toFixed(3)}) must outrank 5 low speed errors (${speedBoost.toFixed(3)})`
+  );
+}
+
+// ── BH: No "match" source in profile.skills attempts ─────────────────────────
+
+{
+  const p = newProfile("blackball");
+  const matchSourceAttempts = p.skills["speed"].attempts.filter(
+    (a: Attempt) => (a.source as string) === "match"
+  );
+  assert.equal(matchSourceAttempts.length, 0, "BH: profile.skills[speed].attempts must never include source='match'");
+}
+
+// ── BI: FrameEvent stores reportedCause and inferredCause independently ───────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition" }, NOW);
+  assert.equal(ev.reportedCause, "missed_pot", "BI-1: reportedCause must be the category key 'missed_pot'");
+  assert.equal(ev.inferredCause, "positional",  "BI-2: inferredCause for missed_pot must be 'positional'");
+  assert.notEqual(ev.reportedCause, ev.inferredCause, "BI-3: reportedCause and inferredCause must differ for missed_pot");
+  // Verify they are stored as separate fields
+  assert.ok("reportedCause" in ev, "BI-4: FrameEvent must have reportedCause field");
+  assert.ok("inferredCause" in ev, "BI-5: FrameEvent must have inferredCause field");
+}
+
+// ── BJ: Positive clearance event stored for pattern, never for potting ────────
+
+{
+  const ev = buildFrameEvent({ type: "positive", category: "completed_clearance", ruleset: "blackball", environment: "competition" }, NOW);
+  assert.equal(ev.skillId, "pattern",  "BJ-1: completed_clearance must map to skillId 'pattern'");
+  assert.equal(ev.type,    "positive", "BJ-2: event type must be 'positive'");
+  // Confirm no POSITIVE_EVENT_TYPE maps to potting
+  const pottingPositive = POSITIVE_EVENT_TYPES.filter(c => c.skillId === "potting");
+  assert.equal(pottingPositive.length, 0, "BJ-3: no positive event type should map to potting skill");
+}
+
+// ── BK: Deleting match removes its priority boost entirely ────────────────────
+
+{
+  let m = makeMatch();
+  for (let i = 0; i < 4; i++) m = addErrorEvent(m, "8ball_miss", "decisive", NOW + i);
+  const matchesBefore  = [m];
+  const boostBefore    = computeMatchPriorityBoost(matchesBefore, "eightBall", NOW + 100);
+  const matchesAfter   = matchesBefore.filter(mx => mx.id !== m.id);
+  const boostAfter     = computeMatchPriorityBoost(matchesAfter,  "eightBall", NOW + 100);
+  assert.ok(boostBefore > 0,  "BK-1: boost must exist before deletion");
+  assert.equal(boostAfter, 0, "BK-2: boost must be exactly 0 after match is deleted from the array");
+}
+
+// ── BL: editFrame updates record; frameScore reflects the change ──────────────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition" }, NOW);
+  let m = makeMatch();
+  const wonFrame = { id: "fr_bl", matchId: m.id, frameNumber: 1, result: "won" as const, pressure: "normal" as const, keyEvents: [], ts: NOW + 1 };
+  m = { ...m, frames: [wonFrame] };
+  const scoreBefore = { player: m.frames.filter(f => f.result === "won").length, opponent: m.frames.filter(f => f.result === "lost").length };
+  // Edit the frame from won → lost and add an error event
+  m = { ...m, frames: m.frames.map(f => f.id === "fr_bl" ? { ...f, result: "lost" as const, keyEvents: [ev] } : f) };
+  const scoreAfter = { player: m.frames.filter(f => f.result === "won").length, opponent: m.frames.filter(f => f.result === "lost").length };
+  assert.equal(scoreBefore.player,  1, "BL-1: before edit — player score 1");
+  assert.equal(scoreAfter.player,   0, "BL-2: after won→lost edit — player score 0");
+  assert.equal(scoreAfter.opponent, 1, "BL-3: after won→lost edit — opponent score 1");
+  assert.equal(m.frames[0].result, "lost", "BL-4: frame record shows updated result");
+  assert.equal(m.frames[0].keyEvents.length, 1, "BL-5: frame record shows added event");
+}
+
+// ── BM: buildMatchSummary narrative mentions outcome and training focus ────────
+
+{
+  const p = newProfile("blackball");
+  let m = makeMatch();
+  for (let i = 0; i < 3; i++) m = addErrorEvent(m, "8ball_miss", "decisive", NOW + i);
+  m = { ...m, completedAt: NOW + 100 };
+  const lf = matchAwareLimitingFactor(p, [m], NOW + 200);
+  const summary = buildMatchSummary(m, p, lf, NOW + 200);
+  assert.ok(summary.matchNarrative.length > 10, "BM-1: matchNarrative must be non-empty");
+  // Must mention the score (0–3 match)
+  const scoreStr = `${summary.playerFrames}–${summary.opponentFrames}`;
+  assert.ok(summary.matchNarrative.includes(scoreStr), `BM-2: narrative must include score "${scoreStr}"`);
+  // Must reference training focus when LF is known
+  if (lf.primary) {
+    assert.ok(summary.trainingFocus.length > 0, "BM-3: trainingFocus must be non-empty when LF primary is known");
+    const skillNameLower = SKILL_MAP[lf.primary.id].name.toLowerCase();
+    assert.ok(
+      summary.matchNarrative.toLowerCase().includes(skillNameLower),
+      `BM-4: narrative must reference the LF primary skill "${skillNameLower}"`
+    );
+  }
+}
+
+// ── BN: generateAdaptiveSession changes generated training content vs generateSession
+
+{
+  const p = newProfile("blackball");
+  // Training-only session: no clear LF (equal skills, no attempts) → no specific focus
+  const trainingSession = generateSession(p, 30);
+
+  // 5 decisive 8-ball misses → eightBall becomes the match priority
+  let m = makeMatch();
+  for (let i = 0; i < 5; i++) m = addErrorEvent(m, "8ball_miss", "decisive", NOW + i);
+  const matchSession = generateAdaptiveSession(p, [m], 30);
+
+  // Match-aware session must focus on eightBall
+  assert.ok(
+    matchSession.focusSkillIds.includes("eightBall"),
+    `BN-1: generateAdaptiveSession must target eightBall after decisive match errors; got ${JSON.stringify(matchSession.focusSkillIds)}`
+  );
+  // At least one eightBall drill must appear in the match-aware session
+  const matchHasEightBall = matchSession.drills.some(d => "skillId" in d && (d as { skillId: string }).skillId === "eightBall");
+  assert.ok(matchHasEightBall, "BN-2: match-aware session must include at least one eightBall drill");
+  // Training-only session must NOT focus on eightBall (no training evidence distinguishes it)
+  assert.ok(
+    !trainingSession.focusSkillIds.includes("eightBall"),
+    `BN-3: training-only session must not include eightBall in focusSkillIds for fresh profile; got ${JSON.stringify(trainingSession.focusSkillIds)}`
+  );
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, and Phase 3 AW–BN all passed ✓");

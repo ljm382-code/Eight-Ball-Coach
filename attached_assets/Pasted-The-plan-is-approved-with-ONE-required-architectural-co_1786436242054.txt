@@ -1,0 +1,51 @@
+The plan is approved with ONE required architectural correction before implementation.
+
+The adaptive engine's RATING MATH remains frozen, but Phase 3 match evidence must genuinely affect future training generation.
+
+Do not mutate long-term skill ratings directly from match events.
+
+However:
+
+computeMatchPriorityBoost()
+must feed into the limiting-factor / recommendation path that generateSession() actually uses.
+
+The required end-to-end flow is:
+
+raw Match / Frame / FrameEvent data
+→ derived match evidence
+→ impact + recency weighting
+→ match-aware limiting-factor contribution
+→ effective current limiting factor
+→ session weighting / drill selection
+→ next adaptive training session
+
+It is NOT sufficient for match evidence to appear only in the dashboard or match summary.
+
+If the existing generateSession() internally recomputes a training-only limiting factor, introduce the smallest clean integration point necessary.
+
+Preferred approaches:
+
+1. Add an optional derived/coaching-context argument or limiting-factor override to session generation,
+
+OR
+
+2. Add a thin orchestration layer such as:
+
+generateAdaptiveSession(profile, matches, minutes)
+
+which computes the effective match-aware limiting factor and passes it into the existing frozen engine functions.
+
+Do NOT rewrite the Phase 2.1 rating, confidence, root-cause, ruleset, maintenance, or session-selection algorithms.
+
+The engine is "frozen" in the sense that its proven core logic must not be redesigned; a minimal integration seam for match-derived priority is explicitly authorised.
+
+Also ensure:
+
+- deleting/editing match data immediately recomputes this derived influence
+- one poor match cannot directly collapse skill ratings
+- repeated high-impact match evidence can change the primary training focus
+- ruleset-sensitive match evidence remains ruleset-specific
+- training and match evidence remain distinguishable
+- tests BF, BG and BN prove the match-aware limiting factor actually changes generated training content, not merely a displayed summary
+
+After incorporating this correction, proceed with the existing Phase 3 task plan.

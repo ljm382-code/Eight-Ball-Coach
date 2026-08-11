@@ -869,9 +869,9 @@ const supportingLinks: { source: SkillId; target: SkillId }[] = [
   { source: "problemBallDec", target: "pattern" },
 ];
 
-export function generateSession(profile: Profile, minutes: number): GeneratedSession {
+export function generateSession(profile: Profile, minutes: number, options?: { lfOverride?: LimitingFactors }): GeneratedSession {
   const totalCount = SESSION_LENGTHS[minutes] ?? 5;
-  const lf = limitingFactor(profile);
+  const lf = options?.lfOverride ?? limitingFactor(profile);
   const weighting = sessionWeighting(profile, lf);
   const mode = profile.preferredRulesMode;
 

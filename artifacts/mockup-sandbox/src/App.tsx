@@ -8,17 +8,29 @@ import {
   buildSummary, classifyErrorChain, confidenceLabel, computeConfidence, computeRulesetConfidence,
   decisionValue, evaluatePlannedRoute, generateSession, isStale, limitingFactor,
   newProfile, sessionWeighting, trendFor,
-  type Attempt, type Clearance, type DecisionOption, type Drill, type Profile,
-  type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
+  type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
+  type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
 } from "./engine";
 import { clearProfile, loadProfile, saveProfile, updateRulesMode } from "./persistence/profileStorage";
+import { loadMatches, saveMatches } from "./persistence/matchStorage";
+import {
+  generateAdaptiveSession, matchAwareLimitingFactor, buildMatchSummary,
+  frameScore, createMatch, addFrame, buildFrameEvent, editFrame, deleteFrameFromMatch, completeMatch, deleteMatch,
+  FRAME_LOSS_CATEGORIES, POSITIVE_EVENT_TYPES,
+  type Match, type MatchSummary, type MatchEnvironment, type FrameImpact, type FrameResult,
+} from "./match";
 import { getLegalBalls, isEightBallLegal } from "./rules";
 
 // ─── View types and palette ────────────────────────────────────────────────────
-type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings";
+type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings" | "matches" | "matchSetup" | "matchActive" | "matchLogFrame" | "matchComplete" | "matchDetail";
 const C = { bg: "#0e1a15", panel: "#16261e", panel2: "#1d3025", line: "#2a4436", ink: "#edeae1", dim: "#9fb3a8", brass: "#c9a15a", chalk: "#6fa8c9", rust: "#b5533c", green: "#4e8b6b" };
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
-const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings" };
+const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings", matches: "Match History", matchSetup: "New Match", matchActive: "Match in Progress", matchLogFrame: "Log Frame", matchComplete: "Match Summary", matchDetail: "Match Detail" };
+/** Map a view to its parent nav tab so sub-views highlight the right nav item. */
+function navTab(view: View): string {
+  if (["matchSetup", "matchActive", "matchLogFrame", "matchComplete", "matchDetail"].includes(view)) return "matches";
+  return view;
+}
 
 // ─── Shared UI primitives ──────────────────────────────────────────────────────
 function Card({ children, style }: { children: ReactNode; style?: CSSProperties }) {
@@ -57,9 +69,9 @@ function RulesBadge({ ruleset }: { ruleset: RuleSetId }) {
 
 // ─── App shell ─────────────────────────────────────────────────────────────────
 function AppShell({ view, children, onNav, profile }: { view: View; children: ReactNode; onNav: (view: View) => void; profile: Profile }) {
-  const nav = [{ id: "dashboard" as const, label: "Today" }, { id: "library" as const, label: "Library" }, { id: "progress" as const, label: "Progress" }, { id: "settings" as const, label: "Rules" }];
+  const nav = [{ id: "dashboard" as const, label: "Today" }, { id: "matches" as const, label: "Matches" }, { id: "library" as const, label: "Library" }, { id: "progress" as const, label: "Progress" }, { id: "settings" as const, label: "Rules" }];
   const modeLabel = profile.preferredRulesMode === "mixed" ? "Mixed Training" : RULESETS[profile.ruleset].name;
-  return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100vh" }}><style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.98)}`}</style><div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100vh" }}><header style={{ borderBottom: `1px solid ${C.line}`, padding: "18px 16px 11px" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1.5 }}>8-BALL COACH</div><div style={{ color: C.dim, fontSize: 13, marginTop: 2 }}>{titles[view]} <span style={{ color: C.line }}>·</span> {modeLabel}</div></header><main style={{ flex: 1, padding: 16, paddingBottom: 92 }}>{children}</main><nav style={{ background: C.panel, borderTop: `1px solid ${C.line}`, bottom: 0, display: "flex", position: "fixed", width: "min(100%, 520px)", zIndex: 5 }}>{nav.map((item) => <button key={item.id} onClick={() => onNav(item.id)} style={{ background: "transparent", border: 0, color: view === item.id ? C.brass : C.dim, cursor: "pointer", flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: view === item.id ? 700 : 500, padding: "15px 4px" }}>{item.label}</button>)}</nav></div></div>;
+  return <div style={{ background: C.bg, color: C.ink, fontFamily: "'Inter', sans-serif", minHeight: "100vh" }}><style>{fontImport}{`*{box-sizing:border-box}body{margin:0;background:${C.bg}}button:hover:not(:disabled){filter:brightness(1.08)}button:active:not(:disabled){transform:scale(.98)}`}</style><div style={{ display: "flex", flexDirection: "column", margin: "0 auto", maxWidth: 520, minHeight: "100vh" }}><header style={{ borderBottom: `1px solid ${C.line}`, padding: "18px 16px 11px" }}><div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1.5 }}>8-BALL COACH</div><div style={{ color: C.dim, fontSize: 13, marginTop: 2 }}>{titles[view]} <span style={{ color: C.line }}>·</span> {modeLabel}</div></header><main style={{ flex: 1, padding: 16, paddingBottom: 92 }}>{children}</main><nav style={{ background: C.panel, borderTop: `1px solid ${C.line}`, bottom: 0, display: "flex", position: "fixed", width: "min(100%, 520px)", zIndex: 5 }}>{nav.map((item) => <button key={item.id} onClick={() => onNav(item.id)} style={{ background: "transparent", border: 0, color: navTab(view) === item.id ? C.brass : C.dim, cursor: "pointer", flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: navTab(view) === item.id ? 700 : 500, padding: "15px 4px" }}>{item.label}</button>)}</nav></div></div>;
 }
 
 // ─── Onboarding ────────────────────────────────────────────────────────────────
@@ -98,8 +110,8 @@ function Provisional({ profile, onContinue }: { profile: Profile; onContinue: ()
 }
 
 // ─── Dashboard ─────────────────────────────────────────────────────────────────
-function Dashboard({ profile, onStart, onNav }: { profile: Profile; onStart: () => void; onNav: (view: View) => void }) {
-  const lf = limitingFactor(profile);
+function Dashboard({ profile, matches, onStart, onNav }: { profile: Profile; matches: Match[]; onStart: () => void; onNav: (view: View) => void }) {
+  const lf = matchAwareLimitingFactor(profile, matches);
   const weighting = sessionWeighting(profile, lf);
   const recent = profile.sessions.slice(-3).reverse();
   return <div><Card style={{ marginBottom: 14 }}><Label>Today's training</Label><div style={{ fontSize: 21, fontWeight: 700, marginBottom: 5 }}>{lf.primary ? lf.primary.name : "Build a broader picture"}</div><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 15px" }}>{lf.status === "insufficient" ? "Still gathering evidence — today's session samples across your game." : `${lf.status === "provisional" ? "Early signal: " : ""}${lf.primary?.name} is currently the biggest opportunity.`}</p><Button variant="primary" onClick={onStart}><Play size={17} /> Start training</Button></Card><div style={{ display: "grid", gap: 14, gridTemplateColumns: "1fr 1fr", marginBottom: 14 }}><Card><Label>Main focus</Label><div style={{ fontSize: 14 }}>{lf.primary?.name ?? "Still learning"}</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{lf.primary ? `${Math.round(lf.primary.rating)} / 100` : "More evidence needed"}</div></Card><Card><Label>Session balance</Label><div style={{ fontSize: 14 }}>{weighting.execWeight}% execution</div><div style={{ color: C.dim, fontSize: 12, marginTop: 6 }}>{weighting.decWeight}% decision work</div></Card></div><Card style={{ marginBottom: 14 }}><Label>Recent progress</Label>{!recent.length && <div style={{ color: C.dim, fontSize: 13 }}>No sessions yet. Your first session will start the feedback loop.</div>}{recent.map((s, i) => <div key={`${s.ts}-${i}`} style={{ borderBottom: i === recent.length - 1 ? 0 : `1px solid ${C.line}`, color: C.dim, fontSize: 13, padding: "9px 0" }}>{new Date(s.ts).toLocaleDateString()} — {s.summary.changeNote}</div>)}</Card><Button onClick={() => onNav("progress")}>View full skill profile <ChevronRight size={16} /></Button></div>;
@@ -455,17 +467,211 @@ function SettingsView({ profile, onMode, onReset }: { profile: Profile; onMode: 
   return <div><Card style={{ marginBottom: 14 }}><Label>Preferred rules</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Changing your preference keeps all your skill ratings and history. It only changes the content of future sessions.</p>{MODES_FOR_ONBOARDING.map((item) => <button key={item.mode} onClick={() => onMode(item.mode)} style={{ alignItems: "center", background: profile.preferredRulesMode === item.mode ? "#284735" : C.panel2, border: `1px solid ${profile.preferredRulesMode === item.mode ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", marginBottom: 8, padding: 13, textAlign: "left", width: "100%" }}><span><strong>{item.label}</strong><span style={{ color: C.dim, display: "block", fontSize: 12, marginTop: 4 }}>{item.description}</span></span>{profile.preferredRulesMode === item.mode && <Check color={C.brass} size={18} />}</button>)}</Card>{profile.preferredRulesMode !== "mixed" && <Card style={{ marginBottom: 14 }}><Label>Rules notes</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{RULESETS[profile.ruleset].unsupportedNote}</p></Card>}<Card><Label>Local profile</Label><p style={{ color: C.dim, fontSize: 13, lineHeight: 1.5, margin: "0 0 13px" }}>Your profile is stored on this device.</p><Button variant="danger" onClick={onReset}><RotateCcw size={16} /> Reset profile</Button></Card></div>;
 }
 
+// ─── Match view components ─────────────────────────────────────────────────────
+
+function MatchHistoryView({ matches, activeMatchId, onNew, onContinue, onDetail }: {
+  matches: Match[]; activeMatchId: string | null; onNew: () => void; onContinue: () => void; onDetail: (id: string) => void;
+}) {
+  const activeMatch = matches.find(m => m.id === activeMatchId) ?? null;
+  const completed   = matches.filter(m => m.completedAt != null).sort((a, b) => (b.completedAt ?? 0) - (a.completedAt ?? 0));
+  return <div>
+    {activeMatch && <Card style={{ marginBottom: 14, border: `1px solid ${C.brass}` }}>
+      <Label>Active match</Label>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 10 }}>
+        {RULESETS[activeMatch.ruleset].name.split(" ")[0]} · {frameScore(activeMatch).player}–{frameScore(activeMatch).opponent}
+        {activeMatch.opponent && <span style={{ color: C.dim, fontWeight: 400 }}> vs {activeMatch.opponent}</span>}
+      </div>
+      <Button variant="primary" onClick={onContinue}>Continue match</Button>
+    </Card>}
+    <Button variant={activeMatch ? "default" : "primary"} onClick={onNew} style={{ marginBottom: 14 }}>+ New Match</Button>
+    {!completed.length && !activeMatch && <Card><div style={{ color: C.dim, fontSize: 13, lineHeight: 1.6 }}>No completed matches yet. Log your first match to see how real play shapes your training focus.</div></Card>}
+    {completed.map(m => {
+      const sc = frameScore(m); const won = sc.player > sc.opponent;
+      return <button key={m.id} onClick={() => onDetail(m.id)} style={{ background: "transparent", border: 0, cursor: "pointer", marginBottom: 10, padding: 0, textAlign: "left", width: "100%" }}>
+        <Card><div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+          <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{new Date(m.completedAt!).toLocaleDateString()} · {RULESETS[m.ruleset].name.split(" ")[0]}{m.opponent && ` · vs ${m.opponent}`}</div>
+          <div style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700 }}>{won ? "WON" : "LOST"}</div>
+        </div><div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1 }}>{sc.player}–{sc.opponent}</div></Card>
+      </button>;
+    })}
+  </div>;
+}
+
+function MatchSetupView({ onStart, onCancel }: {
+  onStart: (setup: { ruleset: RuleSetId; competitionType: MatchEnvironment; opponent?: string; format?: string; eventName?: string }) => void;
+  onCancel: () => void;
+}) {
+  const [ruleset,         setRuleset]         = useState<RuleSetId>("blackball");
+  const [competitionType, setCompetitionType] = useState<MatchEnvironment>("competition");
+  const [opponent,  setOpponent]  = useState("");
+  const [format,    setFormat]    = useState("");
+  const [eventName, setEventName] = useState("");
+  const inpStyle: CSSProperties = { background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 8, color: C.ink, fontFamily: "'Inter', sans-serif", fontSize: 14, outline: "none", padding: "10px 12px", width: "100%" };
+  return <div>
+    <Card style={{ marginBottom: 12 }}><Label>Ruleset</Label>
+      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+        {(["blackball", "international"] as RuleSetId[]).map(r => <button key={r} onClick={() => setRuleset(r)} style={{ alignItems: "center", background: ruleset === r ? "#284735" : C.panel2, border: `1px solid ${ruleset === r ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", padding: "12px 10px" }}><span style={{ fontSize: 13 }}>{r === "blackball" ? "Blackball" : "International"}</span>{ruleset === r && <Check color={C.brass} size={16} />}</button>)}
+      </div>
+    </Card>
+    <Card style={{ marginBottom: 12 }}><Label>Context</Label>
+      <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}>
+        {(["competition", "practice"] as MatchEnvironment[]).map(ct => <button key={ct} onClick={() => setCompetitionType(ct)} style={{ alignItems: "center", background: competitionType === ct ? "#284735" : C.panel2, border: `1px solid ${competitionType === ct ? C.brass : C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", display: "flex", justifyContent: "space-between", padding: "12px 10px" }}><span style={{ fontSize: 13 }}>{ct === "competition" ? "Competition" : "Practice"}</span>{competitionType === ct && <Check color={C.brass} size={16} />}</button>)}
+      </div>
+    </Card>
+    <Card style={{ marginBottom: 14 }}><Label>Optional details</Label>
+      <div style={{ display: "grid", gap: 8 }}>
+        <input value={opponent}  onChange={e => setOpponent(e.target.value)}  placeholder="Opponent name"        style={inpStyle} />
+        <input value={format}    onChange={e => setFormat(e.target.value)}    placeholder="Format (e.g. best of 7)" style={inpStyle} />
+        <input value={eventName} onChange={e => setEventName(e.target.value)} placeholder="Event / venue"         style={inpStyle} />
+      </div>
+    </Card>
+    <Button variant="primary" onClick={() => onStart({ ruleset, competitionType, opponent: opponent || undefined, format: format || undefined, eventName: eventName || undefined })} style={{ marginBottom: 10 }}>Start Match</Button>
+    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+  </div>;
+}
+
+function MatchActiveView({ match, onLog, onEditLast, onEnd }: {
+  match: Match; onLog: () => void; onEditLast: () => void; onEnd: () => void;
+}) {
+  const sc = frameScore(match); const frames = [...match.frames].reverse();
+  return <div>
+    <Card style={{ marginBottom: 14, textAlign: "center" }}>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 56, letterSpacing: 2, color: C.brass, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
+      <div style={{ color: C.dim, fontSize: 12, marginTop: 4 }}>{RULESETS[match.ruleset].name} · {match.competitionType}{match.opponent && ` · vs ${match.opponent}`}</div>
+    </Card>
+    <Button variant="primary" onClick={onLog} style={{ marginBottom: 10 }}>+ Log Frame</Button>
+    {match.frames.length > 0 && <Button onClick={onEditLast} style={{ marginBottom: 14 }}>Edit last frame</Button>}
+    {frames.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Frames played</Label>
+      {frames.map(f => { const ev = f.keyEvents[0]; const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
+        return <div key={f.id} style={{ borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
+          <div><span style={{ color: f.result === "won" ? C.green : C.rust, fontWeight: 700 }}>{f.result === "won" ? "W" : "L"}</span><span style={{ color: C.dim, fontSize: 13 }}> · Frame {f.frameNumber}{ev && ` · ${catLabel}`}</span></div>
+          {ev && <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{ev.impact}</div>}
+        </div>;
+      })}
+    </Card>}
+    <Button variant="danger" onClick={onEnd}>End Match</Button>
+  </div>;
+}
+
+function LogFrameView({ match, onDone, onCancel }: {
+  match: Match;
+  onDone: (result: FrameResult, event?: { category: string; impact: FrameImpact; type: "error" | "positive" }) => void;
+  onCancel: () => void;
+}) {
+  const [result,   setResult]   = useState<FrameResult | null>(null);
+  const [category, setCategory] = useState<string | null>(null);
+  const [impact,   setImpact]   = useState<FrameImpact | null>(null);
+  const catLabel = category ? (FRAME_LOSS_CATEGORIES.find(c => c.key === category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === category)?.label ?? category) : "";
+
+  if (!result) return <div>
+    <Card style={{ marginBottom: 14 }}><Label>Frame result</Label>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+        <Button variant="success" onClick={() => setResult("won")}  style={{ minHeight: 80, fontSize: 18 }}><Check size={22} /> Won</Button>
+        <Button variant="danger"  onClick={() => setResult("lost")} style={{ minHeight: 80, fontSize: 18 }}><X    size={22} /> Lost</Button>
+      </div>
+    </Card>
+    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+  </div>;
+
+  if (result === "lost" && category === null) return <div>
+    <Card style={{ marginBottom: 10 }}><Label>What cost you the frame? (optional)</Label>
+      <div style={{ display: "grid", gap: 7, gridTemplateColumns: "1fr 1fr" }}>
+        {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "10px 8px", textAlign: "left" }}>{cat.label}</button>)}
+      </div>
+    </Card>
+    <Button onClick={() => onDone("lost")} style={{ marginBottom: 8 }}>Skip — log result only</Button>
+    <Button variant="ghost" onClick={() => setResult(null)}>Back</Button>
+  </div>;
+
+  if (result === "won" && category === null) return <div>
+    <Card style={{ marginBottom: 10 }}><Label>Any standout moments? (optional)</Label>
+      <div style={{ display: "grid", gap: 8 }}>
+        {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "11px 12px", textAlign: "left" }}>{ev.label}</button>)}
+      </div>
+    </Card>
+    <Button onClick={() => onDone("won")} style={{ marginBottom: 8 }}>Skip — log win only</Button>
+    <Button variant="ghost" onClick={() => setResult(null)}>Back</Button>
+  </div>;
+
+  return <div>
+    <Card style={{ marginBottom: 12 }}>
+      <Label>Confirm</Label>
+      <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>{result === "won" ? "Won" : "Lost"} · {catLabel}</div>
+      <Label>Impact level</Label>
+      <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
+        {(["low", "medium", "high", "decisive"] as FrameImpact[]).map(imp => <button key={imp} onClick={() => setImpact(imp)} style={{ alignItems: "center", background: impact === imp ? "#284735" : C.panel2, border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: 8, color: C.ink, cursor: "pointer", display: "flex", fontSize: 12, justifyContent: "space-between", padding: "9px 10px", textTransform: "capitalize" }}>{imp}{impact === imp && <Check size={13} color={C.brass} />}</button>)}
+      </div>
+    </Card>
+    <Button variant="primary" onClick={() => { if (category && impact) onDone(result, { category, impact, type: result === "lost" ? "error" : "positive" }); }} style={{ marginBottom: 8 }}>Done</Button>
+    <Button variant="ghost" onClick={() => setCategory(null)}>Back</Button>
+  </div>;
+}
+
+function MatchCompleteView({ summary, onDone }: { summary: MatchSummary; onDone: () => void }) {
+  const won = summary.playerFrames > summary.opponentFrames;
+  return <div>
+    <Card style={{ marginBottom: 14 }}>
+      <Label>Match result</Label>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 48, letterSpacing: 1.5, color: won ? C.brass : C.rust, marginBottom: 10 }}>{summary.playerFrames} – {summary.opponentFrames}</div>
+      <p style={{ color: C.ink, fontSize: 14, lineHeight: 1.65, margin: 0 }}>{summary.matchNarrative}</p>
+    </Card>
+    {summary.matchWeaknesses.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Key issues today</Label>
+      {summary.matchWeaknesses.map((w, i) => <div key={i} style={{ borderBottom: i < summary.matchWeaknesses.length - 1 ? `1px solid ${C.line}` : 0, display: "flex", justifyContent: "space-between", padding: "8px 0" }}>
+        <div style={{ fontSize: 13 }}>{w.label}</div>
+        <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>{w.count}× · {w.avgImpact}</div>
+      </div>)}
+    </Card>}
+    {summary.matchVsTrainingNote && <Card style={{ marginBottom: 14, border: `1px solid ${C.chalk}` }}><Label>Training vs match</Label><p style={{ color: C.chalk, fontSize: 13, lineHeight: 1.55, margin: 0 }}>{summary.matchVsTrainingNote}</p></Card>}
+    <Card style={{ marginBottom: 14 }}><Label>Updated training focus</Label><p style={{ lineHeight: 1.6, margin: 0 }}>{summary.lfChange}</p></Card>
+    <Button variant="primary" onClick={onDone}>Done</Button>
+  </div>;
+}
+
+function MatchDetailView({ match, onDelete, onBack }: { match: Match; onDelete: () => void; onBack: () => void }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const sc = frameScore(match); const won = sc.player > sc.opponent;
+  return <div>
+    <button onClick={onBack} style={{ background: "transparent", border: 0, color: C.brass, cursor: "pointer", fontSize: 14, marginBottom: 14, padding: 0 }}>← Back to matches</button>
+    <Card style={{ marginBottom: 14 }}>
+      <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 40, letterSpacing: 1.5, color: won ? C.brass : C.rust, marginBottom: 6 }}>{sc.player} – {sc.opponent}</div>
+      <div style={{ color: C.dim, fontSize: 12 }}>{match.completedAt ? new Date(match.completedAt).toLocaleDateString() : "In progress"} · {RULESETS[match.ruleset].name} · {match.competitionType}</div>
+      {match.opponent && <div style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>vs {match.opponent}{match.format && ` · ${match.format}`}{match.eventName && ` · ${match.eventName}`}</div>}
+    </Card>
+    {match.frames.length > 0 && <Card style={{ marginBottom: 14 }}><Label>Frames</Label>
+      {match.frames.map(f => { const ev = f.keyEvents[0]; const catLabel = ev && (FRAME_LOSS_CATEGORIES.find(c => c.key === ev.category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === ev.category)?.label ?? ev.category);
+        return <div key={f.id} style={{ borderBottom: `1px solid ${C.line}`, display: "flex", justifyContent: "space-between", padding: "9px 0" }}>
+          <div><span style={{ color: f.result === "won" ? C.green : C.rust, fontWeight: 700, fontSize: 13 }}>Frame {f.frameNumber} {f.result === "won" ? "W" : "L"}</span>{ev && <div style={{ color: C.dim, fontSize: 12, marginTop: 2 }}>{catLabel}</div>}</div>
+          {ev && <div style={{ color: C.dim, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, alignSelf: "center" }}>{ev.impact}</div>}
+        </div>;
+      })}
+    </Card>}
+    {!confirmDelete
+      ? <Button variant="danger" onClick={() => setConfirmDelete(true)}>Delete match</Button>
+      : <Card style={{ border: `1px solid ${C.rust}` }}><div style={{ color: C.ink, fontSize: 13, marginBottom: 12 }}>Delete this match? Its coaching influence disappears immediately.</div>
+          <div style={{ display: "grid", gap: 8, gridTemplateColumns: "1fr 1fr" }}><Button variant="danger" onClick={onDelete}>Delete</Button><Button onClick={() => setConfirmDelete(false)}>Cancel</Button></div>
+        </Card>}
+  </div>;
+}
+
 // ─── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
-  const [profile, setProfile] = useState<Profile>(() => loadProfile());
-  const [view, setView]       = useState<View>(() => { const p = loadProfile(); return p.assessmentComplete ? "dashboard" : "onboarding"; });
-  const [generated, setGenerated] = useState<ReturnType<typeof generateSession> | null>(null);
-  const [summary,   setSummary]   = useState<SessionSummary | null>(null);
+  const [profile, setProfile]       = useState<Profile>(() => loadProfile());
+  const [view, setView]             = useState<View>(() => { const p = loadProfile(); return p.assessmentComplete ? "dashboard" : "onboarding"; });
+  const [generated, setGenerated]   = useState<GeneratedSession | null>(null);
+  const [summary,   setSummary]     = useState<SessionSummary | null>(null);
+
+  // ── Match state ────────────────────────────────────────────────────────────
+  const [matches,       setMatches]       = useState<Match[]>(() => loadMatches());
+  const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
+  const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
+  const [matchSummary,  setMatchSummary]  = useState<MatchSummary | null>(null);
 
   useEffect(() => { saveProfile(profile); }, [profile]);
+  useEffect(() => { saveMatches(matches); }, [matches]);
 
-  const chooseMode    = (mode: RulesMode) => { setProfile(newProfile(mode)); setView("assessment"); };
-  const startSession  = (minutes: number) => { setGenerated(generateSession(profile, minutes)); setView("session"); };
+  const chooseMode   = (mode: RulesMode) => { setProfile(newProfile(mode)); setView("assessment"); };
+  // Session generation now flows through match-aware limiting factor
+  const startSession = (minutes: number) => { setGenerated(generateAdaptiveSession(profile, matches, minutes)); setView("session"); };
 
   const finishSession = (updated: Profile, sessionSummary: SessionSummary, newRcEvents: RootCauseEvent[]) => {
     const withHistory: Profile = {
@@ -479,18 +685,88 @@ export default function App() {
     setView("summary");
   };
 
+  // ── Match actions ──────────────────────────────────────────────────────────
+  const startNewMatch = (setup: { ruleset: RuleSetId; competitionType: MatchEnvironment; opponent?: string; format?: string; eventName?: string }) => {
+    const m = createMatch(setup);
+    setMatches(prev => [...prev, m]);
+    setActiveMatchId(m.id);
+    setView("matchActive");
+  };
+
+  const logFrame = (result: FrameResult, event?: { category: string; impact: FrameImpact; type: "error" | "positive" }) => {
+    if (!activeMatchId) return;
+    setMatches(prev => prev.map(m => {
+      if (m.id !== activeMatchId) return m;
+      const now = Date.now();
+      if (event) {
+        const fe = buildFrameEvent({ type: event.type, category: event.category, impact: event.impact, ruleset: m.ruleset, environment: m.competitionType }, now);
+        return addFrame(m, { result, keyEvents: [fe] }, now);
+      }
+      return addFrame(m, { result }, now);
+    }));
+    setView("matchActive");
+  };
+
+  const editLastFrame = () => {
+    if (!activeMatchId) return;
+    setMatches(prev => prev.map(m => {
+      if (m.id !== activeMatchId || m.frames.length === 0) return m;
+      return deleteFrameFromMatch(m, m.frames[m.frames.length - 1].id);
+    }));
+    setView("matchLogFrame");
+  };
+
+  const endMatch = () => {
+    if (!activeMatchId) return;
+    const now = Date.now();
+    const updatedMatches = matches.map(m => m.id === activeMatchId ? completeMatch(m, now) : m);
+    const completedMatch = updatedMatches.find(m => m.id === activeMatchId);
+    if (completedMatch) {
+      const lf = matchAwareLimitingFactor(profile, updatedMatches, now);
+      setMatchSummary(buildMatchSummary(completedMatch, profile, lf, now));
+    }
+    setMatches(updatedMatches);
+    setActiveMatchId(null);
+    setView("matchComplete");
+  };
+
+  const deleteMatchEntry = (matchId: string) => {
+    setMatches(prev => deleteMatch(prev, matchId));
+    setDetailMatchId(null);
+    setView("matches");
+  };
+
   const nav = (next: View) => { if (!["session", "assessment", "onboarding"].includes(next)) setView(next); };
 
+  // ── Routing ────────────────────────────────────────────────────────────────
   if (view === "onboarding") return <Onboarding onChoose={chooseMode} />;
-  if (view === "assessment") return <AppShell view={view} onNav={nav} profile={profile}><Assessment profile={profile} onDone={(next) => { setProfile(next); setView("provisional"); }} /></AppShell>;
+  if (view === "assessment")  return <AppShell view={view} onNav={nav} profile={profile}><Assessment  profile={profile} onDone={(next) => { setProfile(next); setView("provisional"); }} /></AppShell>;
   if (view === "provisional") return <AppShell view={view} onNav={nav} profile={profile}><Provisional profile={profile} onContinue={() => setView("dashboard")} /></AppShell>;
-  if (view === "pickTime")   return <AppShell view={view} onNav={nav} profile={profile}><PickTime onPick={startSession} /></AppShell>;
-  if (view === "session" && generated) return <AppShell view={view} onNav={nav} profile={profile}><SessionRunner profile={profile} generated={generated} onFinish={finishSession} /></AppShell>;
-  if (view === "summary" && summary)   return <AppShell view={view} onNav={nav} profile={profile}><Summary summary={summary} onDone={() => setView("dashboard")} /></AppShell>;
+  if (view === "pickTime")    return <AppShell view={view} onNav={nav} profile={profile}><PickTime onPick={startSession} /></AppShell>;
+  if (view === "session" && generated)   return <AppShell view={view} onNav={nav} profile={profile}><SessionRunner profile={profile} generated={generated} onFinish={finishSession} /></AppShell>;
+  if (view === "summary" && summary)     return <AppShell view={view} onNav={nav} profile={profile}><Summary summary={summary} onDone={() => setView("dashboard")} /></AppShell>;
+
+  // Match sub-views
+  if (view === "matchSetup")  return <AppShell view={view} onNav={nav} profile={profile}><MatchSetupView  onStart={startNewMatch} onCancel={() => setView("matches")} /></AppShell>;
+  if (view === "matchLogFrame" && activeMatchId) {
+    const m = matches.find(mx => mx.id === activeMatchId);
+    if (m) return <AppShell view={view} onNav={nav} profile={profile}><LogFrameView match={m} onDone={logFrame} onCancel={() => setView("matchActive")} /></AppShell>;
+  }
+  if (view === "matchActive" && activeMatchId) {
+    const m = matches.find(mx => mx.id === activeMatchId);
+    if (m) return <AppShell view={view} onNav={nav} profile={profile}><MatchActiveView match={m} onLog={() => setView("matchLogFrame")} onEditLast={editLastFrame} onEnd={endMatch} /></AppShell>;
+  }
+  if (view === "matchComplete" && matchSummary) return <AppShell view={view} onNav={nav} profile={profile}><MatchCompleteView summary={matchSummary} onDone={() => setView("matches")} /></AppShell>;
+  if (view === "matchDetail" && detailMatchId) {
+    const m = matches.find(mx => mx.id === detailMatchId);
+    if (m) return <AppShell view={view} onNav={nav} profile={profile}><MatchDetailView match={m} onDelete={() => deleteMatchEntry(detailMatchId)} onBack={() => { setDetailMatchId(null); setView("matches"); }} /></AppShell>;
+  }
+
   return <AppShell view={view} onNav={nav} profile={profile}>
-    {view === "dashboard" && <Dashboard profile={profile} onStart={() => setView("pickTime")} onNav={nav} />}
+    {view === "dashboard" && <Dashboard profile={profile} matches={matches} onStart={() => setView("pickTime")} onNav={nav} />}
+    {view === "matches"   && <MatchHistoryView matches={matches} activeMatchId={activeMatchId} onNew={() => setView("matchSetup")} onContinue={() => setView("matchActive")} onDetail={(id) => { setDetailMatchId(id); setView("matchDetail"); }} />}
     {view === "progress"  && <ProgressView profile={profile} />}
-    {view === "library"   && <LibraryView profile={profile} />}
+    {view === "library"   && <LibraryView  profile={profile} />}
     {view === "settings"  && <SettingsView profile={profile} onMode={(mode) => setProfile(updateRulesMode(profile, mode))} onReset={() => { clearProfile(); setProfile(newProfile()); setView("onboarding"); }} />}
   </AppShell>;
 }
