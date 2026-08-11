@@ -10,6 +10,7 @@ import {
   newProfile, sessionWeighting, trendFor,
   type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
   type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
+  type TrainingDiagram,
 } from "./engine";
 import { clearProfile, loadProfile, saveProfile, updateRulesMode } from "./persistence/profileStorage";
 import { loadMatches, saveMatches } from "./persistence/matchStorage";
@@ -229,18 +230,20 @@ function EmptyState({ icon, title, body }: { icon?: string; title: string; body:
 }
 
 // ─── Pool table SVG ────────────────────────────────────────────────────────────
-type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string; opacity?: number };
+type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string; opacity?: number; trainingLabel?: string };
 
 function PoolTable({
   width = 280,
   balls = [],
   targetBalls = [],
   selectedBall = null,
+  routeSegments = [],
 }: {
   width?: number;
   balls?: BallSpec[];
   targetBalls?: string[];
   selectedBall?: string | null;
+  routeSegments?: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }>;
 }) {
   const h = width * 0.56;
   const pW = width * 0.08;   // frame padding
@@ -263,6 +266,10 @@ function PoolTable({
         <stop offset="55%"  stopColor="#000000" stopOpacity={0} />
         <stop offset="100%" stopColor="#000000" stopOpacity={0.30} />
       </radialGradient>
+      {/* Arrowhead for coached route lines */}
+      <marker id="routeArrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto">
+        <polygon points="0 0, 5 2.5, 0 5" fill={COLORS.primaryDark} opacity={0.65} />
+      </marker>
     </defs>
     {/* Table frame */}
     <rect x={0} y={0} width={width} height={h} rx={pW * 0.7} fill="#2a1a0a" />
@@ -298,7 +305,34 @@ function PoolTable({
         <circle cx={bx} cy={by} r={ballR} fill="url(#ballShade)" />
         {/* Specular highlight — small and restrained */}
         {b.highlight && <circle cx={bx - ballR * 0.26} cy={by - ballR * 0.30} r={ballR * 0.21} fill="#ffffff" opacity={0.40} />}
+        {/* Training label — external coaching marker, sits top-right of ball, NOT on the ball */}
+        {b.trainingLabel && <g>
+          <circle cx={bx + ballR + 5.5} cy={by - ballR - 5.5} r={5} fill="#FFFFFF" stroke={COLORS.primaryDark} strokeWidth={0.8} opacity={0.93} />
+          <text x={bx + ballR + 5.5} y={by - ballR - 5.5} textAnchor="middle" dominantBaseline="central" fontSize={5.5} fontFamily="'IBM Plex Mono', monospace" fontWeight="700" fill={COLORS.primaryDark}>{b.trainingLabel}</text>
+        </g>}
       </g>;
+    })}
+    {/* Route segments — coached cue-ball travel paths drawn as dashed arrows */}
+    {routeSegments.map((seg, i) => {
+      const fromSpec = balls.find(b => b.label === seg.fromBallId);
+      const toSpec   = balls.find(b => b.label === seg.toBallId);
+      if (!fromSpec || !toSpec) return null;
+      const fx = fromSpec.x * width, fy = fromSpec.y * h;
+      const tx = toSpec.x   * width, ty = toSpec.y   * h;
+      const dx = tx - fx, dy = ty - fy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < 1) return null;
+      const nx = dx / dist, ny = dy / dist;
+      return <line
+        key={`seg-${i}`}
+        x1={fx + nx * (ballR + 2)}   y1={fy + ny * (ballR + 2)}
+        x2={tx - nx * (ballR + 6.5)} y2={ty - ny * (ballR + 6.5)}
+        stroke={COLORS.primaryDark}
+        strokeWidth={1.1}
+        strokeDasharray={seg.type === "cueBallRoute" ? "4,2.5" : undefined}
+        strokeOpacity={0.55}
+        markerEnd="url(#routeArrow)"
+      />;
     })}
   </svg>;
 }
@@ -315,7 +349,7 @@ function simpleBalls(specs: { color?: string }[], tableWidth = 280): BallSpec[] 
   return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? BALL.red, highlight: true }));
 }
 
-/** Diagram for execution drills — two balls setup */
+/** Fallback diagram for execution drills without authored layout */
 function ExecDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
@@ -324,7 +358,7 @@ function ExecDrillDiagram() {
   ]} />;
 }
 
-/** Diagram for decision drills */
+/** Fallback diagram for decision drills without authored layout */
 function DecisionDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
@@ -333,6 +367,25 @@ function DecisionDrillDiagram() {
     { x: 0.55, y: 0.63, color: BALL.red,    highlight: true },
     { x: 0.72, y: 0.46, color: BALL.black,  highlight: true },
   ]} />;
+}
+
+/** Convert an authored TrainingDiagram (0–100 % coordinates) to PoolTable BallSpec[].
+ *  tableWidth must match the PoolTable width prop (default 260). */
+function diagramToBalls(diagram: TrainingDiagram, tableWidth = 260): BallSpec[] {
+  const tableH = tableWidth * 0.56;
+  const pW     = tableWidth * 0.08;
+  const bX     = pW, bY = pW * 0.85;
+  const bW     = tableWidth - pW * 2, bH = tableH - bY * 2;
+  return diagram.balls.map((b) => {
+    const svgX  = (bX + (b.x / 100) * bW) / tableWidth;
+    const svgY  = (bY + (b.y / 100) * bH) / tableH;
+    const color = b.group === "cue"   ? BALL.cue
+                : b.group === "black" ? BALL.black
+                : b.group === "red"   ? BALL.red
+                : BALL.yellow;
+    const opacity = b.role === "obstacle" ? 0.55 : 1;
+    return { x: svgX, y: svgY, color, highlight: true, label: b.id, trainingLabel: b.trainingLabel, opacity };
+  });
 }
 
 function WhyThisDrill({ reason }: { reason?: string }) {
@@ -740,66 +793,109 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
     );
   };
 
-  if (drill.type === "execution") return <div>
-    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
-      <ExecDrillDiagram />
-    </div>
-    <Card>
-      {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
-      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
-        DIFFICULTY {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+  if (drill.type === "execution") {
+    const execBalls = drill.diagram ? diagramToBalls(drill.diagram) : [
+      { x: 0.35, y: 0.50, color: BALL.cue, highlight: true },
+      { x: 0.62, y: 0.44, color: BALL.red, highlight: true },
+    ];
+    return <div>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
+        <PoolTable width={260} balls={execBalls} />
       </div>
-      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
-      <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
-      <WhyThisDrill reason={drill.reason} />
-      {!errorOpen
-        ? <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
-            <Btn variant="success" onClick={() => finish(1)} style={{ minHeight: 56 }}><Check size={20} /> Success</Btn>
-            <Btn variant="danger"  onClick={() => setErrorOpen(true)} style={{ minHeight: 56 }}><X size={20} /> Failed</Btn>
+      <Card>
+        {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+          DIFFICULTY {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+        </div>
+        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
+        <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
+        <WhyThisDrill reason={drill.reason} />
+        {!errorOpen
+          ? <div style={{ display: "grid", gap: SP.sm, gridTemplateColumns: "1fr 1fr" }}>
+              <Btn variant="success" onClick={() => finish(1)} style={{ minHeight: 56 }}><Check size={20} /> Success</Btn>
+              <Btn variant="danger"  onClick={() => setErrorOpen(true)} style={{ minHeight: 56 }}><X size={20} /> Failed</Btn>
+            </div>
+          : <ErrorGrid onPick={(code) => finish(0, code)} />}
+      </Card>
+    </div>;
+  }
+
+  if (!feedback) {
+    const decBalls  = drill.diagram ? diagramToBalls(drill.diagram) : null;
+    const hasLabels = drill.diagram?.balls.some(b => b.trainingLabel);
+    return <div>
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: hasLabels ? SP.xs : SP.lg, padding: "0 8px" }}>
+        {decBalls ? <PoolTable width={260} balls={decBalls} /> : <DecisionDrillDiagram />}
+      </div>
+      {hasLabels && (
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 0.5, marginBottom: SP.md, textAlign: "center" }}>
+          Numbers identify the balls — they do not show the correct order.
+        </div>
+      )}
+      <Card>
+        {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+          DECISION · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+        </div>
+        <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
+        <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
+        <WhyThisDrill reason={drill.reason} />
+        <SectionLabel>What would you do?</SectionLabel>
+        <div style={{ display: "grid", gap: SP.sm }}>
+          {activeOptions.map((option) => <button key={option.key} onClick={() => {
+            const value = decisionValue(option.tier as DecisionTier);
+            const rulesetTag = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
+            setFeedback({ option, updated: applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, tier: option.tier, ruleset: rulesetTag }), value });
+          }} style={{
+            background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
+            color: C.ink, cursor: "pointer", fontFamily: "'Inter', sans-serif",
+            fontSize: 14, padding: "14px 16px", textAlign: "left", fontWeight: 500,
+          }}>{option.label}</button>)}
+        </div>
+      </Card>
+    </div>;
+  }
+
+  const tier    = TIER_LABELS[feedback.option.tier] ?? TIER_LABELS["acceptable"];
+  const seq     = feedback.option.sequence;
+  const fbBalls = drill.diagram ? diagramToBalls(drill.diagram) : null;
+  const routeSegs: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }> = seq
+    ? seq.filter(s => s.positionFor && s.positionFor !== "pocket")
+         .map(s => ({ fromBallId: s.ballId, toBallId: s.positionFor!, type: "cueBallRoute" as const }))
+    : [];
+
+  return <div>
+    {fbBalls && (
+      <div style={{ alignItems: "center", display: "flex", flexDirection: "column", marginBottom: SP.md }}>
+        <PoolTable width={260} balls={fbBalls} routeSegments={routeSegs} />
+        {seq && seq.length > 0 && (
+          <div style={{ alignItems: "center", display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center", marginTop: SP.sm }}>
+            {seq.map((step, i) => {
+              const bd = drill.diagram!.balls.find(b => b.id === step.ballId);
+              const nm = bd?.group === "black" ? "BLACK"
+                       : bd?.trainingLabel     ? `Ball ${bd.trainingLabel}`
+                       : step.ballId;
+              return <span key={i} style={{ alignItems: "center", display: "flex", gap: 3 }}>
+                <span style={{ background: COLORS.surfaceTeal, border: `1px solid ${COLORS.primary}55`, borderRadius: R.sm, color: COLORS.primary, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, padding: "2px 6px" }}>{nm}</span>
+                {i < seq.length - 1 && <span style={{ color: C.muted, fontSize: 10 }}>›</span>}
+              </span>;
+            })}
           </div>
-        : <ErrorGrid onPick={(code) => finish(0, code)} />}
-    </Card>
-  </div>;
-
-  if (!feedback) return <div>
-    <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
-      <DecisionDrillDiagram />
-    </div>
+        )}
+      </div>
+    )}
     <Card>
-      {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
-      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
-        DECISION · {SKILL_MAP[drill.skillId].name.toUpperCase()}
+      <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>
+        <div style={{ color: tier.color, fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: SP.sm }}>{tier.label}</div>
+        <p style={{ color: C.dim, lineHeight: 1.65, margin: 0, fontSize: 14 }}>{feedback.option.rationale}</p>
       </div>
-      <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
-      <div style={{ color: C.dim, fontSize: 14, lineHeight: 1.6, marginBottom: SP.md }}>{drill.desc}</div>
-      <WhyThisDrill reason={drill.reason} />
-      <SectionLabel>What would you do?</SectionLabel>
-      <div style={{ display: "grid", gap: SP.sm }}>
-        {activeOptions.map((option) => <button key={option.key} onClick={() => {
-          const value = decisionValue(option.tier as DecisionTier);
-          const rulesetTag = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
-          setFeedback({ option, updated: applySkillUpdate(profile, drill.skillId, value, { drillId: drill.id, difficulty: drill.difficulty, source, tier: option.tier, ruleset: rulesetTag }), value });
-        }} style={{
-          background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md,
-          color: C.ink, cursor: "pointer", fontFamily: "'Inter', sans-serif",
-          fontSize: 14, padding: "14px 16px", textAlign: "left", fontWeight: 500,
-        }}>{option.label}</button>)}
-      </div>
+      <Btn variant="primary" onClick={() => onComplete(feedback.updated, {
+        skillId: drill.skillId, value: feedback.value, drillId: drill.id,
+        difficulty: drill.difficulty, tier: feedback.option.tier, ts: Date.now(),
+        ruleset: drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null),
+      })}>Continue <ChevronRight size={17} /></Btn>
     </Card>
   </div>;
-
-  const tier = TIER_LABELS[feedback.option.tier] ?? TIER_LABELS["acceptable"];
-  return <Card>
-    <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>
-      <div style={{ color: tier.color, fontFamily: "'Bebas Neue', sans-serif", fontSize: 22, letterSpacing: 1, marginBottom: SP.sm }}>{tier.label}</div>
-      <p style={{ color: C.dim, lineHeight: 1.65, margin: 0, fontSize: 14 }}>{feedback.option.rationale}</p>
-    </div>
-    <Btn variant="primary" onClick={() => onComplete(feedback.updated, {
-      skillId: drill.skillId, value: feedback.value, drillId: drill.id,
-      difficulty: drill.difficulty, tier: feedback.option.tier, ts: Date.now(),
-      ruleset: drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null),
-    })}>Continue <ChevronRight size={17} /></Btn>
-  </Card>;
 }
 
 // ─── Clearance runner ──────────────────────────────────────────────────────────

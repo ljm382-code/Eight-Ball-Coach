@@ -64,12 +64,52 @@ export type Profile = {
 };
 
 export type DecisionTier = "optimal" | "acceptable" | "highrisk" | "poor";
+// ─── Training diagram types (presentation layer — no engine state) ─────────────
+
+/** One step in a coached decision sequence shown as route feedback after answering. */
+export type DecisionSequenceStep = {
+  ballId: string;       // ball ID in the accompanying TrainingDiagram
+  shot: string;         // coaching shot term, e.g. "stun", "follow", "left-draw"
+  positionFor?: string; // ball ID, "black", or "pocket" (last step)
+};
+
+/** A cue-ball travel segment drawn between two balls in the route feedback. */
+export type RouteSegment = {
+  fromBallId: string;
+  toBallId: string;
+  /** cueBallRoute = dashed line; objectBallRoute = solid line with arrowhead */
+  type: "cueBallRoute" | "objectBallRoute";
+};
+
+/** A ball in an authored training diagram (display metadata only; separate from rules-engine ClearanceBall). */
+export type TrainingBall = {
+  id: string;
+  group: "red" | "yellow" | "black" | "cue";
+  /** 0–100, percentage of playing-surface width (0 = left cushion, 100 = right cushion). */
+  x: number;
+  /** 0–100, percentage of playing-surface height (0 = top cushion, 100 = bottom cushion). */
+  y: number;
+  /** External coaching marker, e.g. "1"/"2"/"3". NOT printed on the ball. Cue and black should not have one. */
+  trainingLabel?: string;
+  role?: "target" | "obstacle" | "black" | "cue";
+  playerBall?: boolean;
+};
+
+/** Diagram metadata attached to a drill for data-driven table rendering. */
+export type TrainingDiagram = {
+  /** The group the player owns. Required for pattern/clearance exercises. */
+  playerGroup?: "red" | "yellow";
+  balls: TrainingBall[];
+};
+
 export type DecisionOption = {
   key: string;
   label: string;
   tier: DecisionTier;
   rationale: string;
   risk: "low" | "medium" | "high";
+  /** Coached shot sequence shown as route feedback after answering (pattern drills). */
+  sequence?: DecisionSequenceStep[];
 };
 
 export type Drill = {
@@ -89,6 +129,8 @@ export type Drill = {
   rulesContext?: RuleSetId | null;
   secondarySkills?: SkillId[];
   reason?: string;
+  /** Authored table diagram for data-driven rendering. Overrides generic fallback diagrams. */
+  diagram?: TrainingDiagram;
 };
 
 export type ClearanceBall = {
@@ -308,49 +350,114 @@ const decDrill = (
 // ─── Drills ───────────────────────────────────────────────────────────────────
 
 export const DRILLS: Drill[] = [
-  execDrill("pot1","potting",2,"Straight Pot — Middle Pocket","Set the object ball one diamond from a middle pocket, straight in.",true),
+  { ...execDrill("pot1","potting",2,"Straight Pot — Middle Pocket","Set the object ball one diamond from a middle pocket, straight in.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 50, y: 22 },
+    { id: "CB",  group: "cue"    as const, x: 50, y: 72 },
+  ] } },
   execDrill("pot2","potting",4,"Angled Pot — 30°","Cut angle pot into a corner pocket."),
   execDrill("pot3","potting",6,"Long Pot — Full Length","Full-length straight pot, top rail to bottom rail."),
   execDrill("pot4","potting",8,"Thin Cut Under Pressure","Thin cut with a problem ball nearby restricting the cue-ball path."),
-  execDrill("spd1","speed",2,"Stop-Ball Speed Gate","Stun the cue ball dead in a large marked zone.",true),
+  { ...execDrill("spd1","speed",2,"Stop-Ball Speed Gate","Stun the cue ball dead in a large marked zone.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 60, y: 50 },
+    { id: "CB",  group: "cue"    as const, x: 28, y: 50 },
+  ] } },
   execDrill("spd2","speed",4,"Two-Cushion Speed Control","Land the cue ball in a target zone after two cushions."),
   execDrill("spd3","speed",6,"Soft Touch Safety Roll","Roll the cue ball just past the object ball at minimal pace."),
   execDrill("spd4","speed",8,"Precision Lag to Baulk","Cue ball must finish within a tight zone by the baulk cushion."),
-  execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into an open zone.",true),
+  { ...execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into an open zone.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 63, y: 28 },
+    { id: "CB",  group: "cue"    as const, x: 38, y: 58 },
+  ] } },
   execDrill("pos2","positional",4,"Screw Round the Angle","Pot and screw the cue ball back around a cluster."),
   execDrill("pos3","positional",6,"Side-Spin Route","Use side spin to reach a tucked-away next ball."),
   execDrill("pos4","positional",8,"Congested Cluster Route","Navigate the cue ball through a tight cluster to the next ball."),
-  execDrill("cue1","cueBall",2,"Basic Stun","Play a clean stun shot; the cue ball stops on the contact line.",true),
+  { ...execDrill("cue1","cueBall",2,"Basic Stun","Play a clean stun shot; the cue ball stops on the contact line.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 58, y: 42 },
+    { id: "CB",  group: "cue"    as const, x: 33, y: 62 },
+  ] } },
   execDrill("cue2","cueBall",4,"Screw Shot","Basic screw back off the object ball."),
   execDrill("cue3","cueBall",6,"Swerve Around a Blocker","Use swerve to avoid a blocking ball."),
-  execDrill("pbe1","problemBallExec",2,"Simple Nudge","Nudge a problem ball a few inches into open space.",true),
+  { ...execDrill("pbe1","problemBallExec",2,"Simple Nudge","Nudge a problem ball a few inches into open space.",true), diagram: { balls: [
+    { id: "PROB", group: "yellow" as const, x: 68, y: 38, role: "obstacle" as const },
+    { id: "CB",   group: "cue"    as const, x: 42, y: 65 },
+  ] } },
   execDrill("pbe2","problemBallExec",4,"Cannon Off Two Balls","Use a cannon to move two problem balls apart."),
   execDrill("pbe3","problemBallExec",6,"Break-Out From a Cluster","Break out a buried ball from a tight cluster."),
-  execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true),
+  { ...execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true), diagram: { balls: [
+    { id: "BLK", group: "black" as const, x: 50, y: 50 },
+    { id: "CB",  group: "cue"   as const, x: 50, y: 82 },
+  ] } },
   execDrill("brk2","breakExec",4,"Break for a Pot","Break attempting to pot a ball off the break."),
   execDrill("brk3","breakExec",6,"Break Under Baulk Restriction","Break within tighter baulk-area constraints."),
-  execDrill("8b1","eightBall",2,"Straight 8-Ball","Simple straight 8-ball pot.",true),
+  { ...execDrill("8b1","eightBall",2,"Straight 8-Ball","Simple straight 8-ball pot.",true), diagram: { balls: [
+    { id: "BLK", group: "black" as const, x: 50, y: 28 },
+    { id: "CB",  group: "cue"   as const, x: 50, y: 70 },
+  ] } },
   execDrill("8b2","eightBall",4,"Angled 8-Ball With Position","Angled 8-ball; cue ball must finish clear of cushions."),
   execDrill("8b3","eightBall",6,"8-Ball Under Pressure","8-ball pot with a tight pocket angle."),
 
-  decDrill("pat1","pattern",2,"Choose the Ball Order","You have a simple three-ball layout. Which order keeps the pattern easiest?",[
-    opt("Take the nearest straight pot first, then reassess","optimal","Simplifies the table before committing to a full route.","low"),
-    opt("Play the whole sequence exactly as it looks from here","acceptable","Workable, but slightly more speculative than playing one ball at a time.","low"),
-    opt("Attack the farthest ball first for value","highrisk","Higher difficulty for no real pattern benefit.","high"),
-    opt("Play in the order the balls happen to be numbered","poor","Ignores the pattern entirely.","high"),
-  ],true),
-  decDrill("pat2","pattern",4,"Two Viable Routes","Two routes look reasonable. Which keeps the 8-ball accessible?",[
-    opt("The route that finishes with an open angle on the 8-ball","optimal","Protects access to the final ball, where clearances are often lost.","low"),
-    opt("The route that's marginally easier on paper","acceptable","Fine technically, but risks an awkward 8-ball angle.","medium"),
-    opt("The route with the most spectacular pots","highrisk","Prioritises difficulty over control of the finish.","high"),
-    opt("Whichever route is played first without comparing","poor","No comparison was actually made.","high"),
-  ]),
-  decDrill("pat3","pattern",6,"Awkward Layout Planning","A congested layout needs a clear order.",[
-    opt("Clear the loose balls first, leave clusters for last","optimal","Reduces risk early and buys information before tackling clusters.","low"),
-    opt("Take the clusters early while the table is open","acceptable","Can work, but raises risk earlier than necessary.","medium"),
-    opt("Ignore the clusters and hope they resolve themselves","highrisk","Defers a problem that will only get harder.","high"),
-    opt("Play purely on which ball looks closest","poor","There is no plan behind the order.","high"),
-  ]),
+  { ...decDrill("pat1","pattern",2,"Choose the Ball Order","Player is Yellow. Three balls are on the table — the numbers identify the balls only, not the correct pot order. Which sequence clears the layout most safely?",[
+    { key: "opt-a", label: "Ball 3 → Ball 1 → Ball 2 → Black", tier: "optimal"    as const, rationale: "Ball 3 is the most natural starting angle from the cue ball. Playing in numerical order ignores the geometry — the label is a reference, not a route.", risk: "low"    as const, sequence: [
+      { ballId: "B3",  shot: "stun",       positionFor: "B1"     },
+      { ballId: "B1",  shot: "follow",     positionFor: "B2"     },
+      { ballId: "B2",  shot: "check-side", positionFor: "BLK"    },
+      { ballId: "BLK", shot: "natural",    positionFor: "pocket" },
+    ] },
+    { key: "opt-b", label: "Ball 1 → Ball 2 → Ball 3 → Black", tier: "acceptable" as const, rationale: "Numerical order is geometrically workable here but demands tougher positional control between Ball 2 and Ball 3.", risk: "medium" as const, sequence: [
+      { ballId: "B1",  shot: "follow",    positionFor: "B2"     },
+      { ballId: "B2",  shot: "right-side",positionFor: "B3"     },
+      { ballId: "B3",  shot: "stun",      positionFor: "BLK"    },
+      { ballId: "BLK", shot: "natural",   positionFor: "pocket" },
+    ] },
+    { key: "opt-c", label: "Ball 2 → Ball 3 → Ball 1 → Black", tier: "highrisk"   as const, rationale: "Starting on Ball 2 leaves a hard cross-table route to Ball 3 with speculative position for Ball 1.", risk: "high"   as const },
+    { key: "opt-d", label: "Play in the order the balls are numbered — Ball 1 first, always", tier: "poor" as const, rationale: "Treating the labels as the intended shot order is a common misread. They are coaching reference numbers only.", risk: "high" as const },
+  ],true), diagram: { playerGroup: "yellow" as const, balls: [
+    { id: "CB",  group: "cue"    as const, x: 50, y: 77 },
+    { id: "B1",  group: "yellow" as const, x: 40, y: 24, trainingLabel: "1", role: "target"  as const },
+    { id: "B2",  group: "yellow" as const, x: 73, y: 52, trainingLabel: "2", role: "target"  as const },
+    { id: "B3",  group: "yellow" as const, x: 22, y: 60, trainingLabel: "3", role: "target"  as const },
+    { id: "BLK", group: "black"  as const, x: 57, y: 20, role: "black"   as const },
+  ] } },
+  { ...decDrill("pat2","pattern",4,"Two Viable Routes","Player is Yellow. Two routes look reasonable. Which order keeps the angle on the Black most accessible?",[
+    { key: "opt-a", label: "Ball 3 → Ball 1 → Ball 2 → Black", tier: "optimal"    as const, rationale: "Potting Ball 3 first angles the cue ball toward Ball 1 naturally, then Ball 2 leaves a comfortable open angle on the Black.", risk: "low"    as const, sequence: [
+      { ballId: "B3",  shot: "stun",    positionFor: "B1"     },
+      { ballId: "B1",  shot: "follow",  positionFor: "B2"     },
+      { ballId: "B2",  shot: "screw",   positionFor: "BLK"   },
+      { ballId: "BLK", shot: "natural", positionFor: "pocket" },
+    ] },
+    { key: "opt-b", label: "Ball 1 → Ball 3 → Ball 2 → Black", tier: "acceptable" as const, rationale: "A reasonable route, though finishing on Ball 2 from that angle makes the Black slightly harder to control.", risk: "medium" as const, sequence: [
+      { ballId: "B1",  shot: "follow",      positionFor: "B3"     },
+      { ballId: "B3",  shot: "right-side",  positionFor: "B2"     },
+      { ballId: "B2",  shot: "stun",        positionFor: "BLK"   },
+      { ballId: "BLK", shot: "natural",     positionFor: "pocket" },
+    ] },
+    { key: "opt-c", label: "Ball 2 → Ball 1 → Ball 3 → Black", tier: "highrisk"   as const, rationale: "Starting on Ball 2 leaves difficult cross-table positional work that often leaves no clear angle on the Black.", risk: "high"   as const },
+    { key: "opt-d", label: "Pot whichever looks easiest first", tier: "poor"       as const, rationale: "One-ball-at-a-time thinking ignores how each pot sets up the next. The finish on the Black must be considered from the start.", risk: "high"   as const },
+  ]), diagram: { playerGroup: "yellow" as const, balls: [
+    { id: "CB",  group: "cue"    as const, x: 45, y: 78 },
+    { id: "B1",  group: "yellow" as const, x: 28, y: 35, trainingLabel: "1", role: "target" as const },
+    { id: "B2",  group: "yellow" as const, x: 70, y: 26, trainingLabel: "2", role: "target" as const },
+    { id: "B3",  group: "yellow" as const, x: 62, y: 58, trainingLabel: "3", role: "target" as const },
+    { id: "BLK", group: "black"  as const, x: 40, y: 18, role: "black"  as const },
+  ] } },
+  { ...decDrill("pat3","pattern",6,"Awkward Layout Planning","Player is Yellow. A red obstacle ball sits near Ball 3. Which order reduces risk across the full clearance?",[
+    { key: "opt-a", label: "Ball 1 → Ball 2 → Ball 3 → Black", tier: "optimal"    as const, rationale: "Clear the loose open balls first. By the time you reach Ball 3, the table is simpler and you have better information about the angle needed past the obstacle.", risk: "low"    as const, sequence: [
+      { ballId: "B1",  shot: "follow",    positionFor: "B2"     },
+      { ballId: "B2",  shot: "left-side", positionFor: "B3"     },
+      { ballId: "B3",  shot: "stun",      positionFor: "BLK"    },
+      { ballId: "BLK", shot: "natural",   positionFor: "pocket" },
+    ] },
+    { key: "opt-b", label: "Ball 3 → Ball 1 → Ball 2 → Black", tier: "acceptable" as const, rationale: "Tackling the obstacle early can work if the angle is available. The risk is that a mistake on Ball 3 leaves the table more difficult.", risk: "medium" as const },
+    { key: "opt-c", label: "Ball 2 → Ball 3 → Ball 1 → Black", tier: "highrisk"   as const, rationale: "Jumping to Ball 3 second, before clearing Ball 1, creates unnecessary positional difficulty around the obstacle.", risk: "high"   as const },
+    { key: "opt-d", label: "Play the easiest-looking pot each time without a plan", tier: "poor" as const, rationale: "Reacting to each shot in isolation ignores the cluster problem. It will still be there — on worse terms.", risk: "high" as const },
+  ]), diagram: { playerGroup: "yellow" as const, balls: [
+    { id: "CB",  group: "cue"    as const, x: 48, y: 73 },
+    { id: "B1",  group: "yellow" as const, x: 20, y: 38, trainingLabel: "1", role: "target"   as const },
+    { id: "B2",  group: "yellow" as const, x: 72, y: 25, trainingLabel: "2", role: "target"   as const },
+    { id: "B3",  group: "yellow" as const, x: 54, y: 50, trainingLabel: "3", role: "target"   as const },
+    { id: "OPP", group: "red"    as const, x: 63, y: 57, role: "obstacle" as const },
+    { id: "BLK", group: "black"  as const, x: 38, y: 20, role: "black"    as const },
+  ] } },
   decDrill("pat4","pattern",8,"When to Abandon the Plan","Your planned route has become unviable. What now?",[
     opt("Reassess the whole table and build a new route","optimal","Treats the new position as a fresh problem rather than forcing the old plan.","low"),
     opt("Adjust the next shot only and keep the old plan","acceptable","A reasonable short-term fix, but it may not hold up two shots later.","medium"),

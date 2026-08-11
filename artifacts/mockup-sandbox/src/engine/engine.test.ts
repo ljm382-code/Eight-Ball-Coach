@@ -1526,4 +1526,160 @@ import {
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, and Phase 4.2 CK–CV all passed ✓");
+// ── CW: Pattern scenario has labelled target balls ────────────────────────────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.diagram);
+  assert.ok(patDrills.length > 0, "CW: at least one pattern drill has a diagram");
+  for (const d of patDrills) {
+    const labelled = d.diagram!.balls.filter(b => b.trainingLabel);
+    assert.ok(labelled.length > 0, `CW: ${d.id} diagram has at least one labelled ball`);
+  }
+}
+
+// ── CX: Training labels are unique per diagram ────────────────────────────────
+{
+  const diagramDrills = DRILLS.filter(d => d.diagram);
+  for (const d of diagramDrills) {
+    const labels = d.diagram!.balls.filter(b => b.trainingLabel).map(b => b.trainingLabel!);
+    assert.equal(new Set(labels).size, labels.length, `CX: ${d.id} training labels are unique (got: [${labels}])`);
+  }
+}
+
+// ── CY: Training labels do not change ball group or colour ────────────────────
+{
+  const diagramDrills = DRILLS.filter(d => d.diagram);
+  const validGroups   = new Set(["red", "yellow", "black", "cue"]);
+  for (const d of diagramDrills) {
+    for (const b of d.diagram!.balls) {
+      assert.ok(validGroups.has(b.group), `CY: ${d.id}.${b.id} group "${b.group}" must be a valid ball group`);
+    }
+  }
+}
+
+// ── CZ: Numbers do not imply route order — optimal route may start with "3" ──
+{
+  const pat1    = DRILLS.find(d => d.id === "pat1");
+  const optimal = pat1?.options?.find(o => o.tier === "optimal");
+  assert.ok(optimal?.sequence && optimal.sequence.length > 0, "CZ: pat1 optimal option has a sequence");
+  const firstBallId = optimal!.sequence![0].ballId;
+  const firstBall   = pat1!.diagram!.balls.find(b => b.id === firstBallId);
+  assert.notEqual(firstBall?.trainingLabel, "1", "CZ: optimal route must not start with the ball labelled '1' — number ≠ pot order");
+}
+
+// ── DA: Every sequence ballId exists in the diagram ───────────────────────────
+{
+  const drillsWithSeq = DRILLS.filter(d => d.diagram && d.options?.some(o => o.sequence?.length));
+  assert.ok(drillsWithSeq.length > 0, "DA: at least one drill has authored sequences");
+  for (const d of drillsWithSeq) {
+    const ids = new Set(d.diagram!.balls.map(b => b.id));
+    for (const opt of d.options ?? []) {
+      for (const step of opt.sequence ?? []) {
+        assert.ok(ids.has(step.ballId), `DA: ${d.id} opt "${opt.key}" step ballId "${step.ballId}" must exist in diagram balls`);
+      }
+    }
+  }
+}
+
+// ── DB: Pattern option text references valid labelled balls ───────────────────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.diagram);
+  for (const d of patDrills) {
+    const labels  = new Set(d.diagram!.balls.filter(b => b.trainingLabel).map(b => b.trainingLabel!));
+    const optimal = (d.options ?? []).find(o => o.tier === "optimal");
+    if (optimal && labels.size > 0) {
+      const refsBall = [...labels].some(lbl => optimal.label.includes(`Ball ${lbl}`));
+      assert.ok(refsBall, `DB: ${d.id} optimal option label must reference at least one "Ball N" — got: "${optimal.label}"`);
+    }
+  }
+}
+
+// ── DC: Pattern scenario defines playerGroup ──────────────────────────────────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.diagram);
+  for (const d of patDrills) {
+    assert.ok(["red", "yellow"].includes(d.diagram!.playerGroup!), `DC: ${d.id} must have playerGroup "red" or "yellow"`);
+  }
+}
+
+// ── DD: Opponent-colour balls are not treated as player's targets ──────────────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern" && d.diagram && d.diagram.playerGroup);
+  for (const d of patDrills) {
+    const opponentGroup = d.diagram!.playerGroup === "yellow" ? "red" : "yellow";
+    for (const b of d.diagram!.balls.filter(b => b.group === opponentGroup)) {
+      assert.notEqual(b.role, "target", `DD: ${d.id} opponent ball ${b.id} (group "${b.group}") must not have role="target"`);
+    }
+  }
+}
+
+// ── DE: Cue ball has no training sequence label ───────────────────────────────
+{
+  const diagramDrills = DRILLS.filter(d => d.diagram);
+  for (const d of diagramDrills) {
+    for (const cb of d.diagram!.balls.filter(b => b.group === "cue")) {
+      assert.ok(!cb.trainingLabel, `DE: ${d.id} cue ball "${cb.id}" must not have a trainingLabel`);
+    }
+  }
+}
+
+// ── DF: Black ball has no normal numeric sequence label (1–7) ─────────────────
+{
+  const diagramDrills = DRILLS.filter(d => d.diagram);
+  for (const d of diagramDrills) {
+    for (const bb of d.diagram!.balls.filter(b => b.group === "black")) {
+      if (bb.trainingLabel) {
+        const n = parseInt(bb.trainingLabel, 10);
+        assert.ok(isNaN(n) || n === 8, `DF: ${d.id} black ball trainingLabel "${bb.trainingLabel}" must not be a normal sequence number`);
+      }
+    }
+  }
+}
+
+// ── DG: Execution assessment drills have authored diagrams ────────────────────
+{
+  const execAssessment = ASSESSMENT_ITEMS.filter(d => d.type === "execution");
+  assert.ok(execAssessment.length > 0, "DG: there must be assessment execution drills");
+  for (const d of execAssessment) {
+    assert.ok(d.diagram !== undefined, `DG: assessment execution drill ${d.id} must have an authored diagram`);
+    assert.ok(d.diagram!.balls.length >= 2, `DG: ${d.id} diagram must have at least 2 balls`);
+  }
+}
+
+// ── DH: pot1 places cue and object ball on a straight potting line ────────────
+{
+  const pot1 = DRILLS.find(d => d.id === "pot1");
+  assert.ok(pot1?.diagram, "DH: pot1 must have an authored diagram");
+  const cue = pot1!.diagram!.balls.find(b => b.group === "cue");
+  const obj = pot1!.diagram!.balls.find(b => b.group !== "cue" && b.group !== "black");
+  assert.ok(cue && obj, "DH: pot1 diagram must have a cue ball and an object ball");
+  assert.ok(Math.abs(cue!.x - obj!.x) < 5, `DH: pot1 cue (x=${cue!.x}) and object (x=${obj!.x}) must share the same potting line`);
+  assert.ok(obj!.y < 35, `DH: pot1 object ball y=${obj!.y} must be near the top-middle pocket`);
+  assert.ok(cue!.y > obj!.y + 20, `DH: pot1 cue ball y=${cue!.y} must be behind the object ball`);
+}
+
+// ── DI: Ruleset-specific decision content remains supported ───────────────────
+{
+  const rulesetDrills = DRILLS.filter(d => d.rulesetOptions && Object.keys(d.rulesetOptions).length > 0);
+  assert.ok(rulesetDrills.length > 0, "DI: at least one drill uses rulesetOptions");
+  for (const d of rulesetDrills) {
+    for (const [rs, opts] of Object.entries(d.rulesetOptions!)) {
+      assert.ok(opts && opts.length > 0, `DI: ${d.id} rulesetOptions.${rs} must have options`);
+    }
+  }
+}
+
+// ── DJ: Multi-step sequences enable route visualisation ───────────────────────
+{
+  const drillsWithMultiSeq = DRILLS.filter(d => d.diagram && d.options?.some(o => o.sequence && o.sequence.length >= 2));
+  assert.ok(drillsWithMultiSeq.length > 0, "DJ: at least one drill has multi-step route sequences");
+  for (const d of drillsWithMultiSeq) {
+    const ids = new Set(d.diagram!.balls.map(b => b.id));
+    for (const opt of d.options ?? []) {
+      for (const step of opt.sequence ?? []) {
+        assert.ok(ids.has(step.ballId), `DJ: ${d.id} sequence step ballId "${step.ballId}" must resolve to a diagram ball`);
+      }
+    }
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, and Phase 4.3 CW–DJ all passed ✓");
