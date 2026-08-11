@@ -1,49 +1,64 @@
 ---
 name: 8-Ball Coach architecture
-description: Phase 1+2 complete — rules module layout, mixed mode, key import gotchas, build env vars
+description: Phase delivery status, key architecture decisions, and build/test commands for the 8-Ball Coach adaptive coaching app.
 ---
 
-# 8-Ball Coach — durable architecture notes
+## Phase delivery
 
-## Rules module layout (`src/rules/`)
-- `types.ts` — pure interfaces shared by both rule modules; no engine imports
-- `blackball.ts` — WPA Blackball rule implementations; exports `BLACKBALL_DEFINITION` and named helpers
-- `international.ts` — IEPF International implementations; exports `INTERNATIONAL_DEFINITION` and named helpers
-- `index.ts` — unified dispatch helpers (`getLegalBalls`, `isEightBallLegal`, `resolveFoulConsequences`, `getCueBallPlacement`, `resolveGroupAssignment`, `resolveBreakOutcome`, `evaluateDecision`, `FOUL_RECOVERY_SCENARIO_OPTIONS`)
+- **Phase 1** — COMPLETE. Committed `af56e95`. Adaptive engine, drills, clearances, UI. Tests A–O passing.
+- **Phase 2** — COMPLETE. Committed `db3e0b8`. Multi-ruleset foundation: Blackball/International rule helpers, mixed-mode session generation, per-ruleset confidence tracking. Tests P–X, Y–AD, rules helpers passing.
+- **Phase 2.1** — COMPLETE. Committed `3ea2d3e`, pushed to `origin/main`. 20 integrity fixes + tests AE–AV (all 73 tests A–AV passing). See scope below.
+- **Phase 3** — NOT YET AUTHORISED.
 
-## Key import gotcha
-`updateRulesMode` lives in `src/persistence/profileStorage.ts`, NOT in `src/engine/index.ts`.
-Engine cannot export it (circular dep: persistence → engine). Tests must import from persistence.
+## Phase 2.1 scope (what was fixed)
 
-## Build env vars
-`pnpm run build` requires both `PORT` and `BASE_PATH` set:
+1. `applyClearanceBallResult` — pure function; failed ball stays in `remaining`, not potted
+2. Explicit `plannedRoute / attemptedRoute / pottedRoute / remaining` separation via `ClearanceRouteState`
+3. `evaluatePlannedRoute` — scores plan against authored routes, never auto-awards optimal
+4. `ADAPTATION_SKILL_MAP` — routes adaptation choices to correct decision skill
+5. Clearance attempts in mixed mode tagged with `activeRuleset` (not `null`)
+6. Decision and execution evidence kept strictly separate in clearances
+7. `sessionWeighting(profile, lfOverride?)` — confirmed LF shifts 12pp, provisional 6pp, clamped 25–75%
+8. `selectMaintenanceSkill` — due-based: Established+ confidence, rating ≥ 50, not trained in last 7 days
+9. Clearance slot reserved from `totalCount`, not appended (with dedup safety fill)
+10. Final session composition validator + safety fill prevents count shrinkage from dedup
+11. `RootCauseEvent` type on Profile; `rootCauseTally` kept as deprecated legacy
+12. `decayRootCauseScore` — exponential decay, 21-day half-life; numeric confidence 0–1
+13. `mixedRulesetSplit` Phase 1 (calibration) / Phase 2 (performance) allocation
+14. Mixed mode priority: low confidence → calibrate; adequate → weaker performer gets more
+15. Blackball/International rule-source accuracy reviewed; RULESETS.unsupportedNote updated
+16. Tests AE–AV covering all above
+17. Commit message: `"Fix Phase 2 adaptive and ruleset integrity"`
+18. `docs/phase-2-known-limitations.md` updated — 8-ball-on-break rule documented as engine-captured but not exposed as a training scenario
+
+## Key architectural decisions
+
+- `"mixed"` is a `RulesMode` training preference only; `RuleSetId = "blackball" | "international"` — never "mixed"
+- Execution skills are SHARED across rulesets; only decision skills have per-ruleset confidence tracking
+- `attempt.ruleset === null` = genuinely shared execution; clearance execution attempts are tagged with `activeRuleset` (not null) since clearances run under a specific ruleset
+- `updateRulesMode` lives in `profileStorage.ts` — NOT `engine/index.ts` (would create circular dep)
+- `ClearanceRunner` uses `useState` for `remaining / attempted / potted` (not `useRef`) so `legalTargets` useMemo recomputes correctly after each shot
+- Plan quality scored by `evaluatePlannedRoute(planned, clearance)` — NEVER auto-awarded
+- Adaptation choices routed via `ADAPTATION_SKILL_MAP` to correct decision skill
+- `onFinish(profile, summary, rootCauseEvents)` — SessionRunner extracts root-cause events at session end and passes them to App for persistence
+- `buildRootCauseEvents` is called at session end inside SessionRunner, appended to `profile.rootCauseEvents` in `finishSession`
+- Calibration slot (fires when `normalCount >= 6`) uses `otherIds` filter to prevent duplicate IDs; safety fill after dedup guarantees final count matches SESSION_LENGTHS
+
+## Build / test commands
+
+```sh
+# Type-check
+cd artifacts/mockup-sandbox && npx tsc --noEmit
+
+# Tests (73 tests, A–AV)
+pnpm --filter @workspace/mockup-sandbox run test:engine
+
+# Full production build
+cd artifacts/mockup-sandbox && PORT=3000 BASE_PATH=/mockup-sandbox pnpm run build
 ```
-PORT=3000 BASE_PATH=/mockup-sandbox pnpm run build
-```
 
-## Mixed mode
-`preferredRulesMode: "mixed"` is a training preference, NOT a third `RuleSetId`.
-- `RuleSetId` = `"blackball" | "international"` only
-- Execution attempts tagged `ruleset: null` (shared); decision attempts tagged with the active ruleset
-- `mixedRulesetSplit()` adapts BB/INT proportions based on relative ruleset-specific confidence; 25% minimum floor each
+## Import gotchas
 
-## The one genuine tactical difference
-Foul recovery scenario (`tac5_foul_recovery`):
-- Blackball: free shot from baulk → snooker/safety is often optimal (limited angles from D)
-- International: ball in hand anywhere → attack is strongly optimal
-This is the only authored scenario with `rulesetOptions` overrides; all other scenarios share the same correct answer.
-
-## Clearance model
-All clearances use one player group (yellows) + optional obstacle reds + 8-ball.
-Opponent reds have `role: "obstacle"` and are NEVER offered as selectable targets.
-`isEightBallLegal` prevents 8-ball selection until `playerBallsRemaining === 0`.
-
-## Test suite
-Tests A–O: Phase 1 engine (must remain passing, never weaken)
-Tests P–X: Ruleset layer
-Tests Y–AD: Mixed training mode
-Rules helpers: blackball/international helpers + unified dispatchers
-Run: `pnpm --filter @workspace/mockup-sandbox run test:engine`
-
-**Why:** Engine is complex enough that regressions are silent without tests; the split matters.
-**How to apply:** Any engine/rules change must re-run the full test suite before commit.
+- `updateRulesMode` must be imported from `../persistence/profileStorage` in tests (not from engine)
+- `evaluatePlannedRoute`, `applyClearanceBallResult`, `ADAPTATION_SKILL_MAP`, `buildRootCauseEvents`, `selectMaintenanceSkill`, `decayRootCauseScore`, `ROOT_CAUSE_CONFIDENCE_MAP` are all exported from `./engine/index.ts`
+- `LimitingFactors` type (for mock LF in tests) is also exported from `./engine/index.ts`
