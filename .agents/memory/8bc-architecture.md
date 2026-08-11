@@ -11,10 +11,23 @@ description: Phase delivery status, key architecture decisions, and build/test c
 - **Phase 3** — COMPLETE. Real-match adaptive coaching intelligence. Tests AW–BN. 111 total.
 - **Phase 3.1** — COMPLETE. Integrity patch. Tests BO–BZ. 149 total.
 - **Phase 4** — COMPLETE. Committed `88e28c7`, pushed to `origin/main`. Premium UX/UI redesign. Display helper tests CA–CJ. 159 total tests.
+- **Phase 4.1** — COMPLETE. Sage-Teal Balanced visual theme. Committed locally `f7bed69`, pushed to `origin/main` as `f3712b0` (via Git Data API, rebased on top of `a09c012` deploy-pages commit). 159 tests still pass. TypeScript clean. Production build clean.
+
+## Phase 4.1 — Sage-Teal Balanced theme (palette-only swap)
+
+- **COLORS constant** introduced: `background #F2F5F1`, `surface #FFFFFF`, `surfaceTeal #EAF3F1`, `surfaceSage #EEF3EF`, `primary #2E7F7C`, `primaryDark #1F4F4C`, `sage #86A695`, `slateBlue #527A8E`, `gold #C79A38`, `text #1E2B25`, `textSecondary #6B7874`, `border #DDE4E0`, `success #2F7D4C`, `danger #B84A3A`.
+- **C alias** maps old `C.xxx` names to new COLORS values — all existing component references unchanged.
+- **Gold vs primary teal**: `C.brass` → `COLORS.primary` (teal) for most uses; targeted overrides apply `COLORS.gold` for: RulesBadge blackball, PRIORITY badge, active match banner, POSITION LOST label, Summary adaptation note, TIER_LABELS highrisk, won-match score colors.
+- **Won score colors**: `won ? C.green : C.rust` everywhere (green win, red loss) — NOT primary teal.
+- **Btn text**: primary/success/danger variants use `"#FFFFFF"` (not `C.bg` / `C.ink` which would be dark).
+- **Pool table cloth**: changed from dark green `#1a4d33` to teal `#2A8790`.
+- **Pool ball colours**: hardcoded in `ExecDrillDiagram`/`DecisionDrillDiagram`/`simpleBalls` — `#5d99b2` (blue ball), `#c49b58` (gold/yellow ball) — decoupled from theme palette.
+- **Card**: added `boxShadow: "0 1px 4px rgba(30,43,37,0.07)"` for depth on white background.
+- **LibraryView filter tabs**: `DDE4E0` track, white selected tab with teal text.
 
 ## Phase 4 scope (UX/UI redesign — engine FROZEN)
 
-- **Design system**: Refined cue-sports palette (bg `#0d1a14`, panel `#152019`, panel2 `#1b2c22`, brass `#c49b58`, chalk `#5d99b2`, rust `#a04840`, green `#3a7758`); spacing constants `SP`; radius constants `R`.
+- **Design system**: Refined cue-sports palette; spacing constants `SP`; radius constants `R`.
 - **Navigation**: TODAY / MATCHES / TRAIN / PROGRESS / MORE (was Today/Matches/Library/Progress/Rules). `NAV_ITEMS` array with `target` view; `navTab()` maps all sub-views. TRAIN tab → `pickTime`, MORE tab → `settings`.
 - **Nav hidden during**: `["session", "assessment"]` (HIDE_NAV). `session` view gets its own lean shell without bottom nav.
 - **AppShell**: Separate slim header for session view; mode badge in header; safe-area bottom padding.

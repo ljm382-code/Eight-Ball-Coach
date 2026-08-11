@@ -1,0 +1,534 @@
+PHASE 4.1 — SAGE–TEAL BALANCED THEME UPDATE
+
+The Phase 4 UI/UX redesign is complete and is the current approved functional baseline.
+
+Your task is ONLY to change the visual colour/theme system to the approved “Sage–Teal Balanced” palette.
+
+DO NOT redesign the application.
+DO NOT change layouts.
+DO NOT change navigation.
+DO NOT change component structure unless strictly necessary to centralise theme tokens.
+DO NOT change adaptive-engine logic.
+DO NOT change match/frame logic.
+DO NOT change ruleset logic.
+DO NOT change training generation.
+DO NOT change persistence.
+DO NOT change data models.
+DO NOT remove or rewrite existing functionality.
+DO NOT change existing test behaviour.
+
+This is a visual theme pass only.
+
+==================================================
+1. APPROVED DESIGN DIRECTION
+==================================================
+
+Theme name:
+
+SAGE–TEAL BALANCED
+
+Design character:
+
+Calm
+Modern
+Fresh
+Focused
+Light
+Professional
+Cue-sports oriented
+
+The application should move away from the current dark charcoal-green appearance and become predominantly light.
+
+The visual hierarchy should use:
+
+• warm/light neutral backgrounds
+• white cards
+• teal as the main application colour
+• darker teal for stronger emphasis
+• muted sage for secondary information
+• slate blue as a complementary accent
+• restrained gold for priority / important coaching information
+• dark green-charcoal text rather than pure black
+• green for success
+• muted red/rust for losses/errors
+
+NO pink.
+NO magenta.
+NO purple-pink shades.
+NO neon colours.
+
+==================================================
+2. COLOUR TOKENS
+==================================================
+
+Use approximately these approved colours:
+
+App background:
+#F2F5F1
+
+Primary surface/cards:
+#FFFFFF
+
+Primary teal:
+#2E7F7C
+
+Primary dark teal:
+#1F4F4C
+
+Muted sage:
+#86A695
+
+Slate blue:
+#527A8E
+
+Accent gold:
+#C79A38
+
+Primary text:
+#1E2B25
+
+Secondary text:
+#6B7874
+
+Borders/dividers:
+#DDE4E0
+
+Positive / win:
+#2F7D4C
+
+Negative / loss:
+#B84A3A
+
+Very subtle teal surface where useful:
+#EAF3F1
+
+Very subtle sage surface where useful:
+#EEF3EF
+
+Do not mechanically apply every colour everywhere.
+
+Maintain clear hierarchy and good contrast.
+
+==================================================
+3. GLOBAL APPLICATION APPEARANCE
+==================================================
+
+Change the main application background from dark green/charcoal to the light neutral background.
+
+Cards should generally become:
+
+white
+lightly bordered
+subtle shadow where appropriate
+dark text
+
+Preserve the existing rounded-card visual language.
+
+Primary buttons:
+teal background
+white text
+
+Primary button hover/pressed:
+dark teal or slightly darker teal
+
+Secondary buttons:
+white/light background
+teal border
+teal text
+
+Selected controls/chips:
+teal emphasis or subtle teal background
+
+Inactive controls:
+neutral/light styling
+
+Headings:
+dark teal or primary text depending on hierarchy
+
+Icons:
+primarily teal/dark teal
+
+==================================================
+4. GOLD USAGE
+==================================================
+
+Gold should be restrained.
+
+Use #C79A38 primarily for:
+
+• HIGH PRIORITY
+• important coaching emphasis
+• significant numbers or markers
+• important frame impact where appropriate
+• selected premium-looking emphasis
+
+Do NOT use gold as a general button colour.
+
+==================================================
+5. SAGE USAGE
+==================================================
+
+Use muted sage primarily for:
+
+• secondary coaching information
+• supporting progress indicators
+• secondary training information
+• lower-priority visual elements
+• complementary chart segments
+
+Sage should support teal, not replace it as the main identity colour.
+
+==================================================
+6. SLATE BLUE USAGE
+==================================================
+
+Use slate blue selectively for:
+
+• complementary chart/progress information
+• ruleset differentiation where useful
+• secondary analytical information
+• table-cloth-related visual accents
+
+Do not allow blue to dominate the UI.
+
+==================================================
+7. SUCCESS / LOSS / IMPACT
+==================================================
+
+Wins/success:
+#2F7D4C
+
+Loss/error:
+#B84A3A
+
+Important/high-priority:
+gold #C79A38
+
+Maintain text labels in addition to colour.
+
+Do not rely on colour alone for meaning.
+
+==================================================
+8. POOL TABLE CLOTH
+==================================================
+
+IMPORTANT:
+
+Do NOT force every pool table diagram to use the same cloth colour.
+
+The real tables used for these rulesets may use:
+
+• teal cloth
+OR
+• light blue cloth
+
+Keep support for both.
+
+Recommended cloth colours:
+
+Teal cloth:
+approximately #247F86 / #2A8790
+
+Light blue cloth:
+approximately #5F9FB9 / #6AA8C2
+
+The table should still look recognisably like a real pool table.
+
+Keep:
+
+wood/dark rails
+black pockets
+realistic balls
+clear ball contrast
+selected-ball highlight
+route/aim indicators
+
+Do NOT recolour balls to fit the UI palette.
+
+Pool balls retain realistic pool-ball colours.
+
+==================================================
+9. NAVIGATION
+==================================================
+
+Preserve the existing:
+
+TODAY
+MATCHES
+TRAIN
+PROGRESS
+MORE
+
+navigation structure.
+
+Change only its visual treatment.
+
+Use a light/white navigation surface.
+
+Active tab:
+teal icon/text
+clear active indicator
+
+Inactive tabs:
+dark neutral / secondary text
+
+Do not change destinations or navigation behaviour.
+
+==================================================
+10. DASHBOARD
+==================================================
+
+Preserve the existing Phase 4 dashboard structure.
+
+Restyle it using the new palette.
+
+Primary Focus should have strong teal identity.
+
+HIGH PRIORITY should use restrained gold.
+
+Session Mix should use combinations of:
+
+teal
+sage
+slate blue
+
+Recent Match:
+win = green
+loss = muted red
+
+Recent Progress bars should use the approved palette while remaining easy to distinguish.
+
+==================================================
+11. MATCH SCREENS
+==================================================
+
+Convert match screens from dark presentation to the lighter Sage–Teal Balanced design.
+
+Preserve all current functionality.
+
+Scores should remain visually dominant.
+
+Pool table remains the strongest visual element.
+
+Frame Log should use:
+
+white/light surface
+dark text
+green W
+red L
+gold Important
+muted red Frame-deciding where appropriate
+
+Primary match action:
+teal
+
+Secondary action:
+outlined teal
+
+==================================================
+12. TRAINING SCREENS
+==================================================
+
+Preserve the current Phase 4 training UX.
+
+Restyle:
+
+session setup
+duration chips
+drill cards
+decision options
+clearance runner
+ruleset transitions
+session-complete screen
+
+Ruleset badges must remain text-labelled.
+
+Mixed-mode transitions must remain very obvious.
+
+==================================================
+13. PROGRESS
+==================================================
+
+Preserve the existing Progress structure.
+
+Radar chart and progress charts should use combinations of:
+
+teal
+sage
+slate blue
+gold only where emphasis is genuinely required
+
+Do not create a rainbow palette.
+
+Keep charts visually calm and easy to read.
+
+==================================================
+14. MORE / SETTINGS / LIBRARY
+==================================================
+
+Apply the same light visual system consistently.
+
+Training mode selectors:
+
+Blackball
+International
+Both
+
+must remain unchanged functionally.
+
+Selected mode should receive teal emphasis.
+
+Drill Library cards should become light cards with subtle borders and appropriate ruleset badges.
+
+==================================================
+15. TYPOGRAPHY
+==================================================
+
+Preserve the Phase 4 typography system unless a colour adjustment is required.
+
+Do not replace fonts or restructure typography.
+
+Maintain clear distinction between:
+
+display/score text
+headings
+body text
+labels/data
+
+==================================================
+16. ACCESSIBILITY
+==================================================
+
+Verify contrast after moving from dark to light mode.
+
+Especially verify:
+
+secondary text
+sage text/elements
+gold text
+disabled states
+outlined buttons
+ruleset badges
+chart labels
+
+Never communicate ruleset, win/loss, priority or impact using colour alone.
+
+Existing touch-target requirements must remain intact.
+
+==================================================
+17. IMPLEMENTATION QUALITY
+==================================================
+
+Where practical, centralise the palette into reusable design tokens rather than scattering raw hex values throughout App.tsx.
+
+For example:
+
+COLORS.background
+COLORS.surface
+COLORS.primary
+COLORS.primaryDark
+COLORS.sage
+COLORS.slateBlue
+COLORS.gold
+COLORS.text
+COLORS.textSecondary
+COLORS.border
+COLORS.success
+COLORS.danger
+
+Reuse those tokens throughout the existing Phase 4 components.
+
+Do not undertake a large architectural refactor simply to accomplish this.
+
+==================================================
+18. STRICT REGRESSION REQUIREMENT
+==================================================
+
+Before finishing:
+
+Run the existing complete test suite.
+
+All existing 159 tests must continue to pass.
+
+Run TypeScript typecheck.
+
+Run the production build.
+
+Verify the application at mobile widths approximately:
+
+390px
+430px
+
+Inspect at minimum:
+
+Today
+Matches
+Active Match
+Train/session setup
+active training drill
+Progress
+More
+Drill Library
+
+Check for:
+
+bad contrast
+dark-theme remnants
+invisible text
+incorrect borders
+clashing colours
+overflow
+buttons with unreadable labels
+charts that became difficult to read
+
+==================================================
+19. DO NOT ADD NEW PRODUCT FEATURES
+==================================================
+
+This phase is NOT permission to implement:
+
+new training logic
+new match analytics
+new rules
+new drills
+new match fields
+new navigation
+cloud persistence
+authentication
+database changes
+new coaching algorithms
+
+If you notice unrelated issues, document them but DO NOT fix them unless they prevent the theme from rendering correctly.
+
+==================================================
+20. COMPLETION
+==================================================
+
+When finished:
+
+1. Run all tests.
+2. Run TypeScript typecheck.
+3. Run production build.
+4. Visually inspect the major screens.
+5. Commit with EXACT message:
+
+Apply Sage-Teal Balanced visual theme
+
+6. Push to origin/main.
+7. Confirm origin/main contains the commit.
+8. Confirm the GitHub Pages deployment workflow is triggered by the push.
+
+Report:
+
+• files changed
+• final colour tokens
+• test result
+• typecheck result
+• build result
+• mobile visual verification
+• Git commit SHA
+• GitHub push status
+• GitHub Pages deployment status if observable
+• any remaining visual limitations
+
+Do not begin another phase after this.
