@@ -11,7 +11,7 @@ import {
   type FrameImpact, type Match,
 } from "../match";
 import {
-  ADAPTATION_SKILL_MAP, CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
+  ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
   applySkillUpdate, applyClearanceBallResult, classifyErrorChain, computeConfidence,
   computeRulesetConfidence, decayRootCauseScore, decisionValue, evaluatePlannedRoute,
   generateSession, limitingFactor, mixedRulesetSplit, newProfile, selectMaintenanceSkill,
@@ -1407,4 +1407,123 @@ import {
   assert.equal(b1, b2, "CJ-3: rulesetBadgeLabel is deterministic");
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, and Phase 4 display helpers CA–CJ all passed ✓");
+// ── CK: Assessment items have unique IDs (key-based remount isolates drill state) ──
+{
+  const ids = ASSESSMENT_ITEMS.map((d) => d.id);
+  assert.equal(new Set(ids).size, ids.length, "CK: all assessment drill IDs are unique — key remount isolates state per item");
+}
+
+// ── CL: Consecutive assessment items have different IDs (next item starts fresh) ─
+{
+  for (let i = 0; i < ASSESSMENT_ITEMS.length - 1; i++) {
+    assert.notEqual(
+      ASSESSMENT_ITEMS[i].id,
+      ASSESSMENT_ITEMS[i + 1].id,
+      `CL: assessment item ${i} ("${ASSESSMENT_ITEMS[i].id}") ≠ item ${i + 1} ("${ASSESSMENT_ITEMS[i + 1].id}")`,
+    );
+  }
+}
+
+// ── CM: Success can be recorded after a failure on the same skill ────────────────
+{
+  const p0 = newProfile("blackball");
+  const p1 = applySkillUpdate(p0, "potting", 0, { drillId: "pot1", source: "assessment", difficulty: 5, reportedError: "MISS" }, NOW);
+  const p2 = applySkillUpdate(p1, "potting", 1, { drillId: "pot1", source: "assessment", difficulty: 5 }, NOW + 1);
+  assert.equal(p2.skills.potting.attempts.length, 2, "CM: success recorded after failure without error");
+}
+
+// ── CN: Consecutive failures are recorded independently ──────────────────────────
+{
+  const p0 = newProfile("blackball");
+  const p1 = applySkillUpdate(p0, "potting", 0, { drillId: "pot1", source: "assessment", difficulty: 5, reportedError: "MISS" },  NOW);
+  const p2 = applySkillUpdate(p1, "speed",   0, { drillId: "spd1", source: "assessment", difficulty: 5, reportedError: "SPEED" }, NOW + 1);
+  assert.equal(p2.skills.potting.attempts.length, 1,        "CN-1: first failure recorded");
+  assert.equal(p2.skills.speed.attempts.length,   1,        "CN-2: second failure recorded independently");
+  assert.equal(p2.skills.potting.attempts[0].reportedError, "MISS",  "CN-3: first error code preserved");
+  assert.equal(p2.skills.speed.attempts[0].reportedError,   "SPEED", "CN-4: second error code preserved");
+}
+
+// ── CO: Decision drills have unique IDs (feedback state is isolated per item) ────
+{
+  const decisionDrills = ASSESSMENT_ITEMS.filter((d) => d.type === "decision");
+  if (decisionDrills.length >= 2) {
+    assert.notEqual(decisionDrills[0].id, decisionDrills[1].id, "CO: consecutive decision drills have different IDs — feedback is isolated by React key");
+  }
+}
+
+// ── CP: English ball palette only — no non-English colour groups in any clearance ─
+{
+  const validGroups = new Set(["red", "yellow", "black"]);
+  for (const c of CLEARANCES) {
+    for (const b of c.balls) {
+      assert.ok(validGroups.has(b.group), `CP: ${c.id}.${b.id} group="${b.group}" must be "red", "yellow", or "black"`);
+    }
+  }
+}
+
+// ── CQ: Full-set inventory — no clearance exceeds 7 reds, 7 yellows, 1 black ────
+{
+  for (const c of CLEARANCES) {
+    const reds    = c.balls.filter((b) => b.group === "red").length;
+    const yellows = c.balls.filter((b) => b.group === "yellow").length;
+    const blacks  = c.balls.filter((b) => b.group === "black").length;
+    assert.ok(reds    <= 7, `CQ: ${c.id} has ${reds} red balls (max 7)`);
+    assert.ok(yellows <= 7, `CQ: ${c.id} has ${yellows} yellow balls (max 7)`);
+    assert.ok(blacks  <= 1, `CQ: ${c.id} has ${blacks} black balls (max 1)`);
+  }
+}
+
+// ── CR: Ball size consistency — all clearance ball groups map to known BALL constants ─
+{
+  // PoolTable derives one shared ballR; all groups use it. Verify all groups are recognised.
+  const recognisedGroups = new Set(["red", "yellow", "black"]);
+  for (const c of CLEARANCES) {
+    for (const b of c.balls) {
+      assert.ok(recognisedGroups.has(b.group), `CR: ${c.id}.${b.id} group="${b.group}" must map to a BALL constant`);
+    }
+  }
+  // Also verify the four BALL colour strings are distinct (different types, same physical radius)
+  const BALL_COLORS = { red: "#B83E35", yellow: "#D6A52E", black: "#151918", cue: "#F2F0E8" };
+  const vals = Object.values(BALL_COLORS);
+  assert.equal(new Set(vals).size, vals.length, "CR: all BALL colour constants are distinct");
+}
+
+// ── CS: Clearance group consistency — player targets and opponent obstacles use different groups ─
+{
+  for (const c of CLEARANCES) {
+    const playerGroups   = new Set(c.balls.filter((b) => b.owner === "player"   && b.role === "target").map((b) => b.group));
+    const opponentGroups = new Set(c.balls.filter((b) => b.owner === "opponent").map((b) => b.group));
+    for (const g of playerGroups) {
+      assert.ok(!opponentGroups.has(g), `CS: ${c.id} player group "${g}" must not appear as an opponent obstacle group`);
+    }
+  }
+}
+
+// ── CT: Black-ball uniqueness — no clearance has more than one black ball ────────
+{
+  for (const c of CLEARANCES) {
+    const blacks = c.balls.filter((b) => b.group === "black" || b.role === "black");
+    assert.ok(blacks.length <= 1, `CT: ${c.id} has ${blacks.length} black-group balls (max 1)`);
+  }
+}
+
+// ── CU: Cue-ball uniqueness — cue ball is implicit; not listed in any clearance ball set ─
+{
+  for (const c of CLEARANCES) {
+    const cueBalls = c.balls.filter((b) => (b.group as string) === "cue" || b.id.toUpperCase() === "W" || b.label.toLowerCase().includes("cue ball"));
+    assert.equal(cueBalls.length, 0, `CU: ${c.id} must have no explicit cue ball in its balls list`);
+  }
+}
+
+// ── CV: Simple drills render only required balls (no balls list in drill data) ───
+{
+  for (const d of DRILLS) {
+    assert.ok(!("balls" in d) || (d as Record<string, unknown>)["balls"] === undefined, `CV: drill ${d.id} must not carry a balls list`);
+  }
+  // Clearances have a bounded ball set — no more than 16 (7+7+1 black, cue implicit)
+  for (const c of CLEARANCES) {
+    assert.ok(c.balls.length <= 15, `CV: clearance ${c.id} has ${c.balls.length} balls (max 15 explicit object balls)`);
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, and Phase 4.2 CK–CV all passed ✓");

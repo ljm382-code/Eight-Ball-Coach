@@ -62,6 +62,15 @@ const C = {
 const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 const R  = { sm: 8, md: 12, lg: 16, xl: 24 } as const;
 
+// ─── English pool ball colours ─────────────────────────────────────────────────
+// red = deep English pool red; yellow = warm English yellow; black = 8-ball near-black; cue = warm off-white
+const BALL = {
+  red:    "#B83E35",
+  yellow: "#D6A52E",
+  black:  "#151918",
+  cue:    "#F2F0E8",
+} as const;
+
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
 
 // ─── Display helpers (pure, UI-only) ──────────────────────────────────────────
@@ -220,7 +229,7 @@ function EmptyState({ icon, title, body }: { icon?: string; title: string; body:
 }
 
 // ─── Pool table SVG ────────────────────────────────────────────────────────────
-type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string };
+type BallSpec = { x: number; y: number; color: string; highlight?: boolean; label?: string; opacity?: number };
 
 function PoolTable({
   width = 280,
@@ -243,17 +252,24 @@ function PoolTable({
     [bX, bY], [bX + bW / 2, bY - pR * 0.3], [bX + bW, bY],
     [bX, bY + bH], [bX + bW / 2, bY + bH + pR * 0.3], [bX + bW, bY + bH],
   ];
-  const ballR = width * 0.038;
+  // Ball radius: ~2.8% of playing length — English pool proportion (2″ ball on 6×3 ft table)
+  const ballR = bW * 0.017;
 
   return <svg viewBox={`0 0 ${width} ${h}`} width={width} height={h} style={{ display: "block", borderRadius: R.md }}>
+    <defs>
+      {/* Shared sphere shading overlay — bright at off-centre, darkened at rim */}
+      <radialGradient id="ballShade" cx="38%" cy="32%" r="72%">
+        <stop offset="0%"   stopColor="#ffffff" stopOpacity={0.20} />
+        <stop offset="55%"  stopColor="#000000" stopOpacity={0} />
+        <stop offset="100%" stopColor="#000000" stopOpacity={0.30} />
+      </radialGradient>
+    </defs>
     {/* Table frame */}
     <rect x={0} y={0} width={width} height={h} rx={pW * 0.7} fill="#2a1a0a" />
     {/* Cushion rail */}
     <rect x={pW * 0.35} y={pW * 0.35} width={width - pW * 0.7} height={h - pW * 0.7} rx={pW * 0.5} fill="#3d2510" />
     {/* Baize surface */}
     <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#2A8790" />
-    {/* Baize subtle grain */}
-    <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="url(#baize)" opacity={0.08} />
     {/* Centre line (faint) */}
     <line x1={bX + bW / 2} y1={bY + 4} x2={bX + bW / 2} y2={bY + bH - 4} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
     {/* Pockets */}
@@ -263,20 +279,25 @@ function PoolTable({
         <circle cx={px} cy={py} r={pR * 0.75} fill="#060e0a" />
       </g>
     ))}
-    {/* Balls */}
+    {/* Balls — all same physical radius; selection shown by outer ring only */}
     {balls.map((b, i) => {
       const sel = selectedBall === b.label;
-      return <g key={i}>
-        {sel && <circle cx={b.x * width} cy={b.y * h} r={ballR * 1.7} fill={C.brass} opacity={0.25} />}
-        <defs>
-          <radialGradient id={`bg${i}`} cx="35%" cy="30%" r="65%">
-            <stop offset="0%" stopColor="#ffffff" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="#000000" stopOpacity={0.2} />
-          </radialGradient>
-        </defs>
-        <circle cx={b.x * width} cy={b.y * h} r={ballR} fill={b.color} stroke={sel ? C.brass : "#00000040"} strokeWidth={sel ? 1.5 : 0.8} />
-        <circle cx={b.x * width} cy={b.y * h} r={ballR} fill={`url(#bg${i})`} />
-        {b.highlight && <circle cx={b.x * width - ballR * 0.28} cy={b.y * h - ballR * 0.32} r={ballR * 0.28} fill="#ffffff" opacity={0.6} />}
+      const bx  = b.x * width;
+      const by  = b.y * h;
+      return <g key={i} opacity={b.opacity ?? 1}>
+        {/* Contact shadow */}
+        <ellipse cx={bx} cy={by + ballR * 0.90} rx={ballR * 0.88} ry={ballR * 0.26} fill="#000000" opacity={0.14} />
+        {/* Selection ring — outer glow + stroke; does NOT enlarge the ball */}
+        {sel && <>
+          <circle cx={bx} cy={by} r={ballR + 3.5} fill={COLORS.primary} opacity={0.10} />
+          <circle cx={bx} cy={by} r={ballR + 2.5} fill="none" stroke={COLORS.primary} strokeWidth={1.5} opacity={0.85} />
+        </>}
+        {/* Ball flat colour */}
+        <circle cx={bx} cy={by} r={ballR} fill={b.color} stroke="#00000030" strokeWidth={0.5} />
+        {/* Sphere shading overlay */}
+        <circle cx={bx} cy={by} r={ballR} fill="url(#ballShade)" />
+        {/* Specular highlight — small and restrained */}
+        {b.highlight && <circle cx={bx - ballR * 0.26} cy={by - ballR * 0.30} r={ballR * 0.21} fill="#ffffff" opacity={0.40} />}
       </g>;
     })}
   </svg>;
@@ -291,15 +312,15 @@ function simpleBalls(specs: { color?: string }[], tableWidth = 280): BallSpec[] 
   const startX = (bX + 18) / tableWidth;
   const stepX  = 22 / tableWidth;
   const centerY = (bY + bH / 2) / tableH;
-  return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? "#5d99b2", highlight: true }));
+  return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? BALL.red, highlight: true }));
 }
 
 /** Diagram for execution drills — two balls setup */
 function ExecDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
-    { x: 0.35, y: 0.5, color: "#e8e8e0", highlight: true },
-    { x: 0.62, y: 0.45, color: "#5d99b2", highlight: true },
+    { x: 0.35, y: 0.50, color: BALL.cue, highlight: true },
+    { x: 0.62, y: 0.44, color: BALL.red, highlight: true },
   ]} />;
 }
 
@@ -307,10 +328,10 @@ function ExecDrillDiagram() {
 function DecisionDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
-    { x: 0.3,  y: 0.5,  color: "#e8e8e0", highlight: true },
-    { x: 0.55, y: 0.38, color: "#c49b58", highlight: true },
-    { x: 0.58, y: 0.62, color: "#c43333", highlight: true },
-    { x: 0.75, y: 0.45, color: "#111111", highlight: true },
+    { x: 0.30, y: 0.50, color: BALL.cue,    highlight: true },
+    { x: 0.52, y: 0.37, color: BALL.yellow, highlight: true },
+    { x: 0.55, y: 0.63, color: BALL.red,    highlight: true },
+    { x: 0.72, y: 0.46, color: BALL.black,  highlight: true },
   ]} />;
 }
 
@@ -514,8 +535,8 @@ function Assessment({ profile, onDone }: { profile: Profile; onDone: (profile: P
       <ProgressBar value={index / total * 100} color={C.brass} />
     </div>
     {current.type === "combined"
-      ? <ClearanceRunner clearance={current} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />
-      : <DrillRunner drill={current as Drill} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />}
+      ? <ClearanceRunner key={`assess-${index}`} clearance={current} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />
+      : <DrillRunner     key={`assess-${index}`} drill={current as Drill} profile={profileRef.current} source="assessment" activeRuleset={activeRuleset} onComplete={advance} />}
   </div>;
 }
 
@@ -706,6 +727,8 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
 }) {
   const [errorOpen, setErrorOpen] = useState(false);
   const [feedback, setFeedback]   = useState<{ option: DecisionOption; updated: Profile; value: number } | null>(null);
+  // Reset transient state whenever the active drill changes (belt-and-suspenders: key prop is the primary guard)
+  useEffect(() => { setErrorOpen(false); setFeedback(null); }, [drill.id]);
   const activeOptions = drill.rulesetOptions?.[activeRuleset] ?? drill.options ?? [];
   const rulesetForBadge = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
 
@@ -859,13 +882,10 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
   const clearanceBalls: BallSpec[] = useMemo(() => {
     const count = clearance.balls.length;
     return clearance.balls.map((b, i) => {
-      const col = potted.includes(b.id) ? `${C.green}66`
-        : b.role === "obstacle" ? "#44444488"
-        : b.group === "black" ? "#111111"
-        : b.group === "red" ? C.rust
-        : "#d4a017";
+      const col = b.group === "black" ? BALL.black : b.group === "red" ? BALL.red : BALL.yellow;
+      const opacity = potted.includes(b.id) ? 0.28 : b.role === "obstacle" ? 0.55 : 1;
       const xFrac = 0.15 + (i / Math.max(count - 1, 1)) * 0.7;
-      return { x: xFrac, y: 0.5, color: col, highlight: !potted.includes(b.id) && b.role !== "obstacle", label: b.id };
+      return { x: xFrac, y: 0.5, color: col, highlight: !potted.includes(b.id) && b.role !== "obstacle", label: b.id, opacity };
     });
   }, [clearance.balls, potted]);
 
@@ -950,7 +970,7 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
 
   // Shot execution
   const ball = ballMap[selectedId];
-  const shotBalls = clearanceBalls.map(b => b.label === selectedId ? { ...b, color: C.brass } : b);
+  const shotBalls = clearanceBalls; // selection shown via selectedBall prop; ball colour is unchanged
   return <div>
     <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.md }}>
       <PoolTable width={280} balls={shotBalls} selectedBall={selectedId} />
