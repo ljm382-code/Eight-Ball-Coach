@@ -1,0 +1,199 @@
+GITHUB PAGES DEPLOYMENT FIX — 8-BALL COACH
+
+Do not change any application logic, adaptive logic, rules, tests, persistence, UX, or visual design.
+
+This task is ONLY to configure reliable automatic GitHub Pages deployment for the existing 8-Ball Coach Vite app.
+
+The GitHub repository is:
+
+ljm382-code/Eight-Ball-Coach
+
+The intended public URL is:
+
+https://ljm382-code.github.io/Eight-Ball-Coach/
+
+GitHub Pages has already been changed manually to:
+
+Source: GitHub Actions
+
+==================================================
+1. INSPECT CURRENT PROJECT STRUCTURE
+==================================================
+
+First determine:
+
+- the actual Vite app package/directory
+- its current vite.config.* file
+- the correct package-manager command used by this workspace
+- the correct build output directory
+- the correct production build command
+
+Do not assume the app lives at repository root.
+
+The current app has previously built successfully in Replit.
+
+==================================================
+2. CONFIGURE THE CORRECT VITE BASE PATH
+==================================================
+
+For GitHub Pages production builds, the app must use:
+
+/Eight-Ball-Coach/
+
+as its base path.
+
+Do not break Replit's own preview environment.
+
+If the existing Vite config uses environment-specific BASE_PATH handling, preserve that architecture and make GitHub Pages pass the correct value during its build.
+
+Preferred outcome:
+
+GitHub Pages build:
+BASE_PATH=/Eight-Ball-Coach/
+
+Replit/local preview:
+continues using its existing base-path behavior.
+
+Do not hard-code something that breaks Replit preview.
+
+==================================================
+3. ADD A GITHUB PAGES ACTION
+==================================================
+
+Create:
+
+.github/workflows/deploy-pages.yml
+
+or an equivalent clearly named workflow.
+
+The workflow must:
+
+- trigger on pushes to main
+- support workflow_dispatch for manual runs
+- check out the repository
+- set up the appropriate Node version
+- install dependencies using the repository's existing package manager/lockfile
+- build the actual 8-Ball Coach Vite package
+- build with the correct GitHub Pages base path
+- configure GitHub Pages
+- upload ONLY the generated production static build directory
+- deploy that artifact to GitHub Pages
+
+Use the current official GitHub Pages actions.
+
+Required permissions:
+
+contents: read
+pages: write
+id-token: write
+
+Use the github-pages environment.
+
+Do not deploy the source repository itself.
+
+==================================================
+4. IMPORTANT MONOREPO / WORKSPACE HANDLING
+==================================================
+
+This repository is not necessarily a simple root-level Vite app.
+
+Use the existing workspace/package structure correctly.
+
+Do not move the app just to simplify deployment.
+
+Do not duplicate source files.
+
+Do not create a second app.
+
+The workflow must build the same app currently used by Replit.
+
+==================================================
+5. SPA / ROUTING CHECK
+==================================================
+
+Inspect whether the current app uses client-side URL routing.
+
+If it does not use browser-history routes, make no unnecessary routing changes.
+
+If it does require SPA fallback for GitHub Pages, implement the smallest appropriate static-hosting solution.
+
+Do not introduce React Router or change navigation architecture solely for deployment.
+
+==================================================
+6. VERIFY ASSET PATHS
+==================================================
+
+After build, verify generated index.html references assets under:
+
+/Eight-Ball-Coach/
+
+and not incorrectly from:
+
+/assets/...
+
+or a Replit-only path such as:
+
+/__mockup/
+
+The GitHub Pages artifact must be self-contained.
+
+==================================================
+7. PRESERVE ALL CURRENT QUALITY GATES
+==================================================
+
+Do not alter the existing application tests.
+
+Before commit, confirm:
+
+- existing 159 tests still pass
+- TypeScript passes
+- normal production build passes
+- GitHub-Pages-targeted production build passes
+
+==================================================
+8. COMMIT AND PUSH
+==================================================
+
+Commit only the deployment-related files/config changes required.
+
+Use commit message:
+
+"Configure GitHub Pages deployment"
+
+Push to origin/main.
+
+==================================================
+9. VERIFY THE ACTION
+==================================================
+
+After pushing:
+
+- confirm the GitHub Actions workflow is triggered
+- confirm the Pages deployment job succeeds if accessible from the environment
+- verify origin/main includes the deployment workflow
+
+If deployment cannot be observed from Replit, report that clearly rather than claiming success.
+
+==================================================
+10. FINAL REPORT
+==================================================
+
+Report:
+
+- Vite app directory
+- Vite base-path solution
+- workflow file created
+- package/build commands used
+- build output directory
+- tests result
+- typecheck result
+- normal build result
+- GitHub Pages build result
+- commit hash
+- GitHub push status
+- GitHub Actions deployment status
+- expected live URL
+
+STOP after deployment configuration.
+
+Do not start any new development phase.
