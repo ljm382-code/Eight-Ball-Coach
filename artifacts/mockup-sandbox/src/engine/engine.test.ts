@@ -11,11 +11,13 @@ import {
   type FrameImpact, type Match,
 } from "../match";
 import {
-  ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, BALL_COLORS, CLEARANCES, CONFIG, DRILLS,
-  ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
-  applySkillUpdate, applyClearanceBallResult, buildTableRenderModel, classifyErrorChain,
+  ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, BALL_COLORS, BAULK_FRACTION, BLACK_SPOT_X_FRACTION,
+  CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
+  applySkillUpdate, applyClearanceBallResult, buildAimLinePrimitives, buildTableMarkingPrimitives,
+  buildTableRenderModel, classifyErrorChain,
   computeConfidence, computeRulesetConfidence, createEnglishEightBallRack, decayRootCauseScore,
-  decisionValue, evaluatePlannedRoute, generateSession, limitingFactor, mixedRulesetSplit,
+  decisionValue, evaluatePlannedRoute, generateSession, getEnglishPoolTableGeometry,
+  limitingFactor, mixedRulesetSplit,
   newProfile, selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
   type Attempt, type ClearanceRouteState, type DiagramVisualRequirement, type LimitingFactors,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type SkillId, type TableMarkings,
@@ -2243,4 +2245,246 @@ import {
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, and Phase 4.6 FE–FV all passed ✓");
+// ═══════════════════════════════════════════════════════════════════════════
+// Phase 4.7 FW–GP — Table geometry & shot-line integrity
+// ═══════════════════════════════════════════════════════════════════════════
+
+const GEO = getEnglishPoolTableGeometry(260);
+
+// ── FW: Baulk line primitive is VERTICAL (x1 === x2) ────────────────────────
+{
+  const prims = buildTableMarkingPrimitives({ showBaulkLine: true }, GEO);
+  const bl    = prims.find(p => p.role === "baulkLine");
+  assert.ok(bl, "FW: buildTableMarkingPrimitives must return a baulkLine primitive");
+  assert.equal(bl!.type, "line", "FW: baulkLine primitive must have type 'line'");
+  assert.equal(bl!.x1, bl!.x2, "FW: baulkLine must be vertical (x1 === x2)");
+}
+
+// ── FX: Baulk line spans the full playing-surface height ────────────────────
+{
+  const prims = buildTableMarkingPrimitives({ showBaulkLine: true }, GEO);
+  const bl    = prims.find(p => p.role === "baulkLine");
+  assert.ok(bl, "FX: baulkLine primitive required");
+  assert.ok(Math.abs(bl!.y1! - GEO.baulkTopY) < 0.01,    `FX: baulkLine y1 must equal baulkTopY (${GEO.baulkTopY}), got ${bl!.y1}`);
+  assert.ok(Math.abs(bl!.y2! - GEO.baulkBottomY) < 0.01, `FX: baulkLine y2 must equal baulkBottomY (${GEO.baulkBottomY}), got ${bl!.y2}`);
+}
+
+// ── FY: Baulk line is positioned near the baulk/right end (> 50% of bW) ───
+{
+  const baulkFraction = (GEO.baulkLineX - GEO.bX) / GEO.bW;
+  assert.ok(baulkFraction > 0.5,
+    `FY: baulkLineX must be more than 50% from rack end (fraction=${baulkFraction.toFixed(3)})`);
+  assert.ok(Math.abs(baulkFraction - BAULK_FRACTION) < 0.01,
+    `FY: baulkLineX fraction must equal BAULK_FRACTION=${BAULK_FRACTION} (got ${baulkFraction.toFixed(3)})`);
+}
+
+// ── FZ: D-semicircle is an arc primitive attached to the baulk line ─────────
+{
+  const prims = buildTableMarkingPrimitives({ showD: true }, GEO);
+  const arc   = prims.find(p => p.role === "dSemicircle");
+  assert.ok(arc, "FZ: buildTableMarkingPrimitives must return a dSemicircle primitive when showD=true");
+  assert.equal(arc!.type, "arc", "FZ: dSemicircle primitive must have type 'arc'");
+  assert.ok(typeof arc!.d === "string" && arc!.d.length > 0, "FZ: dSemicircle must have a non-empty SVG path 'd'");
+  assert.ok(Math.abs(arc!.cx! - GEO.baulkLineX) < 0.01,
+    `FZ: dSemicircle cx must be at baulkLineX (${GEO.baulkLineX.toFixed(2)}), got ${arc!.cx}`);
+}
+
+// ── GA: D extends toward the right / baulk cushion ──────────────────────────
+{
+  const prims = buildTableMarkingPrimitives({ showD: true }, GEO);
+  const arc   = prims.find(p => p.role === "dSemicircle");
+  assert.ok(arc, "GA: dSemicircle primitive required");
+  assert.equal(arc!.extendDirection, "right",
+    `GA: dSemicircle extendDirection must be "right" (got "${arc!.extendDirection}")`);
+  // The arc's rightmost point = cx + radius must be > baulkLineX
+  const rightExtent = arc!.cx! + arc!.radius!;
+  assert.ok(rightExtent > GEO.baulkLineX,
+    `GA: D rightmost extent (${rightExtent.toFixed(2)}) must exceed baulkLineX (${GEO.baulkLineX.toFixed(2)})`);
+}
+
+// ── GB: Black spot is on the rack / opposite half of the table ───────────────
+{
+  const bsxFraction = (GEO.blackSpotX - GEO.bX) / GEO.bW;
+  assert.ok(bsxFraction < 0.5,
+    `GB: blackSpotX must be on the rack half (<50%); got fraction ${bsxFraction.toFixed(3)}`);
+  assert.ok(Math.abs(bsxFraction - BLACK_SPOT_X_FRACTION) < 0.01,
+    `GB: blackSpotX fraction must equal BLACK_SPOT_X_FRACTION=${BLACK_SPOT_X_FRACTION} (got ${bsxFraction.toFixed(3)})`);
+  assert.ok(GEO.blackSpotX < GEO.baulkLineX,
+    `GB: blackSpotX (${GEO.blackSpotX.toFixed(2)}) must be left of baulkLineX (${GEO.baulkLineX.toFixed(2)})`);
+}
+
+// ── GC: Controlled Break — all rack balls are left of the baulk line ─────────
+{
+  const brk1    = DRILLS.find(d => d.id === "brk1");
+  const baulkPct = BAULK_FRACTION * 100;
+  const rackBalls = (brk1?.diagram?.balls ?? []).filter(b => b.group !== "cue");
+  assert.ok(rackBalls.length === 15, `GC: brk1 must have 15 rack balls (found ${rackBalls.length})`);
+  for (const b of rackBalls) {
+    assert.ok(b.x < baulkPct,
+      `GC: rack ball ${b.id} x=${b.x} must be left of baulkLine at ${baulkPct}%`);
+  }
+}
+
+// ── GD: Controlled Break — cue ball is RIGHT of the baulk line ───────────────
+{
+  const brk1 = DRILLS.find(d => d.id === "brk1");
+  const cb   = brk1?.diagram?.balls.find(b => b.group === "cue");
+  assert.ok(cb, "GD: brk1 must have a cue ball");
+  const baulkPct = BAULK_FRACTION * 100;
+  assert.ok(cb!.x > baulkPct,
+    `GD: brk1 cue ball x=${cb!.x} must be right of baulkLine at ${baulkPct}%`);
+}
+
+// ── GE: Straight Pot — buildAimLinePrimitives returns two segments ──────────
+{
+  const pot1   = DRILLS.find(d => d.id === "pot1");
+  const result = buildAimLinePrimitives(pot1?.diagram, GEO);
+  assert.equal(result.errors.length, 0, `GE: pot1 aim line resolution must have no errors (got: ${result.errors.join(", ")})`);
+  assert.equal(result.segments.length, 2, `GE: pot1 must produce exactly 2 aim segments (got ${result.segments.length})`);
+  assert.ok(result.segments.some(s => s.role === "cueBallToObject"), "GE: pot1 must have a cueBallToObject segment");
+  assert.ok(result.segments.some(s => s.role === "objectToPocket"),  "GE: pot1 must have an objectToPocket segment");
+}
+
+// ── GF: Straight Pot — cue→object segment uses actual ball centres ───────────
+{
+  const pot1   = DRILLS.find(d => d.id === "pot1");
+  const result = buildAimLinePrimitives(pot1?.diagram, GEO);
+  const segA   = result.segments.find(s => s.role === "cueBallToObject");
+  assert.ok(segA, "GF: cueBallToObject segment required");
+  const cb  = pot1!.diagram!.balls.find(b => b.id === "CB");
+  const obj = pot1!.diagram!.balls.find(b => b.id === "OBJ");
+  const expCBx  = GEO.bX + (cb!.x  / 100) * GEO.bW;
+  const expCBy  = GEO.bY + (cb!.y  / 100) * GEO.bH;
+  const expOBJx = GEO.bX + (obj!.x / 100) * GEO.bW;
+  const expOBJy = GEO.bY + (obj!.y / 100) * GEO.bH;
+  assert.ok(Math.abs(segA!.x1 - expCBx)  < 0.5, `GF: segment x1 (${segA!.x1.toFixed(2)}) must equal CB SVG x (${expCBx.toFixed(2)})`);
+  assert.ok(Math.abs(segA!.y1 - expCBy)  < 0.5, `GF: segment y1 (${segA!.y1.toFixed(2)}) must equal CB SVG y (${expCBy.toFixed(2)})`);
+  assert.ok(Math.abs(segA!.x2 - expOBJx) < 0.5, `GF: segment x2 (${segA!.x2.toFixed(2)}) must equal OBJ SVG x (${expOBJx.toFixed(2)})`);
+  assert.ok(Math.abs(segA!.y2 - expOBJy) < 0.5, `GF: segment y2 (${segA!.y2.toFixed(2)}) must equal OBJ SVG y (${expOBJy.toFixed(2)})`);
+}
+
+// ── GG: Straight Pot — object→pocket segment ends at topMiddle pocket centre ─
+{
+  const pot1   = DRILLS.find(d => d.id === "pot1");
+  const result = buildAimLinePrimitives(pot1?.diagram, GEO);
+  const segB   = result.segments.find(s => s.role === "objectToPocket");
+  assert.ok(segB, "GG: objectToPocket segment required");
+  const [pockX, pockY] = GEO.pocketCenters["topMiddle"];
+  assert.ok(Math.abs(segB!.x2 - pockX) < 0.5, `GG: segment x2 (${segB!.x2.toFixed(2)}) must equal topMiddle pocket x (${pockX.toFixed(2)})`);
+  assert.ok(Math.abs(segB!.y2 - pockY) < 0.5, `GG: segment y2 (${segB!.y2.toFixed(2)}) must equal topMiddle pocket y (${pockY.toFixed(2)})`);
+}
+
+// ── GH: Straight Pot — cue / object / pocket are collinear ───────────────────
+{
+  const pot1   = DRILLS.find(d => d.id === "pot1");
+  const result = buildAimLinePrimitives(pot1?.diagram, GEO);
+  const segA   = result.segments.find(s => s.role === "cueBallToObject");
+  const segB   = result.segments.find(s => s.role === "objectToPocket");
+  assert.ok(segA && segB, "GH: both segments required for collinearity check");
+  // Cross product of CB→OBJ and CB→pocket must be near 0
+  const dx1 = segA!.x2 - segA!.x1, dy1 = segA!.y2 - segA!.y1;
+  const dx2 = segB!.x2 - segA!.x1, dy2 = segB!.y2 - segA!.y1;
+  const cross = dx1 * dy2 - dy1 * dx2;
+  assert.ok(Math.abs(cross) < 5,
+    `GH: pot1 CB/OBJ/pocket must be collinear (cross product=${cross.toFixed(2)}, tolerance=5)`);
+}
+
+// ── GI: Straight 8-Ball — two segments: cue→black and black→pocket ───────────
+{
+  const d8b1   = DRILLS.find(d => d.id === "8b1");
+  const result = buildAimLinePrimitives(d8b1?.diagram, GEO);
+  assert.equal(result.errors.length, 0, `GI: 8b1 must resolve without errors (got: ${result.errors.join(", ")})`);
+  assert.ok(result.segments.some(s => s.role === "cueBallToObject"), "GI: 8b1 must have a cueBallToObject segment");
+  assert.ok(result.segments.some(s => s.role === "objectToPocket"),  "GI: 8b1 must have an objectToPocket segment");
+}
+
+// ── GJ: Stop-Ball — has an object-ball potting line ─────────────────────────
+{
+  const spd1   = DRILLS.find(d => d.id === "spd1");
+  const result = buildAimLinePrimitives(spd1?.diagram, GEO);
+  assert.equal(result.errors.length, 0, `GJ: spd1 must resolve without errors (got: ${result.errors.join(", ")})`);
+  assert.ok(result.segments.some(s => s.role === "objectToPocket"),
+    "GJ: spd1 must include an objectToPocket segment");
+}
+
+// ── GK: Simple Follow — has objectToPocket AND cueBallToObject primitives ────
+{
+  const pos1   = DRILLS.find(d => d.id === "pos1");
+  const result = buildAimLinePrimitives(pos1?.diagram, GEO);
+  assert.equal(result.errors.length, 0, `GK: pos1 must resolve without errors (got: ${result.errors.join(", ")})`);
+  assert.ok(result.segments.some(s => s.role === "cueBallToObject"),
+    "GK: pos1 must include a cueBallToObject segment (cue-ball travel)");
+  assert.ok(result.segments.some(s => s.role === "objectToPocket"),
+    "GK: pos1 must include an objectToPocket segment (object-ball potting line)");
+}
+
+// ── GL: Cue-ball primitive colour is off-white (BALL_COLORS.cue) ────────────
+{
+  for (const d of DRILLS.filter(x => x.diagram)) {
+    const model = buildTableRenderModel(d.diagram);
+    for (const b of model.balls.filter(x => x.group === "cue")) {
+      assert.equal(b.fill, BALL_COLORS.cue,
+        `GL: ${d.id} cue ball fill must be BALL_COLORS.cue (got "${b.fill}")`);
+    }
+  }
+}
+
+// ── GM: Target pocket coordinates resolve through shared geometry helper ──────
+{
+  const PIDS: PocketId[] = ["topLeft","topMiddle","topRight","bottomLeft","bottomMiddle","bottomRight"];
+  for (const pid of PIDS) {
+    const [gx, gy] = GEO.pocketCenters[pid];
+    assert.ok(Number.isFinite(gx) && Number.isFinite(gy),
+      `GM: getEnglishPoolTableGeometry must return finite coords for pocket "${pid}"`);
+  }
+  // Verify pocket positions returned by the helper for well-known cases
+  const [topMidX] = GEO.pocketCenters["topMiddle"];
+  assert.ok(Math.abs(topMidX - (GEO.bX + GEO.bW / 2)) < 0.5,
+    `GM: topMiddle pocket x must be at table mid-width (got ${topMidX.toFixed(2)})`);
+}
+
+// ── GN: Diamond marks are evenly spaced ─────────────────────────────────────
+{
+  const prims  = buildTableMarkingPrimitives({}, GEO);
+  const longTop = prims
+    .filter(p => p.role === "diamondMark" && p.axis === "long" && Math.abs(p.cy! - GEO.bY) < 0.5)
+    .sort((a, b) => a.cx! - b.cx!);
+  assert.equal(longTop.length, 7, `GN: long-rail top must have 7 diamond marks (got ${longTop.length})`);
+  const spacings = longTop.slice(1).map((d, i) => d.cx! - longTop[i].cx!);
+  const firstSp  = spacings[0];
+  for (const sp of spacings) {
+    assert.ok(Math.abs(sp - firstSp) < 0.5,
+      `GN: long-rail diamond spacing must be uniform (expected ≈${firstSp.toFixed(2)}, got ${sp.toFixed(2)})`);
+  }
+  assert.ok(Math.abs(firstSp - GEO.diamondSpacingX) < 0.5,
+    `GN: diamond spacing must equal geometry.diamondSpacingX (${GEO.diamondSpacingX.toFixed(2)}), got ${firstSp.toFixed(2)}`);
+}
+
+// ── GO: No authored drill manually overrides permanent pocket geometry ────────
+{
+  // Drills express pockets by PocketId (string), never as custom numeric coords.
+  // Therefore, verify that all AimLine toPocket values are valid PocketIds.
+  const validPocketIds: PocketId[] = ["topLeft","topMiddle","topRight","bottomLeft","bottomMiddle","bottomRight"];
+  for (const d of DRILLS.filter(x => x.diagram?.aimLines?.length)) {
+    for (const al of d.diagram!.aimLines!) {
+      if (al.toPocket) {
+        assert.ok(validPocketIds.includes(al.toPocket),
+          `GO: ${d.id} aimLine.toPocket "${al.toPocket}" must be a canonical PocketId`);
+      }
+    }
+  }
+}
+
+// ── GP: All required assessment aim lines resolve successfully ─────────────────
+{
+  for (const d of ASSESSMENT_ITEMS) {
+    if (!d.diagram?.aimLines?.length) continue;
+    const result = buildAimLinePrimitives(d.diagram, GEO);
+    assert.equal(result.errors.length, 0,
+      `GP: ${d.id} assessment aim lines must resolve without errors — ${result.errors.join("; ")}`);
+    assert.ok(result.segments.length > 0,
+      `GP: ${d.id} assessment aim lines must produce at least one segment`);
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, and Phase 4.7 FW–GP all passed ✓");

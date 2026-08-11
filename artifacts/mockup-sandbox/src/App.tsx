@@ -257,24 +257,29 @@ function PoolTable({
   const ballR = bW * 0.017;
 
   // Pocket positions — order matches PocketId keys
+  // Orientation: RACK END = left (small x), BAULK END = right (large x)
   const pockets: [number, number][] = [
-    [bX,          bY],                         // topLeft
-    [bX + bW / 2, bY - pR * 0.3],              // topMiddle
-    [bX + bW,     bY],                         // topRight
-    [bX,          bY + bH],                    // bottomLeft
-    [bX + bW / 2, bY + bH + pR * 0.3],         // bottomMiddle
-    [bX + bW,     bY + bH],                    // bottomRight
+    [bX,          bY],                         // topLeft    (rack-end, top corner)
+    [bX + bW / 2, bY - pR * 0.3],              // topMiddle  (top long-rail side pocket)
+    [bX + bW,     bY],                         // topRight   (baulk-end, top corner)
+    [bX,          bY + bH],                    // bottomLeft (rack-end, bottom corner)
+    [bX + bW / 2, bY + bH + pR * 0.3],         // bottomMiddle (bottom long-rail side pocket)
+    [bX + bW,     bY + bH],                    // bottomRight (baulk-end, bottom corner)
   ];
   const pocketMap: Record<PocketId, [number, number]> = {
     topLeft: pockets[0], topMiddle: pockets[1], topRight: pockets[2],
     bottomLeft: pockets[3], bottomMiddle: pockets[4], bottomRight: pockets[5],
   };
 
-  // Baulk line: 1/5 of playing length from the baulk cushion (bottom of diagram)
-  const baulkLineY  = bY + 0.80 * bH;
-  // Black spot: row-2 centre of a rack with apex at y=22%
-  const blackSpotX  = bX + 0.50 * bW;
-  const blackSpotY  = bY + 0.338 * bH;
+  // Landscape geometry constants — derived from shared fractions
+  // Baulk line: VERTICAL at 77.5% of playing width from the rack/left end
+  const baulkLineX  = bX + 0.775 * bW;
+  // Black spot: rack half (25% from left), centred vertically
+  const blackSpotX  = bX + 0.25  * bW;
+  const blackSpotY  = bY + bH / 2;
+  // D semicircle: centred at baulkLineX, extends RIGHT
+  const dRadius     = bH * 0.22;
+  const dCentreY    = bY + bH / 2;
 
   return <svg viewBox={`0 0 ${width} ${h}`} width={width} height={h} style={{ display: "block", borderRadius: R.md }}>
     <defs>
@@ -286,8 +291,13 @@ function PoolTable({
       <marker id="routeArrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto">
         <polygon points="0 0, 5 2.5, 0 5" fill={COLORS.primaryDark} opacity={0.65} />
       </marker>
+      {/* White arrow — cue-ball segment */}
       <marker id="aimArrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
         <polygon points="0 0, 7 3.5, 0 7" fill="rgba(255,255,255,0.85)" />
+      </marker>
+      {/* Gold arrow — object-ball-to-pocket segment */}
+      <marker id="aimArrowGold" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+        <polygon points="0 0, 7 3.5, 0 7" fill="#E0B84C" opacity={0.92} />
       </marker>
     </defs>
 
@@ -295,35 +305,70 @@ function PoolTable({
     <rect x={0} y={0} width={width} height={h} rx={pW * 0.7} fill="#2a1a0a" />
     <rect x={pW * 0.35} y={pW * 0.35} width={width - pW * 0.7} height={h - pW * 0.7} rx={pW * 0.5} fill="#3d2510" />
     <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#2A8790" />
-    <line x1={bX + bW / 2} y1={bY + 4} x2={bX + bW / 2} y2={bY + bH - 4} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
+    {/* Very faint longitudinal centreline (rack↔baulk axis) */}
+    <line x1={bX + 4} y1={bY + bH / 2} x2={bX + bW - 4} y2={bY + bH / 2}
+      stroke="#ffffff" strokeOpacity={0.03} strokeWidth={1} />
 
-    {/* ── 2. Table markings (baulk area, baulk/break line, black spot, rack line) ── */}
+    {/* ── 2. Diamond / sight marks (permanent table feature — always visible) ── */}
+    {(() => {
+      const dSpX = bW / 8;  // 7 diamonds on each long rail
+      const dSpY = bH / 4;  // 3 diamonds on each short rail
+      const dR = 1.2;
+      return <>
+        {Array.from({ length: 7 }, (_, k) => {
+          const dx = bX + (k + 1) * dSpX;
+          return <g key={`dl-${k}`}>
+            <circle cx={dx} cy={bY}      r={dR} fill="#F2F0E8" fillOpacity={0.30} />
+            <circle cx={dx} cy={bY + bH} r={dR} fill="#F2F0E8" fillOpacity={0.30} />
+          </g>;
+        })}
+        {Array.from({ length: 3 }, (_, k) => {
+          const dy = bY + (k + 1) * dSpY;
+          return <g key={`ds-${k}`}>
+            <circle cx={bX}      cy={dy} r={dR} fill="#F2F0E8" fillOpacity={0.30} />
+            <circle cx={bX + bW} cy={dy} r={dR} fill="#F2F0E8" fillOpacity={0.30} />
+          </g>;
+        })}
+      </>;
+    })()}
+
+    {/* ── 3. Table markings (baulk area, baulk line, D, black spot) ── */}
+
+    {/* Baulk area — subtle right-side tint (right of vertical baulk line) */}
     {tableMarkings?.showBaulkArea && <rect
-      x={bX} y={baulkLineY} width={bW} height={bY + bH - baulkLineY}
-      fill="#FFFFFF" fillOpacity={0.08}
-    />}
-    {(tableMarkings?.showBaulkLine || tableMarkings?.showBreakLine) && <line
-      x1={bX} y1={baulkLineY} x2={bX + bW} y2={baulkLineY}
-      stroke="#F2F0E8" strokeOpacity={0.50} strokeWidth={1.6} strokeDasharray="5,3"
-    />}
-    {tableMarkings?.baulkLabel && <text
-      x={bX + 5} y={baulkLineY + 9}
-      fontSize={6.5} fill="#F2F0E8" fillOpacity={0.58}
-      fontFamily="'IBM Plex Mono', monospace" letterSpacing={0.5}
-    >{tableMarkings.baulkLabel}</text>}
-    {tableMarkings?.showBlackSpot && <>
-      <line x1={blackSpotX - 4} y1={blackSpotY} x2={blackSpotX + 4} y2={blackSpotY}
-        stroke="#F2F0E8" strokeOpacity={0.55} strokeWidth={1.3} />
-      <line x1={blackSpotX} y1={blackSpotY - 4} x2={blackSpotX} y2={blackSpotY + 4}
-        stroke="#F2F0E8" strokeOpacity={0.55} strokeWidth={1.3} />
-      <circle cx={blackSpotX} cy={blackSpotY} r={1.8} fill="#F2F0E8" fillOpacity={0.60} />
-    </>}
-    {tableMarkings?.showRackLine && <line
-      x1={bX + bW / 2} y1={bY + 2} x2={bX + bW / 2} y2={baulkLineY}
-      stroke="#F2F0E8" strokeOpacity={0.16} strokeWidth={1}
+      x={baulkLineX} y={bY} width={bX + bW - baulkLineX} height={bH}
+      fill="#FFFFFF" fillOpacity={0.07}
     />}
 
-    {/* ── 3. Target zone — amber/gold styling, plainly visible on teal cloth ── */}
+    {/* Baulk line — VERTICAL, near the right/baulk end */}
+    {(tableMarkings?.showBaulkLine || tableMarkings?.showBreakLine) && <line
+      x1={baulkLineX} y1={bY} x2={baulkLineX} y2={bY + bH}
+      stroke="#F2F0E8" strokeOpacity={0.60} strokeWidth={1.6} strokeDasharray="5,3"
+    />}
+
+    {/* D semicircle — attached to baulk line, extending RIGHT toward baulk cushion */}
+    {(tableMarkings?.showD || tableMarkings?.showTrainingD) && <path
+      d={`M ${baulkLineX},${dCentreY - dRadius} A ${dRadius},${dRadius} 0 0,1 ${baulkLineX},${dCentreY + dRadius}`}
+      fill="none" stroke="#F2F0E8" strokeOpacity={0.65} strokeWidth={1.5}
+    />}
+
+    {/* Baulk line marker points — top, centre, bottom */}
+    {tableMarkings?.showBaulkPoints && <>
+      <circle cx={baulkLineX} cy={bY}         r={1.5} fill="#F2F0E8" fillOpacity={0.55} />
+      <circle cx={baulkLineX} cy={dCentreY}   r={1.5} fill="#F2F0E8" fillOpacity={0.55} />
+      <circle cx={baulkLineX} cy={bY + bH}    r={1.5} fill="#F2F0E8" fillOpacity={0.55} />
+    </>}
+
+    {/* Black spot — rack half (left side), centred vertically */}
+    {tableMarkings?.showBlackSpot && <>
+      <line x1={blackSpotX - 3.5} y1={blackSpotY} x2={blackSpotX + 3.5} y2={blackSpotY}
+        stroke="#F2F0E8" strokeOpacity={0.50} strokeWidth={1.2} />
+      <line x1={blackSpotX} y1={blackSpotY - 3.5} x2={blackSpotX} y2={blackSpotY + 3.5}
+        stroke="#F2F0E8" strokeOpacity={0.50} strokeWidth={1.2} />
+      <circle cx={blackSpotX} cy={blackSpotY} r={1.6} fill="#F2F0E8" fillOpacity={0.55} />
+    </>}
+
+    {/* ── 4. Target zone — amber/gold styling, plainly visible on teal cloth ── */}
     {targetZone && <>
       <rect
         x={bX + (targetZone.x / 100) * bW}
@@ -346,31 +391,44 @@ function PoolTable({
       >TARGET ZONE</text>
     </>}
 
-    {/* ── 4. Aim / potting lines — bright white, high contrast on teal cloth ── */}
+    {/* ── 5. Aim / potting lines — two-segment system ─────────────────────────
+         Segment A  cue ball → object ball  white dashed  (shows cue travel)
+         Segment B  object ball → pocket    gold dashed   (shows potting line)
+         ─────────────────────────────────────────────────────────────────── */}
     {aimLines.map((al, i) => {
       const fromB = balls.find(b => b.label === al.fromBallId);
       const thruB = al.throughBallId ? balls.find(b => b.label === al.throughBallId) : null;
       const pPos  = al.toPocket ? pocketMap[al.toPocket] : null;
       if (!fromB) return null;
-      const dash  = al.style !== "solid";
       const fx = fromB.x * width, fy = fromB.y * h;
-      const segs: [number, number, number, number, boolean][] = [];
+
+      const rendered: React.ReactElement[] = [];
       if (thruB) {
         const tx = thruB.x * width, ty = thruB.y * h;
-        segs.push([fx, fy, tx, ty, false]);
-        if (pPos) segs.push([tx, ty, pPos[0], pPos[1], true]);
+        // Segment A — cue ball to object ball (white dashed, no arrow)
+        rendered.push(<line key={`al-${i}-a`} x1={fx} y1={fy} x2={tx} y2={ty}
+          stroke="rgba(255,255,255,0.88)" strokeWidth={1.8}
+          strokeDasharray="5,4"
+        />);
+        if (pPos) {
+          // Segment B — object ball to pocket (gold dashed, gold arrow)
+          rendered.push(<line key={`al-${i}-b`} x1={tx} y1={ty} x2={pPos[0]} y2={pPos[1]}
+            stroke="#E0B84C" strokeWidth={1.8}
+            strokeDasharray="5,4" strokeOpacity={0.92}
+            markerEnd="url(#aimArrowGold)"
+          />);
+        }
       } else if (pPos) {
-        segs.push([fx, fy, pPos[0], pPos[1], true]);
+        rendered.push(<line key={`al-${i}-d`} x1={fx} y1={fy} x2={pPos[0]} y2={pPos[1]}
+          stroke="#E0B84C" strokeWidth={1.8}
+          strokeDasharray="5,4" strokeOpacity={0.92}
+          markerEnd="url(#aimArrowGold)"
+        />);
       }
-      return segs.map(([x1, y1, x2, y2, withArrow], j) => <line
-        key={`al-${i}-${j}`} x1={x1} y1={y1} x2={x2} y2={y2}
-        stroke="rgba(255,255,255,0.85)" strokeWidth={1.5}
-        strokeDasharray={dash ? "5,4" : undefined}
-        markerEnd={withArrow ? "url(#aimArrow)" : undefined}
-      />);
+      return rendered;
     })}
 
-    {/* ── 5. Pockets ── */}
+    {/* ── 6. Pockets ── */}
     {pockets.map(([px, py], i) => (
       <g key={i}>
         <circle cx={px} cy={py} r={pR * 1.15} fill="#0d1a14" />
@@ -378,7 +436,7 @@ function PoolTable({
       </g>
     ))}
 
-    {/* ── 6. Balls ── */}
+    {/* ── 7. Balls ── */}
     {balls.map((b, i) => {
       const sel = selectedBall === b.label;
       const bx  = b.x * width, by = b.y * h;
@@ -398,7 +456,7 @@ function PoolTable({
       </g>;
     })}
 
-    {/* ── 7. Route segments ── */}
+    {/* ── 8. Route segments ── */}
     {routeSegments.map((seg, i) => {
       const fromSpec = balls.find(b => b.label === seg.fromBallId);
       const toSpec   = balls.find(b => b.label === seg.toBallId);
@@ -417,7 +475,7 @@ function PoolTable({
       />;
     })}
 
-    {/* ── 8. Target pocket emphasis — gold ring rendered above pocket, clearly visible ── */}
+    {/* ── 9. Target pocket emphasis — gold ring rendered above pocket ── */}
     {targetPocket && (() => {
       const [px, py] = pocketMap[targetPocket];
       return <>

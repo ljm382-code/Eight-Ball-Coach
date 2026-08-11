@@ -98,9 +98,9 @@ export type TrainingBall = {
 export type PocketId = "topLeft" | "topMiddle" | "topRight" | "bottomLeft" | "bottomMiddle" | "bottomRight";
 
 export type TableMarkings = {
-  /** Blackball: transverse line 1/5 of playing length from the baulk cushion (bottom of diagram) */
+  /** Blackball: vertical line near the baulk/right end of the landscape table */
   showBaulkLine?: boolean;
-  /** Shade the baulk region (bottom 1/5 of playing surface) */
+  /** Shade the baulk region (right of baulk line in landscape orientation) */
   showBaulkArea?: boolean;
   /** Blackball: cross/dot at the black-ball rack position */
   showBlackSpot?: boolean;
@@ -114,6 +114,10 @@ export type TableMarkings = {
   showCentreLine?: boolean;
   /** Optional: D-shaped training reference — NOT a rules requirement */
   showTrainingD?: boolean;
+  /** Show the D semicircle attached to the baulk line (right side, baulk/right end) */
+  showD?: boolean;
+  /** Show three dot-markers at the top, centre, and bottom of the baulk line */
+  showBaulkPoints?: boolean;
   /** Optional label rendered in the baulk/break area */
   baulkLabel?: string;
 };
@@ -411,38 +415,57 @@ export const BALL_COLORS = {
   black:  "#151918",
 } as const;
 
+// ─── Table geometry constants (fractions of playing surface) ─────────────────
+/** Orientation: RACK END = left (x=0%), BAULK END = right (x=100%). The table is landscape. */
+/** Baulk line sits at 77.5% of playing-surface width from the rack/left end. */
+export const BAULK_FRACTION = 0.775;
+/** D-semicircle radius as fraction of playing-surface height. */
+export const D_RADIUS_FRACTION = 0.22;
+/** Black spot sits 25% of playing-surface width from the rack/left end (rack half). */
+export const BLACK_SPOT_X_FRACTION = 0.25;
+/** Default rack-apex x (front ball, closest to baulk) as fraction of playing-surface width. */
+export const RACK_APEX_X_FRACTION = 0.22;
+
 // ─── English 8-ball rack helper ───────────────────────────────────────────────
 /**
  * Produce 15 TrainingBall objects for an English 8-ball rack (7 red, 7 yellow, 1 black).
- * Apex (front/top ball, lowest y) at (apexX, apexY).  Rows expand downward (+y = toward baulk).
- *   dX ≈ 3.4  — one ball diameter in x-coordinate space (ballR ≈ 1.7% of playing width)
- *   dY ≈ 5.89 — equilateral-triangle row height in y-coordinate space (2:1 playing-surface ratio)
+ *
+ * Landscape orientation: RACK END = left, BAULK END = right.
+ * The apex (front ball) is the rightmost ball of the triangle — closest to the baulk/break end.
+ * Rows step LEFT (−x toward the rack cushion); balls within each row spread VERTICALLY (y).
+ *
+ *   dX = 3.4 — one ball diameter in x-coordinate space (each row steps left by this amount)
+ *   dY = 5.89 — equilateral-triangle ball spacing in y-coordinate space
+ *
+ * apexX, apexY: position (0–100%) of the apex (front) ball.
  */
 export function createEnglishEightBallRack(apexX: number, apexY: number): TrainingBall[] {
   const dX = 3.4, dY = 5.89;
-  const row = (r: number) => apexY + r * dY;
-  const col = (offset: number) => apexX + offset * dX;
+  // Row r: x = apexX − r*dX (steps LEFT from apex)
+  // Ball i in row r: y = apexY + (i − r/2)*dY (spread vertically, centred at apexY)
+  const rx = (r: number) => apexX - r * dX;
+  const ry = (r: number, i: number) => apexY + (i - r / 2) * dY;
   return [
-    // Row 0 — apex
-    { id: "Y1",  group: "yellow", x: col(0),    y: row(0) },
+    // Row 0 — apex (rightmost, faces baulk)
+    { id: "Y1",  group: "yellow", x: rx(0), y: ry(0, 0) },
     // Row 1
-    { id: "R1",  group: "red",    x: col(-0.5), y: row(1) },
-    { id: "R2",  group: "red",    x: col( 0.5), y: row(1) },
+    { id: "R1",  group: "red",    x: rx(1), y: ry(1, 0) },
+    { id: "R2",  group: "red",    x: rx(1), y: ry(1, 1) },
     // Row 2 — black at centre
-    { id: "Y2",  group: "yellow", x: col(-1),   y: row(2) },
-    { id: "BLK", group: "black",  x: col( 0),   y: row(2), role: "black" as const },
-    { id: "Y3",  group: "yellow", x: col( 1),   y: row(2) },
+    { id: "Y2",  group: "yellow", x: rx(2), y: ry(2, 0) },
+    { id: "BLK", group: "black",  x: rx(2), y: ry(2, 1), role: "black" as const },
+    { id: "Y3",  group: "yellow", x: rx(2), y: ry(2, 2) },
     // Row 3
-    { id: "R3",  group: "red",    x: col(-1.5), y: row(3) },
-    { id: "Y4",  group: "yellow", x: col(-0.5), y: row(3) },
-    { id: "R4",  group: "red",    x: col( 0.5), y: row(3) },
-    { id: "Y5",  group: "yellow", x: col( 1.5), y: row(3) },
-    // Row 4 — base
-    { id: "R5",  group: "red",    x: col(-2),   y: row(4) },
-    { id: "Y6",  group: "yellow", x: col(-1),   y: row(4) },
-    { id: "R6",  group: "red",    x: col( 0),   y: row(4) },
-    { id: "Y7",  group: "yellow", x: col( 1),   y: row(4) },
-    { id: "R7",  group: "red",    x: col( 2),   y: row(4) },
+    { id: "R3",  group: "red",    x: rx(3), y: ry(3, 0) },
+    { id: "Y4",  group: "yellow", x: rx(3), y: ry(3, 1) },
+    { id: "R4",  group: "red",    x: rx(3), y: ry(3, 2) },
+    { id: "Y5",  group: "yellow", x: rx(3), y: ry(3, 3) },
+    // Row 4 — base (leftmost, furthest from baulk)
+    { id: "R5",  group: "red",    x: rx(4), y: ry(4, 0) },
+    { id: "Y6",  group: "yellow", x: rx(4), y: ry(4, 1) },
+    { id: "R6",  group: "red",    x: rx(4), y: ry(4, 2) },
+    { id: "Y7",  group: "yellow", x: rx(4), y: ry(4, 3) },
+    { id: "R7",  group: "red",    x: rx(4), y: ry(4, 4) },
   ];
 }
 
@@ -473,6 +496,244 @@ export function validateDrillDiagramIntegrity(drill: Drill): { valid: boolean; e
     }
   }
   return { valid: errors.length === 0, errors };
+}
+
+// ─── Shared table geometry helper ─────────────────────────────────────────────
+
+/** Absolute SVG-coordinate geometry for an English pool table of a given pixel width.
+ *  All coordinates are in the same SVG user units used by PoolTable.
+ *  Orientation: rack end = left (small x), baulk end = right (large x). */
+export type TableGeometry = {
+  bX: number; bY: number; bW: number; bH: number;  // playing-surface rect
+  baulkLineX: number;    // x of the vertical baulk line
+  baulkTopY: number;     // y of the top of the baulk line (= bY)
+  baulkBottomY: number;  // y of the bottom of the baulk line (= bY + bH)
+  dCentreY: number;      // vertical centre of the D (= bY + bH/2)
+  dRadius: number;       // radius of the D semicircle (D_RADIUS_FRACTION * bH)
+  blackSpotX: number;    // x of the black-spot reference mark (rack half)
+  blackSpotY: number;    // y of the black-spot (= bY + bH/2)
+  pocketCenters: Record<PocketId, [number, number]>;  // SVG centre of each pocket
+  diamondSpacingX: number;  // spacing between diamond marks on the long rails (bW/8)
+  diamondSpacingY: number;  // spacing between diamond marks on the short rails (bH/4)
+};
+
+/**
+ * Compute authoritative SVG-coordinate geometry for a PoolTable of the given pixel width.
+ * Uses the same layout constants as the PoolTable React component.
+ */
+export function getEnglishPoolTableGeometry(width: number): TableGeometry {
+  const h   = width * 0.56;
+  const pW  = width * 0.08;
+  const bX  = pW;
+  const bY  = pW * 0.85;
+  const bW  = width - pW * 2;
+  const bH  = h - bY * 2;
+  const pR  = pW * 0.42;
+
+  const baulkLineX  = bX + BAULK_FRACTION * bW;
+  const centreY     = bY + bH / 2;
+  const dRadius     = D_RADIUS_FRACTION * bH;
+  const blackSpotX  = bX + BLACK_SPOT_X_FRACTION * bW;
+
+  const pocketCenters: Record<PocketId, [number, number]> = {
+    topLeft:      [bX,          bY],
+    topMiddle:    [bX + bW / 2, bY - pR * 0.3],
+    topRight:     [bX + bW,     bY],
+    bottomLeft:   [bX,          bY + bH],
+    bottomMiddle: [bX + bW / 2, bY + bH + pR * 0.3],
+    bottomRight:  [bX + bW,     bY + bH],
+  };
+
+  return {
+    bX, bY, bW, bH,
+    baulkLineX,
+    baulkTopY:    bY,
+    baulkBottomY: bY + bH,
+    dCentreY:     centreY,
+    dRadius,
+    blackSpotX,
+    blackSpotY:   centreY,
+    pocketCenters,
+    diamondSpacingX: bW / 8,   // 7 evenly-spaced diamonds on each long rail
+    diamondSpacingY: bH / 4,   // 3 evenly-spaced diamonds on each short rail
+  };
+}
+
+// ─── Table-marking primitives (pure — no DOM, no React) ───────────────────────
+
+export type TableMarkingPrimitive = {
+  type: "line" | "arc" | "spot" | "point" | "rect";
+  role: "baulkLine" | "dSemicircle" | "blackSpot" | "baulkPoint" | "diamondMark" | "baulkArea";
+  // line / rect coords
+  x1?: number; y1?: number; x2?: number; y2?: number;
+  x?: number; y?: number; width?: number; height?: number;
+  // arc / spot / point coords
+  cx?: number; cy?: number;
+  /** Radius for arc or spot primitives. */
+  radius?: number;
+  /** SVG path `d` attribute for arc primitives. */
+  d?: string;
+  /** For arcs: which direction the curve extends beyond its chord line. */
+  extendDirection?: "left" | "right";
+  /** For diamonds: which rail they sit on. */
+  axis?: "long" | "short";
+};
+
+/**
+ * Convert TableMarkings + TableGeometry into concrete SVG-level primitives.
+ * Diamond marks are always returned (they are a permanent table feature).
+ * Pure function — no DOM, no React, safe to call in tests.
+ */
+export function buildTableMarkingPrimitives(
+  markings: TableMarkings | undefined | null,
+  geometry: TableGeometry,
+): TableMarkingPrimitive[] {
+  const {
+    bX, bY, bW, bH,
+    baulkLineX, baulkTopY, baulkBottomY,
+    dCentreY, dRadius,
+    blackSpotX, blackSpotY,
+    diamondSpacingX, diamondSpacingY,
+  } = geometry;
+  const prims: TableMarkingPrimitive[] = [];
+
+  // ── Baulk area (shaded rect to the right of the baulk line) ─────────────
+  if (markings?.showBaulkArea) {
+    prims.push({
+      type: "rect", role: "baulkArea",
+      x: baulkLineX, y: bY, width: bX + bW - baulkLineX, height: bH,
+    });
+  }
+
+  // ── Baulk / break line (vertical) ────────────────────────────────────────
+  if (markings?.showBaulkLine || markings?.showBreakLine) {
+    prims.push({
+      type: "line", role: "baulkLine",
+      x1: baulkLineX, y1: baulkTopY,
+      x2: baulkLineX, y2: baulkBottomY,
+    });
+  }
+
+  // ── D semicircle ─────────────────────────────────────────────────────────
+  if (markings?.showD || markings?.showTrainingD) {
+    const startY = dCentreY - dRadius;
+    const endY   = dCentreY + dRadius;
+    prims.push({
+      type: "arc", role: "dSemicircle",
+      // Arc from (baulkLineX, startY) to (baulkLineX, endY) curving RIGHT
+      d: `M ${baulkLineX},${startY} A ${dRadius},${dRadius} 0 0,1 ${baulkLineX},${endY}`,
+      cx: baulkLineX, cy: dCentreY, radius: dRadius,
+      extendDirection: "right",
+    });
+  }
+
+  // ── Baulk line marker points (top, centre, bottom) ────────────────────────
+  if (markings?.showBaulkPoints) {
+    prims.push({ type: "point", role: "baulkPoint", cx: baulkLineX, cy: baulkTopY  });
+    prims.push({ type: "point", role: "baulkPoint", cx: baulkLineX, cy: dCentreY   });
+    prims.push({ type: "point", role: "baulkPoint", cx: baulkLineX, cy: baulkBottomY });
+  }
+
+  // ── Black spot (rack half — small cross + fill circle) ───────────────────
+  if (markings?.showBlackSpot) {
+    prims.push({ type: "spot", role: "blackSpot", cx: blackSpotX, cy: blackSpotY });
+  }
+
+  // ── Diamond / sight marks (always present — permanent table feature) ──────
+  // Long rails (top y=bY, bottom y=bY+bH): 7 diamonds, spacing bW/8
+  for (let k = 1; k <= 7; k++) {
+    const dx = bX + k * diamondSpacingX;
+    prims.push({ type: "point", role: "diamondMark", cx: dx, cy: bY,      axis: "long" });
+    prims.push({ type: "point", role: "diamondMark", cx: dx, cy: bY + bH, axis: "long" });
+  }
+  // Short rails (left x=bX, right x=bX+bW): 3 diamonds, spacing bH/4
+  for (let k = 1; k <= 3; k++) {
+    const dy = bY + k * diamondSpacingY;
+    prims.push({ type: "point", role: "diamondMark", cx: bX,      cy: dy, axis: "short" });
+    prims.push({ type: "point", role: "diamondMark", cx: bX + bW, cy: dy, axis: "short" });
+  }
+
+  return prims;
+}
+
+// ─── Aim-line segment primitives (geometry-aware, pure) ───────────────────────
+
+export type AimSegPrimitive = {
+  role: "cueBallToObject" | "objectToPocket" | "directToPocket";
+  x1: number; y1: number;
+  x2: number; y2: number;
+  stroke: string;
+  strokeDasharray: string;
+  withArrow: boolean;
+};
+
+/**
+ * Resolve each AimLine in a diagram to concrete SVG segment(s).
+ * Returns { segments, errors }. errors is non-empty if any ball ID is missing.
+ * Each fromBallId + throughBallId + toPocket combination yields:
+ *   Segment A (cueBallToObject):  white dashed,  from cue-ball centre to object-ball centre
+ *   Segment B (objectToPocket):   gold dashed,   from object-ball centre to pocket centre
+ * A fromBallId + toPocket (no throughBall) yields:
+ *   Segment (directToPocket):     gold dashed,   from ball centre to pocket centre
+ * Pure function — no DOM, no React, safe to call in tests.
+ */
+export function buildAimLinePrimitives(
+  diagram: TrainingDiagram | undefined | null,
+  geometry: TableGeometry,
+): { segments: AimSegPrimitive[]; errors: string[] } {
+  if (!diagram) return { segments: [], errors: [] };
+  const { bX, bY, bW, bH, pocketCenters } = geometry;
+  const segments: AimSegPrimitive[] = [];
+  const errors: string[] = [];
+
+  const svgPos = (ball: { x: number; y: number }): [number, number] => [
+    bX + (ball.x / 100) * bW,
+    bY + (ball.y / 100) * bH,
+  ];
+
+  for (const al of diagram.aimLines ?? []) {
+    const fromBall = diagram.balls.find(b => b.id === al.fromBallId);
+    if (!fromBall) { errors.push(`buildAimLinePrimitives: ball "${al.fromBallId}" not found`); continue; }
+    const [fx, fy] = svgPos(fromBall);
+
+    if (al.throughBallId) {
+      const thruBall = diagram.balls.find(b => b.id === al.throughBallId);
+      if (!thruBall) { errors.push(`buildAimLinePrimitives: ball "${al.throughBallId}" not found`); continue; }
+      const [tx, ty] = svgPos(thruBall);
+
+      // Segment A — cue ball → object ball (white dashed, no arrow)
+      segments.push({
+        role: "cueBallToObject",
+        x1: fx, y1: fy, x2: tx, y2: ty,
+        stroke: "rgba(255,255,255,0.85)",
+        strokeDasharray: "5,4",
+        withArrow: false,
+      });
+
+      // Segment B — object ball → pocket (gold dashed, with arrow)
+      if (al.toPocket) {
+        const [px, py] = pocketCenters[al.toPocket];
+        segments.push({
+          role: "objectToPocket",
+          x1: tx, y1: ty, x2: px, y2: py,
+          stroke: "#E0B84C",
+          strokeDasharray: "5,4",
+          withArrow: true,
+        });
+      }
+    } else if (al.toPocket) {
+      const [px, py] = pocketCenters[al.toPocket];
+      segments.push({
+        role: "directToPocket",
+        x1: fx, y1: fy, x2: px, y2: py,
+        stroke: "#E0B84C",
+        strokeDasharray: "5,4",
+        withArrow: true,
+      });
+    }
+  }
+
+  return { segments, errors };
 }
 
 // ─── Render-model types and builder (pure — no DOM, no React) ────────────────
@@ -513,6 +774,7 @@ export type TableRenderModel = {
   hasBaulkLine: boolean;
   hasBaulkArea: boolean;
   hasBlackSpot: boolean;
+  hasD:         boolean;
   hasRack:      boolean;
   /** Layer names in render order — every required training visual must appear after "cloth". */
   renderOrder:  string[];
@@ -527,7 +789,7 @@ export function buildTableRenderModel(diagram: TrainingDiagram | undefined | nul
     return {
       balls: [], zones: [], aimLines: [], targetPocket: null,
       hasMarkings: false, hasBaulkLine: false, hasBaulkArea: false,
-      hasBlackSpot: false, hasRack: false, renderOrder: ["cloth"],
+      hasBlackSpot: false, hasD: false, hasRack: false, renderOrder: ["cloth"],
     };
   }
 
@@ -565,13 +827,15 @@ export function buildTableRenderModel(diagram: TrainingDiagram | undefined | nul
   const hasBaulkLine = !!(tm?.showBaulkLine || tm?.showBreakLine);
   const hasBaulkArea = !!tm?.showBaulkArea;
   const hasBlackSpot = !!tm?.showBlackSpot;
-  const hasMarkings  = hasBaulkLine || hasBaulkArea || hasBlackSpot || !!(tm?.showRackLine);
+  const hasD         = !!(tm?.showD || tm?.showTrainingD);
+  const hasMarkings  = hasBaulkLine || hasBaulkArea || hasBlackSpot || hasD || !!(tm?.showRackLine);
   const hasRack      = !!diagram.rack;
 
   const renderOrder: string[] = [
     "cloth",
     ...(hasBaulkArea    ? ["tablemark_baulkArea"] : []),
     ...(hasBaulkLine    ? ["tablemark_baulkLine"] : []),
+    ...(hasD            ? ["tablemark_dSemicircle"] : []),
     ...(hasBlackSpot    ? ["tablemark_blackSpot"] : []),
     ...(zones.length    ? ["targetZone"]          : []),
     ...(aimLines.length ? ["aimLines"]            : []),
@@ -582,7 +846,7 @@ export function buildTableRenderModel(diagram: TrainingDiagram | undefined | nul
   return {
     balls, zones, aimLines,
     targetPocket:  diagram.targetPocket ?? null,
-    hasMarkings, hasBaulkLine, hasBaulkArea, hasBlackSpot, hasRack,
+    hasMarkings, hasBaulkLine, hasBaulkArea, hasBlackSpot, hasD, hasRack,
     renderOrder,
   };
 }
@@ -644,9 +908,10 @@ export const DRILLS: Drill[] = [
   execDrill("pbe2","problemBallExec",4,"Cannon Off Two Balls","Use a cannon to move two problem balls apart."),
   execDrill("pbe3","problemBallExec",6,"Break-Out From a Cluster","Break out a buried ball from a tight cluster."),
   { ...execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true), diagram: { balls: [
-    ...createEnglishEightBallRack(50, 22),
-    { id: "CB", group: "cue" as const, x: 50, y: 83 },
-  ], tableMarkings: { showBaulkLine: true, showBaulkArea: true, showBlackSpot: true, baulkLabel: "BAULK" }, rack: { apexX: 50, apexY: 22, englishEightBall: true }, requiresVisuals: ["baulkArea", "rack"] }, objective: "Break the rack and achieve a stable, controlled spread.", setup: "Rack all 15 balls tightly in the triangle shown at the rack end of the table. Place the white cue ball anywhere inside the highlighted baulk area.", successCriteria: ["Cue ball strikes the rack cleanly.", "Balls spread across the table.", "Cue ball does not enter a pocket (no scratch)."] },
+    // Rack at LEFT (rack end). Apex at x=25 faces RIGHT toward baulk. CB at x=82 (right of baulk line) y=83 (>75 for baulk-area check).
+    ...createEnglishEightBallRack(25, 50),
+    { id: "CB", group: "cue" as const, x: 82, y: 83 },
+  ], tableMarkings: { showBaulkLine: true, showBaulkArea: true, showBlackSpot: true, showD: true }, rack: { apexX: 25, apexY: 50, englishEightBall: true }, requiresVisuals: ["baulkArea", "rack"] }, objective: "Break the rack and achieve a stable, controlled spread.", setup: "Rack all 15 balls tightly in the triangle shown at the left (rack) end of the table. Place the white cue ball anywhere inside the D area at the right (baulk) end.", successCriteria: ["Cue ball strikes the rack cleanly.", "Balls spread across the table.", "Cue ball does not enter a pocket (no scratch)."] },
   execDrill("brk2","breakExec",4,"Break for a Pot","Break attempting to pot a ball off the break."),
   execDrill("brk3","breakExec",6,"Break Under Baulk Restriction","Break within tighter baulk-area constraints."),
   { ...execDrill("8b1","eightBall",2,"Straight 8-Ball","Simple straight 8-ball pot.",true), diagram: { balls: [

@@ -1,0 +1,951 @@
+PHASE 4.7 — TABLE GEOMETRY & SHOT-LINE INTEGRITY
+
+Phase 4.6 is deployed.
+
+The rack rendering has improved, but the live training diagrams are STILL not sufficiently accurate.
+
+THIS IS A TRAINING APPLICATION.
+
+The diagrams must teach a player exactly how to reproduce a shot on a real English 8-ball table.
+
+Do NOT change:
+- adaptive engine
+- ratings
+- confidence
+- match intelligence
+- rules penalties
+- mixed-mode allocation
+- persistence
+- navigation
+- Sage–Teal theme
+
+This patch is ONLY about:
+
+1. Correct English-pool table marking geometry.
+2. Correct baulk line / D / black-spot placement.
+3. Reliable aim-line and potting-line rendering.
+4. Exact drill-to-diagram consistency.
+
+==================================================
+1. IMPORTANT VISUAL REFERENCE
+==================================================
+
+Use the attached user reference image as the VISUAL GEOMETRY REFERENCE for the training table.
+
+The training-table layout must visibly resemble this structure:
+
+- rectangular English pool table
+- 6 pockets
+- baulk line close to ONE short end of the table
+- baulk line spans the FULL PLAYING WIDTH
+- semicircular D attached to the baulk line
+- D lies on the BAULK SIDE of the line
+- black spot located toward the opposite/rack half of the table
+- clear central longitudinal relationship between:
+  cue starting area,
+  baulk line,
+  table centre,
+  black spot / rack end
+
+Do not copy any watermark or visual styling from the reference image.
+
+Only use the table-marking geometry.
+
+==================================================
+2. STANDARDISE TABLE ORIENTATION NOW
+==================================================
+
+The app must use one table orientation everywhere.
+
+Use:
+
+LEFT SIDE OF DIAGRAM = RACK / BLACK END
+
+RIGHT SIDE OF DIAGRAM = BAULK / BREAK END
+
+The table is landscape.
+
+Therefore:
+
+rack end = left
+
+baulk end = right
+
+This matches the supplied reference image.
+
+DO NOT rotate this orientation between drills.
+
+==================================================
+3. BAULK LINE GEOMETRY
+==================================================
+
+The current horizontal baulk line is wrong.
+
+Delete that geometry.
+
+The baulk line must be VERTICAL in the landscape SVG.
+
+It must run:
+
+from top cushion
+to bottom cushion
+
+near the RIGHT/BAULK end.
+
+Conceptually:
+
+---------------- TABLE LENGTH ---------------->
+
+RACK END                         BAULK END
+
+|                               |      |
+|                               |      |
+|               BLACK SPOT      |  D   |
+|                               |      |
+|                               |      |
+
+                                ^
+                            BAULK LINE
+
+Use a position approximately:
+
+75–80% of playing-surface width from the LEFT rack end
+
+or derive the exact authored fraction centrally.
+
+Do not hard-code different baulk-line positions per drill.
+
+==================================================
+4. D SEMICIRCLE
+==================================================
+
+Add a proper semicircular D attached to the baulk line.
+
+The D must:
+
+- use the baulk line as its diameter
+- extend toward the RIGHT / baulk cushion
+- sit centred vertically on the table
+- be clearly visible but subtle
+- not interfere with ball rendering
+
+Use SVG arc geometry.
+
+Do NOT fake it with a full circle.
+
+Suggested style:
+
+stroke: rgba(242,240,232,0.75)
+strokeWidth: 1.5
+fill: none
+
+The D should visually match the supplied reference geometry.
+
+==================================================
+5. D MARKER POINTS
+==================================================
+
+Support the familiar three reference points on the baulk line:
+
+top/intersection point
+centre point
+bottom/intersection point
+
+Render them as very small dark or light markers depending on cloth contrast.
+
+Do not render them as pool balls.
+
+They are table marks.
+
+==================================================
+6. BLACK SPOT
+==================================================
+
+Render a permanent black-spot reference on the OPPOSITE/rack half of the table.
+
+It should sit approximately on the longitudinal centre line.
+
+It must be visually distinct from an actual black ball.
+
+Suggested rendering:
+
+small dark centre
+thin off-white outline
+
+or
+
+small cross/spot marker.
+
+When an actual black ball sits on the spot:
+
+the physical ball covers the marker naturally.
+
+==================================================
+7. TABLE-MARKINGS DATA MODEL
+==================================================
+
+Replace vague independent booleans if necessary with a consistent authored structure.
+
+Example:
+
+type TableMarkings = {
+  orientation: "rack-left-baulk-right";
+
+  showBaulkLine?: boolean;
+  showD?: boolean;
+  showBaulkPoints?: boolean;
+
+  showBlackSpot?: boolean;
+
+  showRackGuide?: boolean;
+
+  showCentreMarker?: boolean;
+}
+
+Use this centrally.
+
+Do not calculate table orientation separately in individual drills.
+
+==================================================
+8. CREATE ONE TABLE GEOMETRY HELPER
+==================================================
+
+Create a pure geometry helper such as:
+
+getEnglishPoolTableGeometry()
+
+It should return authoritative SVG coordinates for:
+
+playingSurface
+
+topLeftPocket
+topMiddlePocket
+topRightPocket
+bottomLeftPocket
+bottomMiddlePocket
+bottomRightPocket
+
+baulkLineX
+
+tableCentreY
+
+dRadius
+
+blackSpot
+
+rackApex
+
+centrePoint
+
+etc.
+
+Example concept:
+
+{
+  baulkLineX,
+  baulkTopY,
+  baulkBottomY,
+
+  d: {
+    cx: baulkLineX,
+    cy: centreY,
+    radius
+  },
+
+  blackSpot: {
+    x,
+    y: centreY
+  }
+}
+
+Every drill renderer uses THIS geometry.
+
+Do not duplicate numeric table constants throughout App.tsx.
+
+==================================================
+9. POOLTABLE MUST USE GEOMETRY HELPER
+==================================================
+
+PoolTable must consume the geometry helper directly.
+
+The permanent table structure should not depend on the drill.
+
+Drills decide WHICH markings to show.
+
+Geometry decides WHERE they are.
+
+==================================================
+10. RENDER ORDER
+==================================================
+
+Render in this exact order:
+
+1. table rail/frame
+2. cloth
+3. permanent table markings
+4. baulk line
+5. D
+6. baulk marker points
+7. black spot
+8. rack guide if required
+9. target zones
+10. aim/potting lines
+11. cue-ball routes
+12. physical balls
+13. training number labels
+14. selection rings
+15. target-pocket highlight
+
+No instructional layer may be hidden underneath the cloth.
+
+==================================================
+11. BREAK DRILL — FIX ORIENTATION
+==================================================
+
+Controlled Break must now show:
+
+LEFT / RACK END:
+- full 15-ball triangle
+
+RIGHT / BAULK END:
+- vertical baulk line
+- D on the right side of the line
+- white cue ball inside legal/authorised training break area
+
+The current diagram with rack above and baulk below is no longer acceptable.
+
+The rack and baulk must be separated along the LONG axis of the table.
+
+==================================================
+12. CONTROLLED BREAK VISUAL
+==================================================
+
+Exact expected result:
+
+[RACK / LEFT]
+
+triangle of:
+7 red
+7 yellow
+1 black
+
+                         BAULK LINE
+                              |
+                              |   )
+                              |  )
+                              | )  WHITE CUE
+                              |  )
+                              |   )
+
+[BAULK / RIGHT]
+
+The cue ball must be white/off-white.
+
+No other ball may appear inside the D unless specifically authored.
+
+==================================================
+13. BLACK POSITION IN RACK
+==================================================
+
+Keep the 15-ball English rack helper.
+
+Verify:
+
+exactly 15 object balls
+
+7 red
+7 yellow
+1 black
+
+The black ball position must be consistent with the currently supported rules implementation.
+
+Do not randomly move the black between renders.
+
+==================================================
+14. AIM LINE IS NOW REQUIRED WHERE SHOT GEOMETRY MATTERS
+==================================================
+
+Some live diagrams are still missing aim lines.
+
+This must stop.
+
+If a drill requires the player to reproduce a specific potting direction, it MUST define an aim line.
+
+Aim line data should preferably identify:
+
+cueBallId
+objectBallId
+targetPocket
+
+rather than arbitrary start/end coordinates.
+
+Example:
+
+aimLine: {
+  cueBallId: "CB",
+  objectBallId: "Y1",
+  targetPocket: "topMiddle"
+}
+
+Then the renderer calculates:
+
+cue centre
+→ object-ball centre
+→ target pocket centre
+
+==================================================
+15. DO NOT RELY ON OPTIONAL AIMLINES ARRAY ALONE
+==================================================
+
+Previous implementation allowed fields to exist without visibly producing the line.
+
+Create a pure helper:
+
+buildAimLinePrimitives(diagram, geometry)
+
+For each authored aim line:
+
+resolve actual ball
+resolve actual target pocket
+generate SVG line segments
+
+Return validation error if references are missing.
+
+==================================================
+16. TWO-SEGMENT POTTING LINE
+==================================================
+
+For straight-pot drills render:
+
+SEGMENT A
+
+cue ball centre
+→ object ball centre
+
+SEGMENT B
+
+object ball centre
+→ target pocket centre
+
+Use distinct but related styling.
+
+Suggested:
+
+cue-to-object:
+white dashed line
+
+object-to-pocket:
+gold/cream dashed line
+
+This makes the actual potting path obvious.
+
+==================================================
+17. AIM LINE VISIBILITY
+==================================================
+
+Aim lines must be obvious on a phone.
+
+Use approximately:
+
+strokeWidth: 1.6–2
+
+opacity: 0.8–0.95
+
+strokeDasharray: "5 4"
+
+Do NOT use low-opacity teal-on-teal lines.
+
+==================================================
+18. STRAIGHT POT — MIDDLE POCKET
+==================================================
+
+The live first assessment drill MUST show:
+
+- white cue ball
+- yellow object ball
+- highlighted top-middle pocket
+- cue → yellow aim line
+- yellow → top-middle pocket potting line
+
+The balls must actually be collinear with the target pocket.
+
+If not, correct coordinates.
+
+The user should understand the shot without reading any text.
+
+==================================================
+19. STRAIGHT 8-BALL
+==================================================
+
+Must show:
+
+- white cue
+- black
+- highlighted intended pocket
+- cue → black line
+- black → target pocket line
+
+Again:
+
+actual authored geometry must be aligned.
+
+==================================================
+20. SIMPLE FOLLOW ROUTE
+==================================================
+
+Must show:
+
+- white cue
+- object ball
+- intended pocket
+- object-ball potting line
+- visible follow target zone
+- separate cue-ball follow-route arrow beyond contact
+
+Do NOT use one line to represent both object-ball and cue-ball travel.
+
+These are different instructional concepts.
+
+==================================================
+21. STOP-BALL SPEED GATE
+==================================================
+
+Must show:
+
+- white cue
+- object ball
+- target pocket
+- object-ball potting line
+- visible STOP ZONE
+- cue ball intended stopping position / centre mark
+
+The target zone should straddle the cue-ball stop region around the contact line.
+
+==================================================
+22. PROBLEM-BALL / PATTERN SCENARIOS
+==================================================
+
+Do NOT automatically draw aim lines for decision scenarios unless the scenario specifically needs one.
+
+Pattern-reading questions may remain route-based.
+
+But if an option says:
+
+“Ball 3 into top-right pocket”
+
+and that pocket is important to understanding the option:
+
+the authored scenario should identify that pocket/route.
+
+==================================================
+23. TARGET POCKET CENTRES
+==================================================
+
+Use the central table-geometry helper to define pocket centres.
+
+Never hand-code slightly different pocket positions in each drill.
+
+Identifiers:
+
+topLeft
+topMiddle
+topRight
+bottomLeft
+bottomMiddle
+bottomRight
+
+resolve through:
+
+getPocketPosition(id)
+
+==================================================
+24. CUE BALL STILL MUST ALWAYS BE WHITE
+==================================================
+
+Retain Phase 4.6 canonical rendering.
+
+group === "cue"
+
+must resolve only to:
+
+#F2F0E8
+
+No drill-specific override.
+
+No selection-state fill replacement.
+
+Selection ring goes OUTSIDE the white ball.
+
+==================================================
+25. TARGET ZONES
+==================================================
+
+Retain the more visible target-zone system.
+
+The actual shape may be:
+
+rectangle
+ellipse
+polygon
+
+depending on authored drill.
+
+Add:
+
+type: "rect" | "ellipse"
+
+if needed.
+
+Use amber/gold border and translucent cream fill.
+
+==================================================
+26. TABLE NEEDS DIAMOND/SIGHT REFERENCES
+==================================================
+
+Because drill instructions now say:
+
+“one diamond below”
+“two diamonds away”
+
+the diagram should give the player enough table references to reproduce this.
+
+Add subtle diamond/sight marks to the rails.
+
+At minimum show standard evenly-spaced rail reference marks.
+
+They must be small and subtle.
+
+Do not clutter the diagram.
+
+==================================================
+27. DIAMOND-BASED INSTRUCTIONS MUST MATCH DIAGRAM
+==================================================
+
+If text says:
+
+“one diamond from the middle pocket”
+
+the authored coordinates must approximate one rail-reference interval.
+
+If not:
+
+correct either the coordinate or the text.
+
+Never claim one diamond while showing a completely different distance.
+
+==================================================
+28. OPTIONAL CENTRE LINE IS NOT THE BAULK LINE
+==================================================
+
+Do not confuse:
+
+table centre
+rack line
+baulk line
+aim line
+
+Each is semantically different.
+
+Use separate types and SVG classes.
+
+==================================================
+29. NO MORE GENERIC TABLE MARKING LABELS
+==================================================
+
+The current simple “BAULK” text next to a horizontal dashed line is insufficient.
+
+The geometry itself should make the baulk area recognisable.
+
+Labels are secondary.
+
+==================================================
+30. TABLEMARKINGS VISUAL MODEL
+==================================================
+
+Create pure:
+
+buildTableMarkingPrimitives(
+  markings,
+  geometry
+)
+
+Return primitives such as:
+
+{
+  type: "line",
+  role: "baulkLine",
+  ...
+}
+
+{
+  type: "arc",
+  role: "dSemicircle",
+  ...
+}
+
+{
+  type: "spot",
+  role: "blackSpot",
+  ...
+}
+
+Tests should inspect these exact primitives.
+
+==================================================
+31. RENDER-MODEL TESTS MUST CHECK GEOMETRY
+==================================================
+
+Previous tests confirmed existence, not correctness.
+
+Now test actual geometry.
+
+Add tests FW onward.
+
+FW.
+Baulk line is vertical.
+
+FX.
+Baulk line spans playing-surface height.
+
+FY.
+Baulk line is positioned near baulk/right end.
+
+FZ.
+D is a semicircular arc attached to baulk line.
+
+GA.
+D extends toward the right/baulk cushion.
+
+GB.
+Black spot is on opposite/rack half of table.
+
+GC.
+Controlled Break rack is left of baulk line.
+
+GD.
+Controlled Break cue ball is right of baulk line / inside authored baulk region.
+
+GE.
+Straight Pot has two aim segments.
+
+GF.
+Straight Pot cue→object segment uses actual ball centres.
+
+GG.
+Straight Pot object→pocket segment ends at top-middle pocket centre.
+
+GH.
+Straight Pot cue/object/pocket are collinear within tolerance.
+
+GI.
+Straight 8-Ball has cue→black and black→pocket segments.
+
+GJ.
+Stop-Ball includes object-ball potting line.
+
+GK.
+Simple Follow includes object-ball potting line AND separate cue-ball route primitive.
+
+GL.
+Cue-ball primitive remains off-white.
+
+GM.
+Target pocket coordinates resolve through shared geometry helper.
+
+GN.
+Diamond markers are evenly spaced.
+
+GO.
+No authored drill manually overrides permanent pocket geometry.
+
+GP.
+All required assessment aim lines resolve successfully.
+
+==================================================
+32. LIVE VISUAL QA
+==================================================
+
+Do NOT stop at tests.
+
+Use the running app and inspect at ~390px:
+
+1. Controlled Break
+2. Straight Pot — Middle Pocket
+3. Stop-Ball Speed Gate
+4. Simple Follow Route
+5. Straight 8-Ball
+
+==================================================
+33. CONTROLLED BREAK ACCEPTANCE
+==================================================
+
+Screenshot must show:
+
+- landscape table
+- rack on LEFT
+- vertical baulk line toward RIGHT
+- semicircular D on RIGHT side of line
+- white cue in baulk/D area
+- black spot/rack reference where appropriate
+- 15-ball rack visibly separated from cue ball
+
+If line is horizontal:
+FAIL.
+
+If rack sits above cue along short axis:
+FAIL.
+
+==================================================
+34. STRAIGHT POT ACCEPTANCE
+==================================================
+
+Screenshot must visibly show:
+
+white cue
+↓/line
+yellow
+↓/line
+highlighted middle pocket
+
+If no line:
+FAIL.
+
+If line does not intersect both balls:
+FAIL.
+
+==================================================
+35. STOP-BALL ACCEPTANCE
+==================================================
+
+Screenshot must show:
+
+- white cue
+- object ball
+- pocket
+- potting line
+- obvious stop zone
+
+If player cannot tell where cue should stop:
+FAIL.
+
+==================================================
+36. FOLLOW ACCEPTANCE
+==================================================
+
+Screenshot must distinguish:
+
+OBJECT BALL PATH
+
+from
+
+CUE BALL FOLLOW PATH
+
+using two different line styles or colours.
+
+==================================================
+37. REFERENCE IMAGE CHECK
+==================================================
+
+Before completion:
+
+compare the rendered base table visually against the user-supplied reference image.
+
+Confirm:
+
+- baulk line orientation matches
+- D side matches
+- black-spot side matches
+- table orientation matches
+
+Do not copy image artwork.
+
+==================================================
+38. PRESERVE ALL EXISTING TESTS
+==================================================
+
+All current 251 tests must continue passing.
+
+Add FW–GP.
+
+Run TypeScript.
+
+==================================================
+39. PRODUCTION BUILD
+==================================================
+
+Run:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Run existing production build.
+
+Verify:
+
+dist exists
+
+asset paths use:
+
+/Eight-Ball-Coach/
+
+==================================================
+40. DO NOT CLAIM DONE WITHOUT SCREENSHOTS
+==================================================
+
+The previous phases passed tests while the live SVG was still wrong.
+
+For this patch, completion requires actual visual verification.
+
+Final report MUST say explicitly:
+
+Controlled Break:
+“vertical baulk line + right-side D visually verified”
+
+Straight Pot:
+“two-segment potting line visually verified”
+
+etc.
+
+==================================================
+41. COMMIT
+==================================================
+
+Commit exact message:
+
+Correct English table geometry and shot lines
+
+Push to origin/main.
+
+Confirm Pages workflow triggers.
+
+==================================================
+42. FINAL REPORT
+==================================================
+
+Report ONLY:
+
+- table orientation
+- baulk line geometry
+- D geometry
+- black spot geometry
+- diamond markers
+- shared table geometry helper
+- aim-line primitive implementation
+- two-segment potting lines
+- Controlled Break verification
+- Straight Pot verification
+- Stop-Ball verification
+- Follow Route verification
+- Straight 8-Ball verification
+- FW–GP tests
+- total test count
+- TypeScript
+- production build
+- commit SHA
+- push status
+- Pages status
+
+STOP.
+
+Do not start another phase.
