@@ -5,7 +5,7 @@
  * They influence coaching priority via computeMatchPriorityBoost → matchAwareLimitingFactor → generateAdaptiveSession.
  */
 import {
-  CONFIG, SKILL_MAP, SKILLS, evidenceForSkill, generateSession,
+  CONFIG, SKILL_MAP, SKILLS, evidenceForSkill, generateSession, mixedRulesetSplit,
   type GeneratedSession, type LimitingFactor, type LimitingFactors,
   type Profile, type RuleSetId, type SkillId,
 } from "../engine";
@@ -26,7 +26,10 @@ export type FrameEvent = {
   skillId: SkillId | null;
   /** Same as category key — preserves what the player reported */
   reportedCause: string;
-  /** Inferred upstream cause (e.g. missed_pot → positional) */
+  /**
+   * Inferred upstream cause — only set when structured contextual evidence supports it.
+   * A plain missed_pot with no upstream evidence stays null; no guessing.
+   */
   inferredCause: SkillId | null;
   diagnosticConfidence: "Low" | "Emerging" | "Established" | "High";
   impact: FrameImpact;
@@ -34,6 +37,12 @@ export type FrameEvent = {
   environment: MatchEnvironment;
   ts: number;
   notes?: string;
+  /**
+   * Optional structured upstream context for missed_pot.
+   * When provided, supports a conservative inferred root cause.
+   * E.g. "poor_position" → inferredCause: "positional" (Emerging).
+   */
+  precededBy?: string;
 };
 
 export type Frame = {
@@ -135,11 +144,41 @@ function uid(prefix: string, now: number): string {
 
 // ─── Cause inference ──────────────────────────────────────────────────────────
 
-function inferMatchCause(category: string, skillId: SkillId | null): { cause: SkillId | null; confidence: "Low" | "Emerging" } {
-  // "missed_pot" often traces back to poor position on the previous shot
-  if (category === "missed_pot") return { cause: "positional", confidence: "Low" };
-  // Positive events have no meaningful upstream cause to infer
+/**
+ * Maps optional structured upstream context keys to their corresponding upstream skill.
+ * Only valid entries produce an inferred cause — everything else stays null.
+ */
+const PRECEDED_BY_SKILL: Record<string, SkillId> = {
+  poor_position:  "positional",
+  poor_speed:     "speed",
+  poor_pattern:   "pattern",
+  tactical_error: "tactical",
+};
+
+/**
+ * Conservative cause inference. Never invents an upstream cause from thin air.
+ *
+ * - plain missed_pot            → direct skill: potting, inferredCause: null
+ * - missed_pot + precededBy     → direct skill: potting, inferredCause: upstream skill (Emerging)
+ * - positive events             → inferredCause: null
+ * - all other loss categories   → inferredCause = the category's own skill (Emerging)
+ */
+function inferMatchCause(
+  category: string,
+  skillId: SkillId | null,
+  precededBy?: string
+): { cause: SkillId | null; confidence: "Low" | "Emerging" } {
+  // Positive events have no upstream cause
   if (POSITIVE_EVENT_TYPES.some(e => e.key === category)) return { cause: null, confidence: "Low" };
+
+  // missed_pot: only infer upstream when structured evidence is provided
+  if (category === "missed_pot") {
+    const upstreamSkill = precededBy ? (PRECEDED_BY_SKILL[precededBy] ?? null) : null;
+    if (upstreamSkill) return { cause: upstreamSkill, confidence: "Emerging" };
+    // No upstream evidence — report as a direct potting issue, inferredCause stays null
+    return { cause: null, confidence: "Low" };
+  }
+
   // All other loss categories map directly to their own skill
   if (skillId !== null) return { cause: skillId, confidence: "Emerging" };
   return { cause: null, confidence: "Low" };
@@ -155,6 +194,12 @@ export function buildFrameEvent(
     ruleset: RuleSetId;
     environment: MatchEnvironment;
     notes?: string;
+    /**
+     * Optional structured upstream context for missed_pot.
+     * Supported values: "poor_position" | "poor_speed" | "poor_pattern" | "tactical_error"
+     * When provided, enables a conservative upstream cause inference.
+     */
+    precededBy?: string;
   },
   now = Date.now()
 ): FrameEvent {
@@ -162,7 +207,7 @@ export function buildFrameEvent(
   const catDef = allCats.find(c => c.key === partial.category);
   const skillId = catDef?.skillId ?? null;
   const impact = partial.impact ?? catDef?.defaultImpact ?? "medium";
-  const { cause: inferredCause, confidence } = inferMatchCause(partial.category, skillId);
+  const { cause: inferredCause, confidence } = inferMatchCause(partial.category, skillId, partial.precededBy);
   return {
     id: uid("fe", now),
     type: partial.type,
@@ -176,6 +221,7 @@ export function buildFrameEvent(
     environment: partial.environment,
     ts: now,
     notes: partial.notes,
+    precededBy: partial.precededBy,
   };
 }
 
@@ -373,14 +419,72 @@ export function matchAwareLimitingFactor(
   };
 }
 
+// ─── Match-aware mixed ruleset allocation ─────────────────────────────────────
+
+/**
+ * Aggregate decayed match evidence for decision skills under a specific ruleset.
+ * Used to determine how much rules-sensitive match trouble exists per ruleset.
+ * Higher score → more errors in that ruleset's decision play → more training for it.
+ */
+export function computeRulesetMatchBoost(matches: Match[], ruleset: RuleSetId, now: number): number {
+  const decisionSkillIds = SKILLS.filter(s => s.type === "decision").map(s => s.id as SkillId);
+  return decisionSkillIds.reduce(
+    (sum, skillId) => sum + computeMatchPriorityBoost(matches, skillId, now, ruleset),
+    0
+  );
+}
+
+/**
+ * Compute a match-aware mixed-ruleset split by blending the training-derived split
+ * with ruleset-specific match error evidence.
+ *
+ * - No match data → returns training-only split unchanged.
+ * - More errors in a ruleset → more training allocated to address that weakness.
+ * - Impact and recency are respected via computeMatchPriorityBoost's decay weighting.
+ * - Minimum floor (CONFIG.mixed.minRulesetFloor) is always preserved for both rulesets.
+ */
+export function matchAwareMixedSplit(
+  profile: Profile,
+  matches: Match[],
+  now = Date.now()
+): { blackball: number; international: number } {
+  const training = mixedRulesetSplit(profile, now);
+  const bbBoost  = computeRulesetMatchBoost(matches, "blackball",     now);
+  const intBoost = computeRulesetMatchBoost(matches, "international", now);
+  const totalBoost = bbBoost + intBoost;
+
+  // No meaningful match evidence → training split unchanged
+  if (totalBoost < 0.05) return training;
+
+  // Normalise match error fractions (more errors → more allocation for that ruleset)
+  const matchBbFrac  = bbBoost  / totalBoost;
+  const matchIntFrac = intBoost / totalBoost;
+
+  // Scale influence by evidence volume: each unit of boost adds ~12% influence, capped at 30%
+  const influence = Math.min(0.30, totalBoost * 0.12);
+
+  let bb  = training.blackball     * (1 - influence) + matchBbFrac  * influence;
+  let int = training.international * (1 - influence) + matchIntFrac * influence;
+
+  // Apply floor and normalise so fractions sum to 1
+  const floor = CONFIG.mixed.minRulesetFloor;
+  bb  = Math.max(floor, Math.min(1 - floor, bb));
+  int = 1 - bb;
+
+  return { blackball: bb, international: int };
+}
+
 // ─── Match-aware session generation ──────────────────────────────────────────
 
 /**
  * Thin orchestration layer that feeds match evidence into generateSession.
  * This is the primary integration point between match data and training content.
  *
- * Flow: Match records → computeMatchPriorityBoost → matchAwareLimitingFactor
- *       → generateSession(profile, minutes, { lfOverride }) → adaptive training session
+ * Flow: Match records
+ *   → matchAwareLimitingFactor  (which skill to focus on)
+ *   → matchAwareMixedSplit      (how to split BB/INT decision content in mixed mode)
+ *   → generateSession(profile, minutes, { lfOverride, splitOverride })
+ *   → adaptive training session
  */
 export function generateAdaptiveSession(
   profile: Profile,
@@ -389,7 +493,10 @@ export function generateAdaptiveSession(
 ): GeneratedSession {
   const now = Date.now();
   const lf = matchAwareLimitingFactor(profile, matches, now);
-  return generateSession(profile, minutes, { lfOverride: lf });
+  const splitOverride = profile.preferredRulesMode === "mixed"
+    ? matchAwareMixedSplit(profile, matches, now)
+    : undefined;
+  return generateSession(profile, minutes, { lfOverride: lf, splitOverride });
 }
 
 // ─── Match summary ────────────────────────────────────────────────────────────

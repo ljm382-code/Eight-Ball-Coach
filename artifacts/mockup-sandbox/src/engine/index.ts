@@ -869,7 +869,7 @@ const supportingLinks: { source: SkillId; target: SkillId }[] = [
   { source: "problemBallDec", target: "pattern" },
 ];
 
-export function generateSession(profile: Profile, minutes: number, options?: { lfOverride?: LimitingFactors }): GeneratedSession {
+export function generateSession(profile: Profile, minutes: number, options?: { lfOverride?: LimitingFactors; splitOverride?: { blackball: number; international: number } }): GeneratedSession {
   const totalCount = SESSION_LENGTHS[minutes] ?? 5;
   const lf = options?.lfOverride ?? limitingFactor(profile);
   const weighting = sessionWeighting(profile, lf);
@@ -924,7 +924,7 @@ export function generateSession(profile: Profile, minutes: number, options?: { l
 
   if (mode === "mixed") {
     pickExec(execPool, execCount);
-    const split = mixedRulesetSplit(profile);
+    const split = options?.splitOverride ?? mixedRulesetSplit(profile);
     const bbDecCount  = Math.max(1, Math.round(decCount * split.blackball));
     const intDecCount = Math.max(1, decCount - bbDecCount);
     pickDec("blackball",     decPool, bbDecCount);

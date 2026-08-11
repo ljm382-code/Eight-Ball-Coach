@@ -4,8 +4,9 @@
  */
 import assert from "node:assert/strict";
 import {
-  buildFrameEvent, buildMatchSummary, computeMatchPriorityBoost, createMatch, addFrame,
-  deleteMatch, editFrame, frameScore, generateAdaptiveSession, matchAwareLimitingFactor,
+  buildFrameEvent, buildMatchSummary, computeMatchPriorityBoost, computeRulesetMatchBoost,
+  createMatch, addFrame, deleteMatch, editFrame, frameScore,
+  generateAdaptiveSession, matchAwareLimitingFactor, matchAwareMixedSplit,
   FRAME_LOSS_CATEGORIES, POSITIVE_EVENT_TYPES,
   type FrameImpact, type Match,
 } from "../match";
@@ -981,8 +982,9 @@ function addErrorEvent(match: Match, category: string, impact: FrameImpact, ts =
 {
   const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition" }, NOW);
   assert.equal(ev.reportedCause, "missed_pot", "BI-1: reportedCause must be the category key 'missed_pot'");
-  assert.equal(ev.inferredCause, "positional",  "BI-2: inferredCause for missed_pot must be 'positional'");
-  assert.notEqual(ev.reportedCause, ev.inferredCause, "BI-3: reportedCause and inferredCause must differ for missed_pot");
+  // CORRECTED (Phase 3.1): plain missed_pot with no upstream evidence must NOT invent an inferred cause
+  assert.equal(ev.inferredCause, null, "BI-2: plain missed_pot must have null inferredCause — no speculative root-cause guessing");
+  assert.ok(ev.reportedCause !== ev.inferredCause, "BI-3: reportedCause ('missed_pot') and inferredCause (null) must differ");
   // Verify they are stored as separate fields
   assert.ok("reportedCause" in ev, "BI-4: FrameEvent must have reportedCause field");
   assert.ok("inferredCause" in ev, "BI-5: FrameEvent must have inferredCause field");
@@ -1081,4 +1083,232 @@ function addErrorEvent(match: Match, category: string, impact: FrameImpact, ts =
   );
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, and Phase 3 AW–BN all passed ✓");
+// ═════════════════════════════════════════════════════════════════════════════
+// Phase 3.1 — Integrity patch tests BO–BZ
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── BO: Plain missed pot has no invented root cause ───────────────────────────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition" }, NOW);
+  assert.equal(ev.skillId,              "potting",    "BO-1: direct skill for missed_pot must be potting");
+  assert.equal(ev.inferredCause,        null,         "BO-2: plain missed_pot must have null inferredCause");
+  assert.equal(ev.diagnosticConfidence, "Low",        "BO-3: diagnostic confidence must be Low with no upstream evidence");
+  assert.equal(ev.reportedCause,        "missed_pot", "BO-4: reportedCause must record the player-reported category");
+}
+
+// ── BP: Position-supported miss infers positional upstream ────────────────────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "blackball", environment: "competition", precededBy: "poor_position" }, NOW);
+  assert.equal(ev.skillId,              "potting",       "BP-1: direct skill is still potting (reportedCause preserved)");
+  assert.equal(ev.inferredCause,        "positional",    "BP-2: upstream inferred cause must be positional");
+  assert.equal(ev.diagnosticConfidence, "Emerging",      "BP-3: diagnostic confidence must be Emerging with upstream evidence");
+  assert.equal(ev.precededBy,           "poor_position", "BP-4: precededBy field must be stored on the event");
+}
+
+// ── BQ: Speed-supported miss infers speed upstream ────────────────────────────
+
+{
+  const ev = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high", ruleset: "international", environment: "competition", precededBy: "poor_speed" }, NOW);
+  assert.equal(ev.skillId,              "potting",  "BQ-1: direct skill is still potting");
+  assert.equal(ev.inferredCause,        "speed",    "BQ-2: upstream inferred cause must be speed");
+  assert.equal(ev.diagnosticConfidence, "Emerging", "BQ-3: confidence must be Emerging with upstream evidence");
+}
+
+// ── BR: Diagnostic confidence differences ─────────────────────────────────────
+
+{
+  const evNoEvidence    = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high",      ruleset: "blackball", environment: "competition" }, NOW);
+  const evWithEvidence  = buildFrameEvent({ type: "error", category: "missed_pot", impact: "high",      ruleset: "blackball", environment: "competition", precededBy: "poor_position" }, NOW);
+  const evOtherCategory = buildFrameEvent({ type: "error", category: "8ball_miss", impact: "decisive",  ruleset: "blackball", environment: "competition" }, NOW);
+
+  assert.equal(evNoEvidence.diagnosticConfidence,   "Low",      "BR-1: no-evidence missed_pot must have Low confidence");
+  assert.equal(evWithEvidence.diagnosticConfidence,  "Emerging", "BR-2: with-evidence missed_pot must have Emerging confidence");
+  assert.equal(evOtherCategory.diagnosticConfidence, "Emerging", "BR-3: other categories must have Emerging confidence");
+  assert.notEqual(evNoEvidence.diagnosticConfidence, evWithEvidence.diagnosticConfidence, "BR-4: Low and Emerging must differ");
+  assert.equal(evNoEvidence.inferredCause,   null, "BR-5: no-evidence must have null inferredCause");
+  assert.notEqual(evWithEvidence.inferredCause, null, "BR-6: with-evidence must have non-null inferredCause");
+}
+
+// ── BS: Opening Edit Last Frame does NOT remove or alter the original frame ───
+
+{
+  let m = makeMatch();
+  const ev = buildFrameEvent({ type: "error", category: "8ball_miss", impact: "decisive", ruleset: "blackball", environment: "competition" }, NOW);
+  const frame = { id: "fr_bs", matchId: m.id, frameNumber: 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW };
+  m = { ...m, frames: [frame] };
+  const stateBefore = JSON.stringify(m);
+
+  // editLastFrame() only sets editFrameId/view — match state is NOT touched
+  assert.equal(m.frames.length,   1,           "BS-1: frame count unchanged when edit is opened");
+  assert.equal(m.frames[0].id,    "fr_bs",     "BS-2: frame ID unchanged");
+  assert.equal(m.frames[0].result,"lost",      "BS-3: frame result unchanged");
+  assert.equal(m.frames[0].keyEvents[0].category, "8ball_miss", "BS-4: event category unchanged");
+  assert.equal(stateBefore, JSON.stringify(m), "BS-5: full match state identical before and after opening edit");
+}
+
+// ── BT: Cancel leaves original frame, score, and derived evidence unchanged ───
+
+{
+  let m = makeMatch();
+  const ev = buildFrameEvent({ type: "error", category: "8ball_miss", impact: "decisive", ruleset: "blackball", environment: "competition" }, NOW);
+  const frame = { id: "fr_bt", matchId: m.id, frameNumber: 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW };
+  m = { ...m, frames: [frame] };
+
+  const scoreBefore = frameScore(m);
+  const boostBefore = computeMatchPriorityBoost([m], "eightBall", NOW + 1);
+  const stateBefore = JSON.stringify(m);
+
+  // Cancel: editFrame() is never called — match state unchanged
+  const scoreAfter  = frameScore(m);
+  const boostAfter  = computeMatchPriorityBoost([m], "eightBall", NOW + 1);
+
+  assert.deepEqual(scoreBefore,  scoreAfter,  "BT-1: score unchanged after cancel");
+  assert.equal(boostBefore,      boostAfter,  "BT-2: match priority evidence unchanged after cancel");
+  assert.equal(m.frames.length,  1,           "BT-3: frame count unchanged after cancel");
+  assert.equal(m.frames[0].result, "lost",    "BT-4: frame result unchanged after cancel");
+  assert.equal(stateBefore, JSON.stringify(m),"BT-5: full match state unchanged after cancel");
+}
+
+// ── BU: Save changes frame and recomputes score and evidence ──────────────────
+
+{
+  let m = makeMatch();
+  const ev = buildFrameEvent({ type: "error", category: "8ball_miss", impact: "decisive", ruleset: "blackball", environment: "competition" }, NOW);
+  const frame = { id: "fr_bu", matchId: m.id, frameNumber: 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW };
+  m = { ...m, frames: [frame] };
+
+  const scoreBefore = frameScore(m);
+  const boostBefore = computeMatchPriorityBoost([m], "eightBall", NOW + 1);
+
+  // Save: editFrame() called with won result and cleared events
+  m = editFrame(m, "fr_bu", { result: "won", keyEvents: [] });
+
+  const scoreAfter = frameScore(m);
+  const boostAfter = computeMatchPriorityBoost([m], "eightBall", NOW + 2);
+
+  assert.equal(scoreBefore.player,          0,     "BU-1: before save — player score 0");
+  assert.equal(scoreAfter.player,           1,     "BU-2: after save lost→won — player score 1");
+  assert.equal(scoreAfter.opponent,         0,     "BU-3: after save — opponent score 0");
+  assert.equal(m.frames[0].result,          "won", "BU-4: frame result updated to won");
+  assert.equal(m.frames[0].keyEvents.length, 0,   "BU-5: frame events cleared after save");
+  assert.ok(boostBefore > 0, "BU-6: decisive eightBall error creates boost before save");
+  assert.equal(boostAfter, 0, "BU-7: boost must be 0 after event is removed via save");
+}
+
+// ── BV: Edited frame changes future training focus ────────────────────────────
+
+{
+  const p = newProfile("blackball");
+  let m = makeMatch();
+  // 4 decisive speed errors → speed becomes the match-aware LF focus
+  for (let i = 0; i < 4; i++) {
+    const ev = buildFrameEvent({ type: "error", category: "poor_speed", impact: "decisive", ruleset: "blackball", environment: "competition" }, NOW + i);
+    m = { ...m, frames: [...m.frames, { id: `fr_bv_${i}`, matchId: m.id, frameNumber: m.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + i }] };
+  }
+
+  const sessionBefore = generateAdaptiveSession(p, [m], 30);
+  assert.ok(sessionBefore.focusSkillIds.includes("speed"), "BV-1: speed must be in focus before edit (4 decisive errors)");
+
+  // Save edits: remove all speed events
+  for (const frame of m.frames) {
+    m = editFrame(m, frame.id, { result: "won", keyEvents: [] });
+  }
+
+  const boostAfter = computeMatchPriorityBoost([m], "speed", NOW + 100);
+  assert.equal(boostAfter, 0, "BV-2: speed boost must be 0 after all speed events are edited away");
+
+  const sessionAfter = generateAdaptiveSession(p, [m], 30);
+  assert.ok(!sessionAfter.focusSkillIds.includes("speed"), "BV-3: speed must not be in focus after all speed events removed");
+}
+
+// ── BW: Mixed — decisive INT tactical errors increase INT allocation ───────────
+
+{
+  const p = newProfile("mixed");
+  const baseline = matchAwareMixedSplit(p, [], NOW);
+
+  let m = makeMatch("international");
+  for (let i = 0; i < 4; i++) {
+    const ev = buildFrameEvent({ type: "error", category: "tactical_error", impact: "decisive", ruleset: "international", environment: "competition" }, NOW + i);
+    m = { ...m, frames: [...m.frames, { id: `fr_bw_${i}`, matchId: m.id, frameNumber: m.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + i }] };
+  }
+  const splitWithINT = matchAwareMixedSplit(p, [m], NOW + 100);
+
+  assert.ok(
+    splitWithINT.international > baseline.international,
+    `BW: decisive INT tactical errors must increase INT allocation (${splitWithINT.international.toFixed(3)} vs baseline ${baseline.international.toFixed(3)})`
+  );
+  assert.ok(splitWithINT.blackball     >= 0.25, `BW: BB floor must remain >= 0.25 (${splitWithINT.blackball.toFixed(3)})`);
+  assert.ok(splitWithINT.international >= 0.25, `BW: INT floor must remain >= 0.25 (${splitWithINT.international.toFixed(3)})`);
+}
+
+// ── BX: Mixed — decisive BB tactical errors increase BB allocation ─────────────
+
+{
+  const p = newProfile("mixed");
+  const baseline = matchAwareMixedSplit(p, [], NOW);
+
+  let m = makeMatch("blackball");
+  for (let i = 0; i < 4; i++) {
+    const ev = buildFrameEvent({ type: "error", category: "tactical_error", impact: "decisive", ruleset: "blackball", environment: "competition" }, NOW + i);
+    m = { ...m, frames: [...m.frames, { id: `fr_bx_${i}`, matchId: m.id, frameNumber: m.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + i }] };
+  }
+  const splitWithBB = matchAwareMixedSplit(p, [m], NOW + 100);
+
+  assert.ok(
+    splitWithBB.blackball > baseline.blackball,
+    `BX: decisive BB tactical errors must increase BB allocation (${splitWithBB.blackball.toFixed(3)} vs baseline ${baseline.blackball.toFixed(3)})`
+  );
+}
+
+// ── BY: Mixed impact sensitivity — decisive errors shift allocation more ────────
+
+{
+  const p = newProfile("mixed");
+  const baseline = matchAwareMixedSplit(p, [], NOW);
+
+  const makeINTMatch = (impact: FrameImpact, count: number, prefix: string) => {
+    let m = makeMatch("international");
+    for (let i = 0; i < count; i++) {
+      const ev = buildFrameEvent({ type: "error", category: "tactical_error", impact, ruleset: "international", environment: "competition" }, NOW + i);
+      m = { ...m, frames: [...m.frames, { id: `fr_by_${prefix}_${i}`, matchId: m.id, frameNumber: m.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + i }] };
+    }
+    return m;
+  };
+
+  const splitDecisive = matchAwareMixedSplit(p, [makeINTMatch("decisive", 3, "d")], NOW + 100);
+  const splitLow      = matchAwareMixedSplit(p, [makeINTMatch("low",      3, "l")], NOW + 100);
+
+  const shiftDecisive = splitDecisive.international - baseline.international;
+  const shiftLow      = splitLow.international      - baseline.international;
+
+  assert.ok(
+    shiftDecisive > shiftLow,
+    `BY: decisive INT errors (shift +${shiftDecisive.toFixed(3)}) must shift INT allocation more than low-impact errors (shift +${shiftLow.toFixed(3)})`
+  );
+  assert.ok(shiftDecisive > 0, "BY: decisive errors must produce a positive allocation shift");
+}
+
+// ── BZ: Mixed floor — both rulesets retain minimum exposure floor ──────────────
+
+{
+  const p = newProfile("mixed");
+  const floor = 0.25;
+
+  // Extreme: 10 decisive INT errors — INT dominates but BB must still meet the floor
+  let m = makeMatch("international");
+  for (let i = 0; i < 10; i++) {
+    const ev = buildFrameEvent({ type: "error", category: "tactical_error", impact: "decisive", ruleset: "international", environment: "competition" }, NOW + i);
+    m = { ...m, frames: [...m.frames, { id: `fr_bz_${i}`, matchId: m.id, frameNumber: m.frames.length + 1, result: "lost" as const, pressure: "normal" as const, keyEvents: [ev], ts: NOW + i }] };
+  }
+  const split = matchAwareMixedSplit(p, [m], NOW + 200);
+
+  assert.ok(split.blackball     >= floor, `BZ-1: BB allocation must be >= ${floor} floor; got ${split.blackball.toFixed(3)}`);
+  assert.ok(split.international >= floor, `BZ-2: INT allocation must be >= ${floor} floor; got ${split.international.toFixed(3)}`);
+  assert.ok(Math.abs(split.blackball + split.international - 1) < 0.001, `BZ-3: allocations must sum to 1; sum = ${(split.blackball + split.international).toFixed(4)}`);
+  assert.ok(split.international > split.blackball, `BZ-4: INT must be the majority after 10 decisive INT errors (INT ${split.international.toFixed(3)} vs BB ${split.blackball.toFixed(3)})`);
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, and Phase 3.1 BO–BZ all passed ✓");

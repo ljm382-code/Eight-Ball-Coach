@@ -17,18 +17,18 @@ import {
   generateAdaptiveSession, matchAwareLimitingFactor, buildMatchSummary,
   frameScore, createMatch, addFrame, buildFrameEvent, editFrame, deleteFrameFromMatch, completeMatch, deleteMatch,
   FRAME_LOSS_CATEGORIES, POSITIVE_EVENT_TYPES,
-  type Match, type MatchSummary, type MatchEnvironment, type FrameImpact, type FrameResult,
+  type Match, type MatchSummary, type MatchEnvironment, type FrameImpact, type FrameResult, type FrameEvent, type Frame,
 } from "./match";
 import { getLegalBalls, isEightBallLegal } from "./rules";
 
 // ─── View types and palette ────────────────────────────────────────────────────
-type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings" | "matches" | "matchSetup" | "matchActive" | "matchLogFrame" | "matchComplete" | "matchDetail";
+type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings" | "matches" | "matchSetup" | "matchActive" | "matchLogFrame" | "matchEditFrame" | "matchComplete" | "matchDetail";
 const C = { bg: "#0e1a15", panel: "#16261e", panel2: "#1d3025", line: "#2a4436", ink: "#edeae1", dim: "#9fb3a8", brass: "#c9a15a", chalk: "#6fa8c9", rust: "#b5533c", green: "#4e8b6b" };
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
-const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings", matches: "Match History", matchSetup: "New Match", matchActive: "Match in Progress", matchLogFrame: "Log Frame", matchComplete: "Match Summary", matchDetail: "Match Detail" };
+const titles: Record<View, string> = { onboarding: "Welcome", assessment: "Initial Assessment", provisional: "Your Starting Profile", dashboard: "Today", pickTime: "Session Length", session: "Training", summary: "Session Summary", progress: "Progress", library: "Drill Library", settings: "Settings", matches: "Match History", matchSetup: "New Match", matchActive: "Match in Progress", matchLogFrame: "Log Frame", matchEditFrame: "Edit Frame", matchComplete: "Match Summary", matchDetail: "Match Detail" };
 /** Map a view to its parent nav tab so sub-views highlight the right nav item. */
 function navTab(view: View): string {
-  if (["matchSetup", "matchActive", "matchLogFrame", "matchComplete", "matchDetail"].includes(view)) return "matches";
+  if (["matchSetup", "matchActive", "matchLogFrame", "matchEditFrame", "matchComplete", "matchDetail"].includes(view)) return "matches";
   return view;
 }
 
@@ -653,6 +653,70 @@ function MatchDetailView({ match, onDelete, onBack }: { match: Match; onDelete: 
   </div>;
 }
 
+// ─── Edit Frame view ──────────────────────────────────────────────────────────
+
+function EditFrameView({ frame, match, onSave, onCancel }: {
+  frame: Frame;
+  match: Match;
+  onSave: (frameId: string, result: FrameResult, event?: { category: string; impact: FrameImpact; type: "error" | "positive" }) => void;
+  onCancel: () => void;
+}) {
+  const existingEvent = frame.keyEvents[0] ?? null;
+  const [result,   setResult]   = useState<FrameResult>(frame.result);
+  const [category, setCategory] = useState<string | null>(existingEvent?.category ?? null);
+  const [impact,   setImpact]   = useState<FrameImpact | null>(existingEvent?.impact ?? null);
+  const catLabel = category ? (FRAME_LOSS_CATEGORIES.find(c => c.key === category)?.label ?? POSITIVE_EVENT_TYPES.find(c => c.key === category)?.label ?? category) : "";
+
+  // Result picker
+  const resultPicker = <div>
+    <Card style={{ marginBottom: 12 }}><Label>Frame result</Label>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+        <Button variant={result === "won"  ? "success" : "default"} onClick={() => { setResult("won");  if (result !== "won")  { setCategory(existingEvent?.type === "positive" ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 72 }}><Check size={18} /> Won</Button>
+        <Button variant={result === "lost" ? "danger"  : "default"} onClick={() => { setResult("lost"); if (result !== "lost") { setCategory(existingEvent?.type === "error"    ? (existingEvent.category ?? null) : null); setImpact(null); } }} style={{ minHeight: 72 }}><X    size={18} /> Lost</Button>
+      </div>
+    </Card>
+  </div>;
+
+  // Category picker — only shown when result is chosen and category is null
+  if (result === "lost" && category === null) return <div>
+    {resultPicker}
+    <Card style={{ marginBottom: 10 }}><Label>What cost you the frame? (optional)</Label>
+      <div style={{ display: "grid", gap: 7, gridTemplateColumns: "1fr 1fr" }}>
+        {FRAME_LOSS_CATEGORIES.map(cat => <button key={cat.key} onClick={() => { setCategory(cat.key); setImpact(cat.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "10px 8px", textAlign: "left" }}>{cat.label}</button>)}
+      </div>
+    </Card>
+    <Button onClick={() => onSave(frame.id, "lost")} style={{ marginBottom: 8 }}>Save — result only</Button>
+    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+  </div>;
+
+  if (result === "won" && category === null) return <div>
+    {resultPicker}
+    <Card style={{ marginBottom: 10 }}><Label>Any standout moments? (optional)</Label>
+      <div style={{ display: "grid", gap: 8 }}>
+        {POSITIVE_EVENT_TYPES.map(ev => <button key={ev.key} onClick={() => { setCategory(ev.key); setImpact(ev.defaultImpact); }} style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: 9, color: C.ink, cursor: "pointer", fontSize: 13, padding: "11px 12px", textAlign: "left" }}>{ev.label}</button>)}
+      </div>
+    </Card>
+    <Button onClick={() => onSave(frame.id, "won")} style={{ marginBottom: 8 }}>Save — result only</Button>
+    <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+  </div>;
+
+  return <div>
+    {resultPicker}
+    {category !== null && <Card style={{ marginBottom: 12 }}>
+      <Label>Event — <span style={{ color: C.ink }}>{catLabel}</span></Label>
+      <button onClick={() => setCategory(null)} style={{ background: "transparent", border: 0, color: C.dim, cursor: "pointer", fontSize: 12, padding: "4px 0" }}>← Change event</button>
+      <div style={{ marginTop: 10 }}>
+        <Label>Impact level</Label>
+        <div style={{ display: "grid", gap: 6, gridTemplateColumns: "1fr 1fr" }}>
+          {(["low", "medium", "high", "decisive"] as FrameImpact[]).map(imp => <button key={imp} onClick={() => setImpact(imp)} style={{ alignItems: "center", background: impact === imp ? "#284735" : C.panel2, border: `1px solid ${impact === imp ? C.brass : C.line}`, borderRadius: 8, color: C.ink, cursor: "pointer", display: "flex", fontSize: 12, justifyContent: "space-between", padding: "9px 10px", textTransform: "capitalize" }}>{imp}{impact === imp && <Check size={13} color={C.brass} />}</button>)}
+        </div>
+      </div>
+    </Card>}
+    <Button variant="primary" onClick={() => onSave(frame.id, result, category && impact ? { category, impact, type: result === "lost" ? "error" : "positive" } : undefined)} style={{ marginBottom: 8 }}>Save changes</Button>
+    <Button variant="ghost" onClick={onCancel}>Cancel — keep original</Button>
+  </div>;
+}
+
 // ─── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [profile, setProfile]       = useState<Profile>(() => loadProfile());
@@ -665,6 +729,7 @@ export default function App() {
   const [activeMatchId, setActiveMatchId] = useState<string | null>(null);
   const [detailMatchId, setDetailMatchId] = useState<string | null>(null);
   const [matchSummary,  setMatchSummary]  = useState<MatchSummary | null>(null);
+  const [editFrameId,   setEditFrameId]   = useState<string | null>(null);
 
   useEffect(() => { saveProfile(profile); }, [profile]);
   useEffect(() => { saveMatches(matches); }, [matches]);
@@ -709,11 +774,25 @@ export default function App() {
 
   const editLastFrame = () => {
     if (!activeMatchId) return;
+    const m = matches.find(mx => mx.id === activeMatchId);
+    if (!m || m.frames.length === 0) return;
+    // Frame is NOT deleted — edit is non-destructive until Save is confirmed
+    setEditFrameId(m.frames[m.frames.length - 1].id);
+    setView("matchEditFrame");
+  };
+
+  const saveFrameEdit = (frameId: string, result: FrameResult, event?: { category: string; impact: FrameImpact; type: "error" | "positive" }) => {
+    if (!activeMatchId) return;
     setMatches(prev => prev.map(m => {
-      if (m.id !== activeMatchId || m.frames.length === 0) return m;
-      return deleteFrameFromMatch(m, m.frames[m.frames.length - 1].id);
+      if (m.id !== activeMatchId) return m;
+      const now = Date.now();
+      const keyEvents: FrameEvent[] = event
+        ? [buildFrameEvent({ type: event.type, category: event.category, impact: event.impact, ruleset: m.ruleset, environment: m.competitionType }, now)]
+        : [];
+      return editFrame(m, frameId, { result, keyEvents });
     }));
-    setView("matchLogFrame");
+    setEditFrameId(null);
+    setView("matchActive");
   };
 
   const endMatch = () => {
@@ -751,6 +830,11 @@ export default function App() {
   if (view === "matchLogFrame" && activeMatchId) {
     const m = matches.find(mx => mx.id === activeMatchId);
     if (m) return <AppShell view={view} onNav={nav} profile={profile}><LogFrameView match={m} onDone={logFrame} onCancel={() => setView("matchActive")} /></AppShell>;
+  }
+  if (view === "matchEditFrame" && activeMatchId && editFrameId) {
+    const m = matches.find(mx => mx.id === activeMatchId);
+    const f = m?.frames.find(fr => fr.id === editFrameId);
+    if (m && f) return <AppShell view={view} onNav={nav} profile={profile}><EditFrameView frame={f} match={m} onSave={saveFrameEdit} onCancel={() => { setEditFrameId(null); setView("matchActive"); }} /></AppShell>;
   }
   if (view === "matchActive" && activeMatchId) {
     const m = matches.find(mx => mx.id === activeMatchId);
