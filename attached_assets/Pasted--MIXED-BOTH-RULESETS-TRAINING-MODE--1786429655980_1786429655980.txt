@@ -1,0 +1,333 @@
+==================================================
+MIXED / BOTH-RULESETS TRAINING MODE
+==================================================
+
+Add a third player preference:
+
+BLACKBALL
+INTERNATIONAL RULES
+BOTH / MIXED TRAINING
+
+Important:
+
+"BOTH" is NOT a third ruleset.
+
+Do not create hybrid or blended game rules.
+
+Each individual drill, clearance or tactical scenario must still run under exactly one defined ruleset where rules matter.
+
+The purpose of Mixed Training is to allow a player who regularly competes under both Blackball and International Rules to train both within the same adaptive programme.
+
+--------------------------------------------------
+1. PROFILE PREFERENCE
+--------------------------------------------------
+
+Instead of treating profile.ruleset as always one ruleset, support a training preference such as:
+
+preferredRulesMode:
+- "blackball"
+- "international"
+- "mixed"
+
+If preferredRulesMode = "mixed", also allow configurable weighting later such as:
+
+blackballWeight: 50
+internationalWeight: 50
+
+For the MVP, default Mixed Training to approximately 50/50 unless the player's evidence suggests a better adaptive distribution.
+
+--------------------------------------------------
+2. RULE-NEUTRAL DRILLS
+--------------------------------------------------
+
+Physical execution drills that genuinely do not depend on rules should be treated as SHARED.
+
+Examples:
+
+- Potting
+- Speed Control
+- Cue-Ball Control
+- Positional Execution
+- Basic Problem-Ball Execution
+
+These do not need to be artificially labelled Blackball or International if the ruleset has no effect on the exercise.
+
+Display:
+
+SHARED SKILL
+
+or simply omit a rules badge where there is genuinely no rules dependency.
+
+--------------------------------------------------
+3. RULE-SPECIFIC EXERCISES
+--------------------------------------------------
+
+Any drill/scenario where rules affect:
+
+- legality
+- tactical choice
+- foul consequence
+- group assignment
+- cue-ball placement
+- clearance decision
+- 8-ball eligibility
+
+must have an explicit ruleset.
+
+Example session:
+
+1. Speed Control
+   Shared skill
+
+2. Attack or Safety
+   BLACKBALL RULES
+
+3. Positional Execution
+   Shared skill
+
+4. Foul Recovery Scenario
+   INTERNATIONAL RULES
+
+5. 4-Ball Clearance
+   BLACKBALL RULES
+
+The rules badge must be clearly visible before the player begins the exercise.
+
+--------------------------------------------------
+4. RULESET LABELS DURING TRAINING
+--------------------------------------------------
+
+For every rules-dependent exercise, display a clear persistent badge such as:
+
+BLACKBALL
+
+or
+
+INTERNATIONAL RULES
+
+Place it prominently near the drill/scenario title.
+
+Do not rely only on colour.
+
+The written ruleset name must always be visible.
+
+For example:
+
+[ BLACKBALL ]
+Attack or Safety
+
+or:
+
+[ INTERNATIONAL RULES ]
+Foul Recovery Scenario
+
+--------------------------------------------------
+5. RULESET TRANSITIONS
+--------------------------------------------------
+
+When a mixed session switches from one ruleset to another, optionally show a lightweight transition message:
+
+"Switching to International Rules"
+
+or:
+
+"Next: Blackball Rules"
+
+This should require no confirmation unless there is a genuine reason.
+
+Do not interrupt every shared execution drill.
+
+--------------------------------------------------
+6. ADAPTIVE MIX
+--------------------------------------------------
+
+Mixed Training should NOT always be rigidly 50/50.
+
+The adaptive engine may change the ruleset balance based on evidence.
+
+Example:
+
+Player has:
+
+Blackball Tactical Decision:
+Strong
+
+International Tactical Decision:
+Weak / low confidence
+
+A mixed decision-training allocation might become:
+
+Blackball: 30%
+International: 70%
+
+Physical execution training remains shared.
+
+Use a configurable floor so one ruleset does not disappear entirely when the player has explicitly selected Mixed Training.
+
+For example:
+
+minimum rules-sensitive allocation per ruleset:
+25%
+
+Exact values should remain configurable.
+
+--------------------------------------------------
+7. RULESET-SPECIFIC WEAKNESSES
+--------------------------------------------------
+
+Allow the engine to identify situations such as:
+
+"Your tactical decision-making is strong under Blackball but less consistent under International Rules."
+
+or:
+
+"Your International Rules evidence is still limited."
+
+Do not duplicate the player's physical-skill ratings.
+
+Instead maintain:
+
+Shared skill profile
+
+plus:
+
+Ruleset-specific evidence / confidence / tactical performance where appropriate.
+
+--------------------------------------------------
+8. SESSION GENERATION
+--------------------------------------------------
+
+When preferredRulesMode = "mixed":
+
+1. Allocate rule-neutral execution work normally.
+2. Determine how much rules-sensitive training belongs to Blackball vs International.
+3. Use the player's ruleset-specific weaknesses and confidence to determine that split.
+4. Filter drills/scenarios by compatibility.
+5. Ensure every selected rules-sensitive exercise records its active ruleset.
+6. Avoid unnecessary rapid alternation where possible.
+
+For example, where practical:
+
+Shared
+→ Blackball
+→ Blackball
+→ Shared
+→ International
+→ International
+
+may be preferable to:
+
+Blackball
+→ International
+→ Blackball
+→ International
+
+if grouping reduces cognitive switching without harming the adaptive objective.
+
+--------------------------------------------------
+9. DATA RECORDING
+--------------------------------------------------
+
+Every rules-sensitive attempt must store:
+
+ruleset: "blackball" | "international"
+
+Rule-neutral execution evidence may store:
+
+ruleset: null
+
+or an explicit shared marker.
+
+Decision/tactical confidence should be calculable:
+
+- overall
+- Blackball-specific
+- International-specific
+
+--------------------------------------------------
+10. PROGRESS VIEW
+--------------------------------------------------
+
+Do not overload the MVP UI.
+
+Default skill ratings remain shared.
+
+For rules-sensitive skills, allow a deeper view later such as:
+
+Tactical Decision-Making
+
+Overall: Strong
+
+Blackball:
+Strong evidence · performing well
+
+International:
+Getting a clearer picture · current development area
+
+Do not create duplicate headline skill cards.
+
+--------------------------------------------------
+11. ONBOARDING COPY
+--------------------------------------------------
+
+Ask:
+
+"Which rules do you usually play?"
+
+Options:
+
+Blackball Rules
+
+International Rules
+
+Both
+
+For Both, explain briefly:
+
+"Your training will include both rulesets. Every rules-specific exercise will be clearly labelled."
+
+--------------------------------------------------
+12. SWITCHING MODES
+--------------------------------------------------
+
+The player may change between:
+
+Blackball
+International
+Mixed
+
+at any time.
+
+Changing preference must NOT delete:
+
+- ratings
+- attempts
+- sessions
+- history
+- confidence data
+
+It only changes:
+
+- future session generation
+- rules-specific content selection
+- coaching emphasis
+
+--------------------------------------------------
+13. TESTS
+--------------------------------------------------
+
+Add deterministic tests for Mixed Training:
+
+Y. Mixed mode generates rules-sensitive content from both Blackball and International Rules over an appropriate session/sample.
+
+Z. Every rules-sensitive exercise in Mixed mode has an explicit ruleset.
+
+AA. Rule-neutral execution exercises remain shared and do not artificially affect ruleset-specific tactical confidence.
+
+AB. Weak International tactical evidence causes Mixed mode to allocate more rules-sensitive training to International while preserving a minimum Blackball allocation.
+
+AC. Switching Mixed → Blackball → Mixed preserves all previously collected International evidence.
+
+AD. Session generation never evaluates an International exercise using Blackball rules or vice versa.
+
+Keep all previous Phase 1 and Phase 2 tests passing.

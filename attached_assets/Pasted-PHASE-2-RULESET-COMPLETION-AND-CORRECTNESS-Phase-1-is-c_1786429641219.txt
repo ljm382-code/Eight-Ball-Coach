@@ -1,0 +1,715 @@
+PHASE 2 — RULESET COMPLETION AND CORRECTNESS
+
+Phase 1 is complete and approved.
+
+The restored 8-Ball Coach application now:
+
+- runs successfully
+- typechecks
+- production-builds
+- passes deterministic engine tests A–O
+- uses local persistence
+- contains modular shared coaching logic
+- includes Blackball and International Rules foundations
+- is committed and pushed to GitHub at milestone af56e95
+
+Do NOT rebuild or redesign the application.
+
+Do NOT add match/frame logging, authentication, databases, cloud persistence, or the premium visual redesign in this phase.
+
+The only objective of Phase 2 is:
+
+MAKE THE RULESET LAYER ACCURATE, MODULAR, TESTABLE, AND SAFE FOR BOTH:
+
+1. Blackball Rules
+2. International Rules
+
+==================================================
+1. PRESERVE THE PHASE 1 BASELINE
+==================================================
+
+Before making changes:
+
+1. Confirm origin/main contains the Phase 1 milestone.
+2. Confirm the working tree state.
+3. Preserve the unrelated .replit change as unstaged unless genuinely required.
+4. Do not rewrite or simplify the adaptive engine.
+
+The Phase 1 adaptive behaviour is the baseline.
+
+==================================================
+2. RULE SOURCES
+==================================================
+
+Do not invent rules from memory.
+
+Use authoritative/current rule sources.
+
+Primary sources should include:
+
+- WPA Blackball Rules
+- IEPF International Rules
+
+Where a rule is unclear or not required by the current MVP flow, do not guess.
+
+Instead:
+
+- document the unsupported edge case
+- keep the architecture capable of supporting it later
+
+The MVP only needs complete correctness for rules actually exercised by current training/scenario flows.
+
+==================================================
+3. RULESET MODULE STRUCTURE
+==================================================
+
+Create genuinely separate rule modules.
+
+Conceptually:
+
+rules/
+  index.ts
+  types.ts
+  blackball.ts
+  international.ts
+
+Each ruleset should expose a shared interface.
+
+For example, conceptually:
+
+RulesetDefinition {
+  id
+  name
+  terminology
+  breakRules
+  groupAssignmentRules
+  legalBallSelection
+  foulConsequences
+  cueBallPlacement
+  eightBallEligibility
+  deliberateFoulTreatment
+  scenarioEvaluationOverrides
+}
+
+Exact implementation may differ.
+
+The critical principle is:
+
+SHARED ENGINE
++
+RULESET-SPECIFIC RULES
+
+Do NOT duplicate the coaching engine.
+
+==================================================
+4. RULESET-AWARE PLAYER PROFILE
+==================================================
+
+Preserve:
+
+profile.ruleset
+
+Supported values:
+
+blackball
+international
+
+Changing ruleset must NOT reset:
+
+- execution ratings
+- attempts
+- rating history
+- confidence
+- training history
+- progress
+
+Physical skills remain shared.
+
+Rules-sensitive decision evidence should carry the ruleset used.
+
+This should allow the app later to say:
+
+"Your overall tactical profile is strong, but we still have limited evidence under International Rules."
+
+Do not create duplicate skill profiles for each ruleset.
+
+==================================================
+5. RULESET-SPECIFIC CONFIDENCE
+==================================================
+
+Add the ability to calculate ruleset-specific evidence/confidence for decision skills where appropriate.
+
+Examples:
+
+Pattern Recognition
+Problem-Ball Identification
+Tactical / Safety Decision-Making
+
+A player may have:
+
+Tactical overall confidence:
+High
+
+Blackball tactical evidence:
+High
+
+International tactical evidence:
+Low
+
+Execution skills should remain primarily shared unless there is a genuine rules-dependent reason otherwise.
+
+Do not expose excessive complexity in the UI yet.
+
+==================================================
+6. GROUP ASSIGNMENT
+==================================================
+
+Implement correct group-state handling for both rulesets.
+
+Represent at minimum:
+
+- open table / groups not yet assigned
+- player group
+- opponent group
+- player object balls remaining
+- opponent object balls
+- 8-ball / black
+
+Do not assume groups are always known at the start of a scenario.
+
+The ruleset module should determine when groups become assigned.
+
+==================================================
+7. LEGAL BALL SELECTION
+==================================================
+
+Create a pure rules-layer helper such as:
+
+getLegalBalls(tableState, ruleset)
+
+or equivalent.
+
+The UI must not decide legality itself.
+
+The rules layer determines which balls may legally be selected/played.
+
+This must account for:
+
+- group state
+- player group
+- 8-ball eligibility
+- ruleset
+- relevant foul/free-shot state where supported
+
+Current clearance drills should only offer legal player targets.
+
+Opponent balls can remain visually present as obstacles/tactical objects.
+
+==================================================
+8. 8-BALL / BLACK ELIGIBILITY
+==================================================
+
+Create pure logic such as:
+
+isEightBallLegal(tableState, ruleset)
+
+or equivalent.
+
+The 8-ball/black should only become selectable when legally available under the active ruleset.
+
+Do not hard-code this directly in ClearanceRunner.
+
+==================================================
+9. BREAK RULES
+==================================================
+
+Represent break rules separately per ruleset.
+
+For the current MVP, accurately model at least what is required for:
+
+- legal break determination
+- group state after break
+- 8-ball/black on break where relevant
+- continuation / turn implications relevant to current scenarios
+
+Do not implement obscure referee procedures unless needed by the app.
+
+==================================================
+10. FOUL CONSEQUENCES
+==================================================
+
+Blackball and International Rules must not share one generic foul treatment.
+
+Model ruleset-specific consequences.
+
+At minimum capture the differences necessary for tactical scenario evaluation, including:
+
+- incoming player entitlement
+- cue-ball placement
+- free-shot/free-play implications where applicable
+- continuation state
+
+Keep the API modular so more detailed foul logic can be added later.
+
+==================================================
+11. CUE-BALL PLACEMENT
+==================================================
+
+The rules engine should be able to tell the scenario layer where cue-ball placement is allowed after relevant fouls.
+
+Do not bury this in UI copy.
+
+Represent it as structured rule data/logic.
+
+==================================================
+12. DELIBERATE FOUL / LOSS-OF-FRAME CONDITIONS
+==================================================
+
+Where the current official rules distinguish deliberate/serious fouls or loss-of-frame conditions, represent the distinction in the rules layer.
+
+Do not attempt an exhaustive referee manual in this phase.
+
+Only implement enough to prevent tactical coaching from recommending illegal or obviously losing actions.
+
+==================================================
+13. RULESET-AWARE DRILL METADATA
+==================================================
+
+Every drill/scenario should explicitly declare compatibility.
+
+Examples:
+
+rulesets: ["blackball", "international"]
+
+or
+
+rulesets: ["blackball"]
+
+or
+
+rulesets: ["international"]
+
+Execution drills should remain rule-neutral wherever possible.
+
+Decision/tactical scenarios should be ruleset-specific where rule differences materially affect the answer.
+
+Session generation must filter incompatible content.
+
+==================================================
+14. AUTHORED TABLE STATES
+==================================================
+
+Upgrade decision scenarios from generic diagrams to structured authored table-state data.
+
+Do NOT do the premium visual redesign yet.
+
+Each decision scenario should be capable of storing:
+
+- ball IDs
+- ball group
+- owner / player vs opponent
+- role
+- approximate x/y position
+- player group
+- group assignment state
+- 8-ball state
+- relevant foul/free-shot state
+- active ruleset
+- available choices
+
+The current simple table renderer may use those coordinates.
+
+The purpose now is correctness of scenario state, not visual polish.
+
+==================================================
+15. RULESET-AWARE DECISION EVALUATION
+==================================================
+
+The same table state may have different decision evaluation under the two rulesets.
+
+Create a mechanism such as:
+
+evaluateDecision(tableState, choice, ruleset)
+
+or equivalent.
+
+Each scenario may define:
+
+Blackball:
+- optimal
+- acceptable
+- high-risk
+- poor
+- rationale
+
+International:
+- optimal
+- acceptable
+- high-risk
+- poor
+- rationale
+
+Only create different answers where rules genuinely make them different.
+
+Do not manufacture artificial differences just to prove ruleset support.
+
+==================================================
+16. CLEARANCE LEGALITY
+==================================================
+
+Update clearance data so normal clearance drills use:
+
+ONE player group
++
+8-ball
+
+For example:
+
+Y1 → Y2 → Y3 → EIGHT
+
+Opponent balls may be present as obstacles.
+
+Do not use mixed player-group sequences such as:
+
+Yellow → Red → Yellow → 8-ball
+
+unless the active rules/state genuinely allows such a shot.
+
+==================================================
+17. UNIQUE BALL IDENTITIES
+==================================================
+
+Preserve/use stable internal ball IDs.
+
+Example:
+
+Y1
+Y2
+Y3
+R1
+R2
+EIGHT
+
+Each ball should support structured metadata such as:
+
+id
+group
+owner
+role
+x
+y
+
+Player-facing labels can remain simple.
+
+==================================================
+18. ROUTE RECORDING
+==================================================
+
+Preserve the distinction between:
+
+PLANNED ROUTE
+ATTEMPTED ROUTE
+POTTED ROUTE
+
+Do not collapse them.
+
+Ruleset legality should apply to attempted selections.
+
+Decision quality may be evaluated separately from execution.
+
+==================================================
+19. DECISION / EXECUTION INDEPENDENCE
+==================================================
+
+Preserve the Phase 1 core principle.
+
+Example:
+
+Player chooses the wrong ball but pots it successfully.
+
+Record:
+
+Decision:
+Poor
+
+Execution:
+Success
+
+Example:
+
+Player chooses the optimal ball but misses.
+
+Record:
+
+Decision:
+Optimal
+
+Execution:
+Fail
+
+Ruleset logic determines whether the choice was legal/strong.
+
+Execution remains independent.
+
+==================================================
+20. ROOT-CAUSE ENGINE MUST REMAIN RULESET-NEUTRAL WHERE POSSIBLE
+==================================================
+
+Do not rewrite the root-cause engine around rulesets.
+
+Only tactical/decision evidence that depends on rules should use ruleset context.
+
+For example:
+
+MISS
+POSITION
+SPEED
+SPIN
+
+remain primarily shared execution evidence.
+
+A tactical DECISION error may depend on the ruleset.
+
+==================================================
+21. RULESET-SPECIFIC ERROR CONTEXT
+==================================================
+
+Generic DECISION errors must not automatically map only to Pattern Recognition.
+
+Use context.
+
+Examples:
+
+Attack vs safety decision
+→ Tactical / Safety Decision-Making
+
+Problem-ball development decision
+→ Problem-Ball Identification & Management
+
+Clearance order
+→ Pattern Recognition & Clearance Planning
+
+Store the active ruleset on rules-sensitive decision observations.
+
+==================================================
+22. RULESET SWITCHING
+==================================================
+
+The player must be able to switch between:
+
+Blackball Rules
+International Rules
+
+without losing data.
+
+On switch:
+
+- preserve shared ratings
+- preserve history
+- change compatible training/scenarios
+- update rules-dependent coaching
+- maintain separate rules-sensitive evidence/confidence where appropriate
+
+Do not create a new player profile.
+
+==================================================
+23. RULESET SETTING UI
+==================================================
+
+Keep UI changes minimal.
+
+Add/retain:
+
+Onboarding:
+"Which rules do you normally play?"
+
+Profile/settings:
+"Preferred rules"
+
+Options:
+Blackball Rules
+International Rules
+
+Do not perform the premium UI redesign.
+
+==================================================
+24. RULE REFERENCE DATA
+==================================================
+
+Create structured rule-summary content sufficient for future display.
+
+Do not build a large Rules Reference screen unless one already exists.
+
+Store concise rule summaries per ruleset for:
+
+- objective
+- break
+- groups
+- legal shots
+- fouls
+- cue-ball placement
+- 8-ball/black
+- deliberate/serious fouls
+
+This is supporting data, not the main product.
+
+==================================================
+25. KNOWN LIMITATIONS DOCUMENT
+==================================================
+
+Create/update documentation identifying any rule edge cases deliberately not supported in Phase 2.
+
+Do not hide missing fidelity.
+
+Examples may include:
+
+- unusual referee interventions
+- stalemate procedures
+- rare simultaneous foul situations
+- detailed tournament administration
+
+Only list genuinely unsupported items after inspecting the implemented rule set.
+
+==================================================
+26. TESTS — KEEP A–O PASSING
+==================================================
+
+All existing Phase 1 engine tests A–O must continue to pass.
+
+Do not weaken or delete them to make Phase 2 succeed.
+
+==================================================
+27. ADD PHASE 2 TESTS P–X
+==================================================
+
+Add deterministic tests for:
+
+P. Ruleset persistence
+Selecting International Rules persists through profile serialization/storage.
+
+Q. Shared execution profile
+Switching Blackball → International does not reset Potting, Speed, Cue-Ball Control or other shared execution ratings.
+
+R. Ruleset filtering
+A Blackball-only decision scenario is never selected while International Rules is active, and vice versa.
+
+S. Legal-ball filtering
+A player is never offered an opponent-group ball as an ordinary legal clearance target unless the active rules/state explicitly permits it.
+
+T. 8-ball legality
+The 8-ball/black is unavailable until legally on under the active ruleset.
+
+U. Ruleset-dependent scenario
+One authored table state can produce different decision evaluation under Blackball and International Rules where a genuine rule difference requires it.
+
+V. Ruleset-specific confidence
+A player with strong Blackball tactical evidence but no International tactical evidence still has low/insufficient International-specific tactical confidence.
+
+W. Ruleset switch preserves history
+Changing preferred rules does not erase attempts, sessions, rating history or progress data.
+
+X. Decision/execution independence under rules
+A legal/optimal decision followed by execution failure credits decision evidence and penalizes execution separately; a poor decision followed by successful execution does the reverse.
+
+==================================================
+28. RULE ACCURACY TESTS
+==================================================
+
+In addition to P–X, add focused pure tests for every rules-layer helper introduced.
+
+For example:
+
+getLegalBalls()
+isEightBallLegal()
+group assignment
+foul consequence resolution
+cue-ball placement
+scenario evaluation
+
+Name tests clearly by ruleset.
+
+==================================================
+29. BUILD / QUALITY GATE
+==================================================
+
+Phase 2 is complete only when:
+
+- TypeScript passes
+- production build passes
+- tests A–O still pass
+- tests P–X pass
+- rules helper tests pass
+- onboarding ruleset selection works
+- changing ruleset works
+- existing training flows still work
+- incompatible scenarios are filtered
+- clearance targets obey active rules
+- local persistence preserves ruleset
+- shared player ratings survive ruleset switching
+
+==================================================
+30. GITHUB MILESTONE
+==================================================
+
+When Phase 2 passes:
+
+Commit and push to origin/main.
+
+Use milestone message:
+
+"Complete Blackball and International ruleset foundation"
+
+Confirm the remote GitHub tree includes:
+
+- both rule modules
+- ruleset types/interfaces
+- ruleset-aware scenario data
+- rules tests
+- updated app/settings flow
+- documentation of known limitations
+
+==================================================
+31. REPORT BACK AND STOP
+==================================================
+
+Report:
+
+WHAT RULES MODULES WERE ADDED
+
+BLACKBALL SUPPORT STATUS
+
+INTERNATIONAL RULES SUPPORT STATUS
+
+RULESET-SPECIFIC DIFFERENCES IMPLEMENTED
+
+RULESET SWITCHING STATUS
+
+SCENARIO FILTERING STATUS
+
+CLEARANCE LEGALITY STATUS
+
+RULESET-SPECIFIC CONFIDENCE STATUS
+
+TESTS A–O
+
+TESTS P–X
+
+RULE-HELPER TESTS
+
+TYPECHECK
+
+BUILD
+
+GITHUB COMMIT HASH
+
+KNOWN RULE LIMITATIONS
+
+STOP.
+
+Do NOT begin match/frame logging.
+
+Do NOT add a database.
+
+Do NOT add authentication.
+
+Do NOT start the visual redesign.

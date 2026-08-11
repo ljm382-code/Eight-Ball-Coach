@@ -1,0 +1,301 @@
+Continue EXACTLY from where the previous Phase 2 task stopped.
+
+Do NOT restart Phase 2 from the beginning.
+Do NOT repeat the Phase 1 audit.
+Do NOT reread or reinterpret the two uploaded Phase 2 briefs unless needed to resolve a specific implementation detail.
+
+Your previous run established that:
+
+- Phase 1 is complete and present on origin/main.
+- The restored 8-Ball Coach adaptive prototype is the baseline.
+- The two uploaded Phase 2 briefs are the approved scope.
+- Phase 2 must complete the Blackball + International Rules modular rules layer.
+- Phase 2 must also support BOTH / MIXED TRAINING as a training preference.
+- Mixed Training is NOT a third/hybrid ruleset.
+- Each rules-sensitive exercise must still run under exactly one real ruleset.
+- Shared execution skills remain shared across rulesets.
+- Rules-sensitive tactical/decision evidence may carry ruleset-specific confidence.
+- No match/frame logging, database, authentication, cloud persistence, or visual redesign is authorised in this phase.
+- Phase 1 commit exists on origin/main.
+- The working tree previously only contained the two uploaded Phase 2 brief files.
+- You had already located the WPA rules portal and were completing the authoritative IEPF International Rules source lookup.
+
+Continue from the rules-source verification and then IMPLEMENT Phase 2.
+
+==================================================
+IMMEDIATE NEXT STEPS
+==================================================
+
+1. Finish grounding the required MVP rule differences using authoritative primary sources only:
+   - WPA Blackball Rules
+   - IEPF International Rules
+
+2. Do not attempt to model every obscure referee/tournament edge case.
+
+3. Implement only the rules required for:
+   - current training scenarios
+   - clearance legality
+   - group assignment
+   - 8-ball/black eligibility
+   - foul consequences needed by current scenarios
+   - cue-ball placement needed by current scenarios
+   - ruleset-aware tactical evaluation
+   - ruleset filtering
+   - Mixed Training generation
+
+4. Where an official rule is unclear or unsupported in the current MVP:
+   - do not guess
+   - document the limitation
+   - keep the rules architecture extensible
+
+==================================================
+IMPLEMENTATION REQUIREMENTS
+==================================================
+
+Preserve the existing shared adaptive engine.
+
+Create/complete modular rules support conceptually along the lines of:
+
+rules/
+  types.ts
+  blackball.ts
+  international.ts
+  index.ts
+
+The exact filenames may differ.
+
+The UI must not hard-code legality.
+
+Create pure rules helpers such as:
+
+- getLegalBalls(...)
+- isEightBallLegal(...)
+- resolveGroupAssignment(...)
+- resolveFoulConsequences(...)
+- getCueBallPlacement(...)
+- evaluateDecision(...)
+
+or equivalent clean abstractions.
+
+==================================================
+PLAYER RULES PREFERENCE
+==================================================
+
+Support:
+
+preferredRulesMode:
+- "blackball"
+- "international"
+- "mixed"
+
+Mixed is a training preference, NOT a ruleset.
+
+For Mixed Training:
+
+- shared execution drills remain shared
+- Blackball-specific exercises must be labelled BLACKBALL
+- International-specific exercises must be labelled INTERNATIONAL RULES
+- every rules-sensitive attempt stores its active ruleset
+- ruleset-specific decision confidence is tracked separately
+- physical ratings remain shared
+- changing mode never resets player data
+
+Default mixed allocation can start near 50/50.
+
+Allow adaptive weighting later/currently where evidence supports it, while preserving a minimum allocation for both rulesets.
+
+==================================================
+RULESET-SPECIFIC CONFIDENCE
+==================================================
+
+For decision skills, support confidence/evidence views such as:
+
+Overall Tactical Decision-Making
+Blackball tactical confidence
+International tactical confidence
+
+A player may have:
+
+Overall: Established
+Blackball: High
+International: Low
+
+Do not create duplicate headline skill ratings.
+
+==================================================
+RULESET-AWARE CONTENT
+==================================================
+
+Every drill/scenario must explicitly declare whether it is:
+
+- shared / rule-neutral
+- Blackball-compatible
+- International-compatible
+- compatible with both
+
+Session generation must filter incompatible content.
+
+Decision/tactical scenarios should use authored table states and ruleset-specific evaluation where rules genuinely alter the correct decision.
+
+Do not invent artificial differences just to demonstrate ruleset support.
+
+==================================================
+CLEARANCE CORRECTIONS
+==================================================
+
+Normal clearance training must use:
+
+one player group
++
+8-ball/black
+
+Opponent-group balls may appear as obstacles but must not be offered as ordinary player-group clearance targets.
+
+Preserve:
+
+- planned route
+- attempted route
+- potted route
+- unique ball IDs
+- decision vs execution separation
+- adaptation/replanning
+- root-cause analysis
+
+The 8-ball/black must only be selectable when legally available under the active ruleset.
+
+==================================================
+MIXED TRAINING UX
+==================================================
+
+Keep UI additions minimal.
+
+Onboarding/settings should offer:
+
+Blackball Rules
+International Rules
+Both
+
+For Both, use copy similar to:
+
+"Your training will include both rulesets. Every rules-specific exercise will be clearly labelled."
+
+For rules-dependent activities, show a visible text badge:
+
+BLACKBALL
+
+or
+
+INTERNATIONAL RULES
+
+Do not rely on colour alone.
+
+Rule-neutral drills do not need a rules badge.
+
+When changing rulesets within a Mixed session, a lightweight non-blocking transition such as:
+
+"Next: International Rules"
+
+is acceptable.
+
+==================================================
+TESTING
+==================================================
+
+All existing Phase 1 tests A–O must remain passing.
+
+Add and pass the approved Phase 2 tests P–X:
+
+P. Ruleset persistence
+Q. Shared execution profile preserved across ruleset switch
+R. Ruleset filtering
+S. Legal-ball filtering
+T. 8-ball legality
+U. Genuine ruleset-dependent scenario evaluation
+V. Ruleset-specific confidence
+W. Ruleset switch preserves history
+X. Decision/execution independence under rules
+
+Also add the approved Mixed Training tests:
+
+Y. Mixed mode generates rules-sensitive content from both rulesets
+Z. Every rules-sensitive Mixed exercise has an explicit ruleset
+AA. Rule-neutral execution does not artificially affect ruleset-specific tactical confidence
+AB. Weaker International tactical evidence can increase International allocation while preserving Blackball minimum allocation
+AC. Mixed → Blackball → Mixed preserves International evidence
+AD. International exercises are never evaluated using Blackball rules and vice versa
+
+Also add focused unit tests for each pure rules helper.
+
+Do NOT weaken existing tests to make new work pass.
+
+==================================================
+QUALITY GATE
+==================================================
+
+Before Phase 2 can be considered complete:
+
+- TypeScript passes
+- production build passes
+- A–O pass
+- P–X pass
+- Y–AD pass
+- rules helper tests pass
+- onboarding supports Blackball / International / Both
+- switching mode preserves history
+- rules-specific confidence works
+- incompatible content is filtered
+- Mixed sessions contain clearly labelled rules-specific exercises
+- clearance legality comes from rules modules
+- shared execution ratings survive all rules switches
+- local persistence saves the preferred mode
+- no new backend/database/authentication exists
+- no major visual redesign has been performed
+
+==================================================
+SOURCE CONTROL
+==================================================
+
+Before substantial code changes:
+- preserve/commit the approved Phase 2 brief documentation appropriately
+- keep the Phase 1 baseline intact
+
+When Phase 2 passes all checks:
+
+commit and push to origin/main with:
+
+"Complete multi-ruleset training foundation"
+
+Verify the remote commit and source tree.
+
+==================================================
+FINAL REPORT
+==================================================
+
+When finished, report:
+
+- Rules modules added
+- Blackball support status
+- International Rules support status
+- Official rule sources used
+- Genuine rule differences implemented
+- Mixed Training status
+- Ruleset-specific confidence status
+- Ruleset switching status
+- Scenario filtering status
+- Clearance legality status
+- Tests A–O
+- Tests P–X
+- Tests Y–AD
+- Rules helper test results
+- Typecheck result
+- Build result
+- Git commit hash
+- GitHub push/sync status
+- Known unsupported rule edge cases
+
+STOP after the Phase 2 milestone.
+
+Do NOT begin match/frame logging.
+Do NOT add a database.
+Do NOT add authentication.
+Do NOT begin the premium visual redesign.

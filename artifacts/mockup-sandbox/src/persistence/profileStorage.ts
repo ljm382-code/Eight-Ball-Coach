@@ -1,4 +1,4 @@
-import { migrateProfile, newProfile, type Profile, type RuleSetId } from "../engine";
+import { migrateProfile, newProfile, type Profile, type RuleSetId, type RulesMode } from "../engine";
 
 const STORAGE_KEY = "eightball_coach_profile_v1";
 const LEGACY_KEYS = ["blackball_profile_v2", "blackball_profile_v1"];
@@ -30,6 +30,14 @@ export function clearProfile(): void {
   window.localStorage.removeItem(STORAGE_KEY);
 }
 
+/** Change the player's preferred training-rules mode without resetting any skill data. */
+export function updateRulesMode(profile: Profile, mode: RulesMode): Profile {
+  // Keep `ruleset` as the active single ruleset for non-mixed contexts / legacy code.
+  const ruleset: RuleSetId = mode === "mixed" ? profile.ruleset : mode;
+  return { ...profile, preferredRulesMode: mode, ruleset };
+}
+
+/** @deprecated Use updateRulesMode — kept for backward compatibility with any callers. */
 export function updateRuleset(profile: Profile, ruleset: RuleSetId): Profile {
-  return { ...profile, ruleset };
+  return updateRulesMode(profile, ruleset);
 }
