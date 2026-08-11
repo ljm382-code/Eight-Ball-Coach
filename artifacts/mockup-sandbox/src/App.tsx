@@ -24,22 +24,40 @@ import { getLegalBalls, isEightBallLegal } from "./rules";
 // ─── View types ────────────────────────────────────────────────────────────────
 type View = "onboarding" | "assessment" | "provisional" | "dashboard" | "pickTime" | "session" | "summary" | "progress" | "library" | "settings" | "matches" | "matchSetup" | "matchActive" | "matchLogFrame" | "matchEditFrame" | "matchComplete" | "matchDetail";
 
-// ─── Design tokens ─────────────────────────────────────────────────────────────
+// ─── Design tokens — Sage-Teal Balanced ───────────────────────────────────────
+const COLORS = {
+  background:    "#F2F5F1",
+  surface:       "#FFFFFF",
+  surfaceTeal:   "#EAF3F1",
+  surfaceSage:   "#EEF3EF",
+  primary:       "#2E7F7C",
+  primaryDark:   "#1F4F4C",
+  sage:          "#86A695",
+  slateBlue:     "#527A8E",
+  gold:          "#C79A38",
+  text:          "#1E2B25",
+  textSecondary: "#6B7874",
+  border:        "#DDE4E0",
+  success:       "#2F7D4C",
+  danger:        "#B84A3A",
+} as const;
+
+// Shorthand alias — keeps all existing C.xxx component references working
 const C = {
-  bg:     "#0d1a14",
-  panel:  "#152019",
-  panel2: "#1b2c22",
-  panel3: "#223528",
-  line:   "#2b4035",
-  ink:    "#ede9de",
-  dim:    "#8aaa99",
-  muted:  "#607a6e",
-  brass:  "#c49b58",
-  brassD: "#9c7540",
-  chalk:  "#5d99b2",
-  rust:   "#a04840",
-  green:  "#3a7758",
-  greenD: "#285440",
+  bg:     COLORS.background,
+  panel:  COLORS.surface,
+  panel2: COLORS.surfaceTeal,
+  panel3: COLORS.surfaceSage,
+  line:   COLORS.border,
+  ink:    COLORS.text,
+  dim:    COLORS.textSecondary,
+  muted:  COLORS.textSecondary,
+  brass:  COLORS.primary,
+  brassD: COLORS.primaryDark,
+  chalk:  COLORS.slateBlue,
+  rust:   COLORS.danger,
+  green:  COLORS.success,
+  greenD: "#1F5C35",
 };
 const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 const R  = { sm: 8, md: 12, lg: 16, xl: 24 } as const;
@@ -130,7 +148,7 @@ const HIDE_NAV: View[] = ["session", "assessment"];
 function Card({ children, style, onClick }: { children: ReactNode; style?: CSSProperties; onClick?: () => void }) {
   const base: CSSProperties = {
     background: C.panel, border: `1px solid ${C.line}`, borderRadius: R.lg,
-    padding: SP.lg, transition: "border-color .15s",
+    boxShadow: "0 1px 4px rgba(30,43,37,0.07)", padding: SP.lg, transition: "border-color .15s",
   };
   return onClick
     ? <button onClick={onClick} style={{ ...base, cursor: "pointer", textAlign: "left", width: "100%", ...style }}>{children}</button>
@@ -145,9 +163,9 @@ type ButtonVariant = "primary" | "success" | "danger" | "default" | "ghost" | "o
 function Btn({ children, onClick, variant = "default", disabled = false, style, type = "button" }:
   { children: ReactNode; onClick?: () => void; variant?: ButtonVariant; disabled?: boolean; style?: CSSProperties; type?: "button" | "submit" }) {
   const variantStyles: Record<ButtonVariant, CSSProperties> = {
-    primary: { background: C.brass,  color: C.bg,  border: "none" },
-    success: { background: C.green,  color: C.ink, border: "none" },
-    danger:  { background: C.rust,   color: C.ink, border: "none" },
+    primary: { background: C.brass,  color: "#FFFFFF", border: "none" },
+    success: { background: C.green,  color: "#FFFFFF", border: "none" },
+    danger:  { background: C.rust,   color: "#FFFFFF", border: "none" },
     default: { background: C.panel2, color: C.ink, border: `1px solid ${C.line}` },
     ghost:   { background: "transparent", color: C.dim, border: "none" },
     outline: { background: "transparent", color: C.brass, border: `1px solid ${C.brass}` },
@@ -168,10 +186,13 @@ function ProgressBar({ value, color = C.brass, height = 6 }: { value: number; co
 }
 
 function RulesBadge({ ruleset, style }: { ruleset: RuleSetId; style?: CSSProperties }) {
+  const bbColor  = COLORS.gold;
+  const intColor = COLORS.slateBlue;
+  const col = ruleset === "blackball" ? bbColor : intColor;
   return <span style={{
-    background: ruleset === "blackball" ? `${C.brass}22` : `${C.chalk}22`,
-    border: `1px solid ${ruleset === "blackball" ? C.brass : C.chalk}`,
-    borderRadius: R.sm, color: ruleset === "blackball" ? C.brass : C.chalk,
+    background: `${col}22`,
+    border: `1px solid ${col}`,
+    borderRadius: R.sm, color: col,
     display: "inline-block", fontFamily: "'IBM Plex Mono', monospace",
     fontSize: 9, fontWeight: 700, letterSpacing: 1.5, padding: "2px 8px", textTransform: "uppercase", ...style,
   }}>{rulesetBadgeLabel(ruleset)}</span>;
@@ -230,7 +251,7 @@ function PoolTable({
     {/* Cushion rail */}
     <rect x={pW * 0.35} y={pW * 0.35} width={width - pW * 0.7} height={h - pW * 0.7} rx={pW * 0.5} fill="#3d2510" />
     {/* Baize surface */}
-    <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#1a4d33" />
+    <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#2A8790" />
     {/* Baize subtle grain */}
     <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="url(#baize)" opacity={0.08} />
     {/* Centre line (faint) */}
@@ -270,7 +291,7 @@ function simpleBalls(specs: { color?: string }[], tableWidth = 280): BallSpec[] 
   const startX = (bX + 18) / tableWidth;
   const stepX  = 22 / tableWidth;
   const centerY = (bY + bH / 2) / tableH;
-  return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? C.chalk, highlight: true }));
+  return specs.map((s, i) => ({ x: startX + stepX * i, y: centerY, color: s.color ?? "#5d99b2", highlight: true }));
 }
 
 /** Diagram for execution drills — two balls setup */
@@ -278,7 +299,7 @@ function ExecDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
     { x: 0.35, y: 0.5, color: "#e8e8e0", highlight: true },
-    { x: 0.62, y: 0.45, color: C.chalk, highlight: true },
+    { x: 0.62, y: 0.45, color: "#5d99b2", highlight: true },
   ]} />;
 }
 
@@ -287,7 +308,7 @@ function DecisionDrillDiagram() {
   const w = 260;
   return <PoolTable width={w} balls={[
     { x: 0.3,  y: 0.5,  color: "#e8e8e0", highlight: true },
-    { x: 0.55, y: 0.38, color: C.brass,   highlight: true },
+    { x: 0.55, y: 0.38, color: "#c49b58", highlight: true },
     { x: 0.58, y: 0.62, color: "#c43333", highlight: true },
     { x: 0.75, y: 0.45, color: "#111111", highlight: true },
   ]} />;
@@ -420,7 +441,7 @@ function Onboarding({ onChoose }: { onChoose: (mode: RulesMode) => void }) {
         ["4", "Improve", "Your profile sharpens as evidence builds."],
         ["5", "Repeat",  "The cycle adapts as you improve."],
       ].map(([n, title, body]) => <div key={n} style={{ display: "flex", gap: SP.lg, marginBottom: SP.xl }}>
-        <div style={{ background: C.brass, borderRadius: "50%", color: C.bg, flexShrink: 0, fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, height: 32, letterSpacing: 0.5, width: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>{n}</div>
+        <div style={{ background: C.brass, borderRadius: "50%", color: "#FFFFFF", flexShrink: 0, fontFamily: "'Bebas Neue', sans-serif", fontSize: 15, height: 32, letterSpacing: 0.5, width: 32, display: "flex", alignItems: "center", justifyContent: "center" }}>{n}</div>
         <div>
           <div style={{ color: C.ink, fontWeight: 600, marginBottom: 2 }}>{title}</div>
           <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{body}</div>
@@ -578,7 +599,7 @@ function Dashboard({ profile, matches, onStart, onNav }: {
       return <Card style={{ marginBottom: SP.lg }} onClick={() => onNav("matches")}>
         <SectionLabel>Recent Match</SectionLabel>
         <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1, color: won ? C.brass : C.rust }}>{sc.player} – {sc.opponent}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 28, letterSpacing: 1, color: won ? C.green : C.rust }}>{sc.player} – {sc.opponent}</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
             <RulesBadge ruleset={recentMatch.ruleset} />
             <span style={{ color: won ? C.green : C.rust, fontSize: 11, fontWeight: 700 }}>{won ? "WON" : "LOST"}</span>
@@ -675,7 +696,7 @@ function ErrorGrid({ onPick }: { onPick: (code: string) => void }) {
 const TIER_LABELS: Record<string, { label: string; color: string }> = {
   optimal:    { label: "Strong Choice",   color: C.green },
   acceptable: { label: "Reasonable",      color: C.chalk },
-  highrisk:   { label: "High Risk",       color: C.brass },
+  highrisk:   { label: "High Risk",       color: COLORS.gold },
   poor:       { label: "Poor Choice",     color: C.rust },
 };
 
@@ -885,7 +906,7 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
 
   if (adaptationOpen) return <Card>
     <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>
-      <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, marginBottom: SP.xs }}>POSITION LOST</div>
+      <div style={{ color: COLORS.gold, fontFamily: "'Bebas Neue', sans-serif", fontSize: 20, letterSpacing: 1, marginBottom: SP.xs }}>POSITION LOST</div>
       <div style={{ color: C.dim, fontSize: 14 }}>What's your plan from here?</div>
     </div>
     <div style={{ display: "grid", gap: SP.sm }}>
@@ -1033,7 +1054,7 @@ function Summary({ summary, onDone, onProgress }: {
 
     {summary.adaptations.length > 0 && <Card style={{ marginBottom: SP.lg }}>
       <SectionLabel>Adaptation noted</SectionLabel>
-      <p style={{ color: C.brass, lineHeight: 1.6, margin: 0, fontSize: 14 }}>You made a decision after losing position. That choice is credited to the correct decision skill, separately from execution.</p>
+      <p style={{ color: COLORS.gold, lineHeight: 1.6, margin: 0, fontSize: 14 }}>You made a decision after losing position. That choice is credited to the correct decision skill, separately from execution.</p>
     </Card>}
 
     <Card style={{ marginBottom: SP.xl }}>
@@ -1173,11 +1194,11 @@ function LibraryView({ profile }: { profile: Profile }) {
 
   return <div>
     {/* Filter tabs */}
-    <div style={{ background: C.panel2, border: `1px solid ${C.line}`, borderRadius: R.md, display: "flex", marginBottom: SP.lg, padding: 3 }}>
+    <div style={{ background: C.line, border: `1px solid ${C.line}`, borderRadius: R.md, display: "flex", marginBottom: SP.lg, padding: 3 }}>
       {(["all", "execution", "decision"] as const).map((f) => <button key={f} onClick={() => setFilter(f)} style={{
-        background: filter === f ? C.panel3 : "transparent",
+        background: filter === f ? COLORS.surface : "transparent",
         border: filter === f ? `1px solid ${C.line}` : "1px solid transparent",
-        borderRadius: R.sm, color: filter === f ? C.ink : C.dim, cursor: "pointer",
+        borderRadius: R.sm, color: filter === f ? COLORS.primary : C.dim, cursor: "pointer",
         flex: 1, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: filter === f ? 600 : 400,
         padding: "8px 4px", textTransform: "capitalize",
       }}>{f}</button>)}
@@ -1186,7 +1207,7 @@ function LibraryView({ profile }: { profile: Profile }) {
     {groups.map(({ skill, drills }) => <Card key={skill.id} style={{ marginBottom: SP.md }}>
       <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.md }}>
         <SectionLabel>{skill.name}</SectionLabel>
-        {skill.priority && <span style={{ background: `${C.brass}22`, border: `1px solid ${C.brassD}`, borderRadius: R.sm, color: C.brass, fontSize: 9, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, padding: "2px 7px" }}>PRIORITY</span>}
+        {skill.priority && <span style={{ background: `${COLORS.gold}22`, border: `1px solid ${COLORS.gold}`, borderRadius: R.sm, color: COLORS.gold, fontSize: 9, fontFamily: "'IBM Plex Mono', monospace", letterSpacing: 1, padding: "2px 7px" }}>PRIORITY</span>}
       </div>
       {drills.map((d, i) => <div key={d.id} style={{ borderBottom: i < drills.length - 1 ? `1px solid ${C.line}` : "none", padding: "10px 0" }}>
         <div style={{ alignItems: "center", display: "flex", gap: SP.sm, marginBottom: 3 }}>
@@ -1271,10 +1292,10 @@ function MatchHistoryView({ matches, activeMatchId, onNew, onContinue, onDetail 
 
   return <div>
     {/* Active match banner */}
-    {activeMatch && <Card style={{ marginBottom: SP.lg, border: `1px solid ${C.brass}` }}>
+    {activeMatch && <Card style={{ marginBottom: SP.lg, border: `1px solid ${COLORS.gold}` }}>
       <SectionLabel>Active Match</SectionLabel>
       <div style={{ alignItems: "baseline", display: "flex", gap: SP.sm, marginBottom: SP.md }}>
-        <div style={{ color: C.brass, fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, letterSpacing: 1, lineHeight: 1 }}>
+        <div style={{ color: COLORS.gold, fontFamily: "'Bebas Neue', sans-serif", fontSize: 34, letterSpacing: 1, lineHeight: 1 }}>
           {frameScore(activeMatch).player} – {frameScore(activeMatch).opponent}
         </div>
         <RulesBadge ruleset={activeMatch.ruleset} />
@@ -1298,7 +1319,7 @@ function MatchHistoryView({ matches, activeMatchId, onNew, onContinue, onDetail 
       const won = sc.player > sc.opponent;
       return <Card key={m.id} onClick={() => onDetail(m.id)} style={{ marginBottom: SP.md, cursor: "pointer" }}>
         <div style={{ alignItems: "center", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
-          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 1, color: won ? C.brass : C.rust, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
+          <div style={{ fontFamily: "'Bebas Neue', sans-serif", fontSize: 32, letterSpacing: 1, color: won ? C.green : C.rust, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: SP.xs }}>
             <RulesBadge ruleset={m.ruleset} />
             <div style={{ display: "flex", gap: SP.xs }}>
@@ -1527,7 +1548,7 @@ function MatchCompleteView({ summary, onDone }: { summary: MatchSummary; onDone:
   return <div>
     <div style={{ marginBottom: SP.xl, textAlign: "center" }}>
       <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11, letterSpacing: 1.5, marginBottom: SP.md }}>FINAL SCORE</div>
-      <div style={{ color: won ? C.brass : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, letterSpacing: 3, lineHeight: 1 }}>
+      <div style={{ color: won ? C.green : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 64, letterSpacing: 3, lineHeight: 1 }}>
         {summary.playerFrames} – {summary.opponentFrames}
       </div>
       <div style={{ color: won ? C.green : C.rust, fontSize: 13, fontWeight: 700, marginTop: SP.sm }}>{won ? "MATCH WON" : "MATCH LOST"}</div>
@@ -1572,7 +1593,7 @@ function MatchDetailView({ match, onDelete, onBack }: { match: Match; onDelete: 
 
     <Card style={{ marginBottom: SP.lg }}>
       <div style={{ alignItems: "flex-start", display: "flex", justifyContent: "space-between", marginBottom: SP.sm }}>
-        <div style={{ color: won ? C.brass : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 44, letterSpacing: 1.5, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
+        <div style={{ color: won ? C.green : C.rust, fontFamily: "'Bebas Neue', sans-serif", fontSize: 44, letterSpacing: 1.5, lineHeight: 1 }}>{sc.player} – {sc.opponent}</div>
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: SP.xs }}>
           <RulesBadge ruleset={match.ruleset} />
           <span style={{ background: `${C.panel2}`, border: `1px solid ${C.line}`, borderRadius: R.sm, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 9, padding: "2px 7px", textTransform: "uppercase" }}>{match.competitionType}</span>
