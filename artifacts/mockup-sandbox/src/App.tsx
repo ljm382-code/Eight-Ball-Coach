@@ -8,6 +8,7 @@ import {
   buildSummary, classifyErrorChain, confidenceLabel, computeConfidence, computeRulesetConfidence,
   decisionValue, evaluatePlannedRoute, generateSession, isStale, limitingFactor,
   newProfile, sessionWeighting, trendFor,
+  validatePlayableDrillGeometry, diagramSignature,
   type AimLine, type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
   type TableMarkings, type TrainingDiagram,
@@ -2015,7 +2016,71 @@ function EditFrameView({ frame, match, onSave, onCancel }: {
 }
 
 // ─── Root ──────────────────────────────────────────────────────────────────────
+// ─── Dev-only: Training Diagram Audit ─────────────────────────────────────────
+/** Renders every drill + clearance with the real PoolTable renderer.
+ *  Accessible only in development via ?__audit in the URL.
+ *  Green border = geometry valid; red border = validation errors shown below table. */
+function TrainingDiagramAudit() {
+  const allItems = [
+    ...DRILLS.map(d => ({ ...d, itemType: "drill" as const })),
+    ...CLEARANCES.map(c => ({ ...c, itemType: "clearance" as const })),
+  ];
+  const validCount = allItems.filter(item => validatePlayableDrillGeometry(item).valid).length;
+  const sigs = allItems.map(item => ({ id: item.id, sig: diagramSignature(item.diagram) }));
+  const sigCounts = new Map<string, number>();
+  for (const { sig } of sigs) sigCounts.set(sig, (sigCounts.get(sig) ?? 0) + 1);
+
+  return (
+    <div style={{ background: "#111", minHeight: "100vh", padding: "24px", fontFamily: "IBM Plex Mono, monospace" }}>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ color: "#F2F0E8", fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
+          Training Diagram Audit — Phase 4.8
+        </div>
+        <div style={{ color: "#aaa", fontSize: 12 }}>
+          {validCount}/{allItems.length} items pass geometry validation
+          {validCount < allItems.length && <span style={{ color: "#f44" }}> — {allItems.length - validCount} FAILING</span>}
+        </div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>
+        {allItems.map(item => {
+          const vResult = validatePlayableDrillGeometry(item);
+          const sig = diagramSignature(item.diagram);
+          const isDupe = (sigCounts.get(sig) ?? 0) > 1;
+          const borderColor = !vResult.valid ? "#f44336" : isDupe ? "#FF9800" : "#2F7D4C";
+          return (
+            <div key={item.id} style={{
+              width: 280, background: "#1e1e1e", borderRadius: 8,
+              border: `2px solid ${borderColor}`, overflow: "hidden",
+            }}>
+              <PoolTable width={276} diagram={item.diagram} />
+              <div style={{ padding: "8px 10px 10px" }}>
+                <div style={{
+                  color: !vResult.valid ? "#f44336" : isDupe ? "#FF9800" : "#4caf50",
+                  fontSize: 10, fontWeight: 700, marginBottom: 3,
+                }}>
+                  {!vResult.valid ? `✗ ${vResult.errors[0]}` : isDupe ? "⚠ DUPLICATE SIG" : "✓ VALID"}
+                </div>
+                <div style={{ color: "#F2F0E8", fontSize: 12, fontWeight: 600 }}>{item.id}</div>
+                <div style={{ color: "#aaa", fontSize: 11, marginTop: 1 }}>{item.name}</div>
+                <div style={{ color: "#666", fontSize: 10, marginTop: 2 }}>
+                  {item.itemType === "drill"
+                    ? `${item.skillId} · d${item.difficulty}`
+                    : `clearance · stage ${item.clearanceStage ?? "?"}`}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
+  // Dev-only: audit screen accessible via ?__audit in URL
+  if (import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).has("__audit")) {
+    return <TrainingDiagramAudit />;
+  }
   const [profile, setProfile]       = useState<Profile>(() => loadProfile());
   const [view, setView]             = useState<View>(() => { const p = loadProfile(); return p.assessmentComplete ? "dashboard" : "onboarding"; });
   const [generated, setGenerated]   = useState<GeneratedSession | null>(null);

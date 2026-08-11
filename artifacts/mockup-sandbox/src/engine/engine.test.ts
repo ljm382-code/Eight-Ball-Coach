@@ -19,6 +19,8 @@ import {
   decisionValue, evaluatePlannedRoute, generateSession, getEnglishPoolTableGeometry,
   limitingFactor, mixedRulesetSplit,
   newProfile, selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
+  validatePlayableDrillGeometry, diagramSignature, diagramDistance,
+  PLAYABLE_DRILLS, PLAYABLE_CLEARANCES,
   type Attempt, type ClearanceRouteState, type DiagramVisualRequirement, type LimitingFactors,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type SkillId, type TableMarkings,
 } from "./index";
@@ -2487,4 +2489,242 @@ const GEO = getEnglishPoolTableGeometry(260);
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, and Phase 4.7 FW–GP all passed ✓");
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 4.8 — GQ–HQ: Geometry completeness contract
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── GQ: Every DRILL has an authored diagram ────────────────────────────────
+{
+  for (const d of DRILLS) {
+    assert.ok(d.diagram, `GQ: drill "${d.id}" must have an authored TrainingDiagram`);
+  }
+}
+
+// ── GR: Every CLEARANCE has an authored diagram ───────────────────────────
+{
+  for (const c of CLEARANCES) {
+    assert.ok(c.diagram, `GR: clearance "${c.id}" must have an authored TrainingDiagram`);
+  }
+}
+
+// ── GS: Every DRILL has a visualContract declared ─────────────────────────
+{
+  for (const d of DRILLS) {
+    assert.ok(d.visualContract, `GS: drill "${d.id}" must declare visualContract`);
+  }
+}
+
+// ── GT: Every CLEARANCE has a visualContract declared ─────────────────────
+{
+  for (const c of CLEARANCES) {
+    assert.ok(c.visualContract, `GT: clearance "${c.id}" must declare visualContract`);
+  }
+}
+
+// ── GU: validatePlayableDrillGeometry passes for all DRILLS ───────────────
+{
+  for (const d of DRILLS) {
+    const { valid, errors } = validatePlayableDrillGeometry(d);
+    assert.ok(valid, `GU: drill "${d.id}" failed geometry validation — ${errors.join("; ")}`);
+  }
+}
+
+// ── GV: validatePlayableDrillGeometry passes for all CLEARANCES ───────────
+{
+  for (const c of CLEARANCES) {
+    const { valid, errors } = validatePlayableDrillGeometry(c);
+    assert.ok(valid, `GV: clearance "${c.id}" failed geometry validation — ${errors.join("; ")}`);
+  }
+}
+
+// ── GW: Every drill/clearance diagram has exactly one cue ball ────────────
+{
+  for (const item of [...DRILLS, ...CLEARANCES]) {
+    const cueBalls = item.diagram!.balls.filter(b => b.group === "cue");
+    assert.equal(cueBalls.length, 1,
+      `GW: "${item.id}" must have exactly 1 cue ball, found ${cueBalls.length}`);
+  }
+}
+
+// ── GX: PLAYABLE_DRILLS contains all DRILLS — none filtered out ───────────
+{
+  if (PLAYABLE_DRILLS.length !== DRILLS.length) {
+    const missing = DRILLS.filter(d => !PLAYABLE_DRILLS.find(p => p.id === d.id));
+    assert.fail(`GX: PLAYABLE_DRILLS (${PLAYABLE_DRILLS.length}) must equal DRILLS (${DRILLS.length}) — invalid: ${missing.map(d => d.id).join(", ")}`);
+  }
+}
+
+// ── GY: PLAYABLE_CLEARANCES contains all CLEARANCES ──────────────────────
+{
+  assert.equal(PLAYABLE_CLEARANCES.length, CLEARANCES.length,
+    `GY: PLAYABLE_CLEARANCES (${PLAYABLE_CLEARANCES.length}) must equal CLEARANCES (${CLEARANCES.length}) after Phase 4.8`);
+}
+
+// ── GZ: Total playable drill count is 38 (37 original + 1 new pbd3) ───────
+{
+  assert.equal(DRILLS.length, 38,
+    `GZ: DRILLS must contain 38 entries after Phase 4.8 (got ${DRILLS.length})`);
+}
+
+// ── HA: pbd3 "Late-Development Risk" is the new drill ────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3");
+  assert.ok(pbd3, "HA: pbd3 drill must exist");
+  assert.equal(pbd3!.difficulty, 6, "HA: pbd3 difficulty must be 6");
+  assert.equal(pbd3!.type, "decision", "HA: pbd3 must be a decision drill");
+  assert.ok(pbd3!.options && pbd3!.options.length === 4, "HA: pbd3 must have 4 options");
+}
+
+// ── HB: Every potting drill with aimLine contract resolves aim lines ───────
+{
+  for (const d of DRILLS.filter(x => x.visualContract?.aimLine)) {
+    const result = buildAimLinePrimitives(d.diagram!, GEO);
+    assert.equal(result.errors.length, 0,
+      `HB: "${d.id}" aimLines must resolve — ${result.errors.join("; ")}`);
+    assert.ok(result.segments.length > 0,
+      `HB: "${d.id}" must produce at least one aim segment`);
+  }
+}
+
+// ── HC: Every drill with targetPocket contract has a valid pocket id ───────
+{
+  const validPocketIds: PocketId[] = ["topLeft","topMiddle","topRight","bottomLeft","bottomMiddle","bottomRight"];
+  for (const d of DRILLS.filter(x => x.visualContract?.targetPocket)) {
+    assert.ok(d.diagram?.targetPocket && validPocketIds.includes(d.diagram.targetPocket),
+      `HC: "${d.id}" must have a valid targetPocket (got "${d.diagram?.targetPocket}")`);
+  }
+}
+
+// ── HD: Every drill with targetZone contract has positive dimensions ───────
+{
+  for (const d of DRILLS.filter(x => x.visualContract?.targetZone)) {
+    const tz = d.diagram?.targetZone;
+    assert.ok(tz && tz.width > 0 && tz.height > 0,
+      `HD: "${d.id}" targetZone must have positive width & height (got w=${tz?.width} h=${tz?.height})`);
+  }
+}
+
+// ── HE: Break drills have ≥ 15 non-cue balls (full rack) ──────────────────
+{
+  for (const d of DRILLS.filter(x => x.diagram?.rack)) {
+    const rackBalls = d.diagram!.balls.filter(b => b.group !== "cue");
+    assert.ok(rackBalls.length >= 15,
+      `HE: break drill "${d.id}" must have ≥ 15 rack balls (found ${rackBalls.length})`);
+  }
+}
+
+// ── HF: Break drill cue balls are in the baulk region (x > BAULK_FRACTION×100) ─
+{
+  for (const d of DRILLS.filter(x => x.diagram?.rack)) {
+    const cb = d.diagram!.balls.find(b => b.group === "cue")!;
+    assert.ok(cb.x > BAULK_FRACTION * 100,
+      `HF: break drill "${d.id}" CB.x (${cb.x}) must be in baulk half (> ${(BAULK_FRACTION * 100).toFixed(1)})`);
+  }
+}
+
+// ── HG: All pattern drill diagrams have unique signatures ─────────────────
+{
+  const patDrills = DRILLS.filter(d => d.skillId === "pattern");
+  const sigs = patDrills.map(d => diagramSignature(d.diagram));
+  const unique = new Set(sigs);
+  assert.equal(unique.size, patDrills.length,
+    `HG: pattern drills must have unique signatures (found ${unique.size} unique among ${patDrills.length})`);
+}
+
+// ── HH: All problemBallDec drill diagrams have unique signatures ───────────
+{
+  const pbdDrills = DRILLS.filter(d => d.skillId === "problemBallDec");
+  const sigs = pbdDrills.map(d => diagramSignature(d.diagram));
+  const unique = new Set(sigs);
+  assert.equal(unique.size, pbdDrills.length,
+    `HH: problemBallDec drills must have unique signatures (found ${unique.size} unique among ${pbdDrills.length})`);
+}
+
+// ── HI: All tactical drill diagrams have unique signatures ────────────────
+{
+  const tacDrills = DRILLS.filter(d => d.skillId === "tactical");
+  const sigs = tacDrills.map(d => diagramSignature(d.diagram));
+  const unique = new Set(sigs);
+  assert.equal(unique.size, tacDrills.length,
+    `HI: tactical drills must have unique signatures (found ${unique.size} unique among ${tacDrills.length})`);
+}
+
+// ── HJ: All clearance diagrams have unique signatures ─────────────────────
+{
+  const sigs = CLEARANCES.map(c => diagramSignature(c.diagram));
+  const unique = new Set(sigs);
+  assert.equal(unique.size, CLEARANCES.length,
+    `HJ: clearances must have unique diagrams (found ${unique.size} unique among ${CLEARANCES.length})`);
+}
+
+// ── HK: All execution drill diagrams within same skill have unique signatures ─
+{
+  const execSkills = [...new Set(DRILLS.filter(d => d.type === "execution").map(d => d.skillId))];
+  for (const skillId of execSkills) {
+    const family = DRILLS.filter(d => d.skillId === skillId && d.type === "execution");
+    const sigs = family.map(d => diagramSignature(d.diagram));
+    const unique = new Set(sigs);
+    assert.equal(unique.size, family.length,
+      `HK: ${skillId} execution drills must have unique signatures (found ${unique.size} unique among ${family.length})`);
+  }
+}
+
+// ── HL: diagramSignature is stable (same input → same output) ─────────────
+{
+  const d = DRILLS.find(x => x.id === "pot1")!;
+  assert.equal(diagramSignature(d.diagram), diagramSignature(d.diagram),
+    "HL: diagramSignature must be deterministic for the same input");
+}
+
+// ── HM: diagramDistance returns 0 for identical diagrams ──────────────────
+{
+  const d = DRILLS.find(x => x.id === "pot1")!;
+  assert.equal(diagramDistance(d.diagram, d.diagram), 0,
+    "HM: diagramDistance must return 0 for identical diagrams");
+}
+
+// ── HN: diagramDistance returns > 0 for different drills ─────────────────
+{
+  const pot1 = DRILLS.find(x => x.id === "pot1")!;
+  const pot2 = DRILLS.find(x => x.id === "pot2")!;
+  assert.ok(diagramDistance(pot1.diagram, pot2.diagram) > 0,
+    "HN: diagramDistance must be > 0 for distinct drill diagrams");
+}
+
+// ── HO: diagramDistance returns 1 for null vs non-null ────────────────────
+{
+  const d = DRILLS.find(x => x.id === "pot1")!;
+  assert.equal(diagramDistance(null, d.diagram), 1,
+    "HO: diagramDistance(null, diagram) must return 1");
+  assert.equal(diagramDistance(null, null), 0,
+    "HO: diagramDistance(null, null) must return 0");
+}
+
+// ── HP: generateSession only returns drills that pass geometry validation ──
+{
+  const profile = newProfile("blackball");
+  for (let i = 0; i < 10; i++) {
+    const session = generateSession(profile, 30);
+    for (const item of session.drills) {
+      if (item.type === "execution" || item.type === "decision") {
+        const { valid, errors } = validatePlayableDrillGeometry(item as typeof DRILLS[number]);
+        assert.ok(valid,
+          `HP: generateSession returned invalid drill "${item.id}" — ${errors.join("; ")}`);
+      }
+    }
+  }
+}
+
+// ── HQ: Total drill+clearance count matches expected Phase 4.8 totals ─────
+{
+  assert.equal(DRILLS.length, 38,
+    `HQ: DRILLS must be 38 after Phase 4.8 (got ${DRILLS.length})`);
+  assert.equal(CLEARANCES.length, 3,
+    `HQ: CLEARANCES must be 3 after Phase 4.8 (got ${CLEARANCES.length})`);
+  assert.equal(PLAYABLE_DRILLS.length, 38,
+    `HQ: PLAYABLE_DRILLS must be 38 after Phase 4.8 (got ${PLAYABLE_DRILLS.length})`);
+  assert.equal(PLAYABLE_CLEARANCES.length, 3,
+    `HQ: PLAYABLE_CLEARANCES must be 3 after Phase 4.8 (got ${PLAYABLE_CLEARANCES.length})`);
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, Phase 4.7 FW–GP, and Phase 4.8 GQ–HQ all passed ✓");

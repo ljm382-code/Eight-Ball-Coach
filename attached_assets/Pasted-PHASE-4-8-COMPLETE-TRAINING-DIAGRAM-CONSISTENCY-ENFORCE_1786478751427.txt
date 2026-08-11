@@ -1,0 +1,1303 @@
+PHASE 4.8 — COMPLETE TRAINING-DIAGRAM CONSISTENCY ENFORCEMENT
+
+The current 8-Ball Coach app still has inconsistent training diagrams.
+
+Some drills now have correct:
+- English table geometry
+- baulk line / D
+- target zones
+- aim lines
+- target-pocket indicators
+
+while other drills still display generic tables with missing geometry.
+
+THIS MUST END.
+
+8-Ball Coach is a TRAINING APPLICATION.
+
+Every drill shown to a player must have a diagram that accurately represents the exact setup, objective, shot geometry and success criteria of that drill.
+
+Do NOT add new product features.
+Do NOT redesign navigation or theme.
+Do NOT change adaptive rating logic.
+Do NOT change confidence logic.
+Do NOT change match intelligence.
+Do NOT change rules penalties.
+Do NOT change Mixed Training weighting.
+Do NOT change persistence.
+
+This phase is ONLY about making ALL drill diagrams complete, authored, consistent and impossible to fall back to generic misleading geometry.
+
+==================================================
+1. ROOT CAUSE TO ELIMINATE
+==================================================
+
+The current App.tsx execution path contains logic equivalent to:
+
+if (drill.diagram)
+  render <PoolTable diagram={drill.diagram} />
+else
+  render <ExecDrillDiagram />
+
+and decision drills similarly fall back to:
+
+<DecisionDrillDiagram />
+
+This is no longer acceptable for training content.
+
+Generic visual fallbacks are the primary reason some tables have complete geometry while others do not.
+
+==================================================
+2. NEW NON-NEGOTIABLE RULE
+==================================================
+
+ANY drill that can be:
+
+- assessmentEligible
+- assigned by generateSession()
+- shown in Drill Library as playable
+- used in a clearance
+- used in a decision exercise
+
+MUST have a complete authored TrainingDiagram.
+
+No authored diagram = drill cannot be presented to the player.
+
+==================================================
+3. REMOVE GENERIC TRAINING FALLBACKS
+==================================================
+
+For real training/assessment content:
+
+REMOVE the use of:
+
+ExecDrillDiagram
+DecisionDrillDiagram
+
+as player-facing fallback renderers.
+
+They may remain only for:
+- internal component preview
+- developer story/demo
+- non-playable placeholder
+
+They must NEVER appear in an assessment or generated training session.
+
+==================================================
+4. FAIL LOUDLY IN DEVELOPMENT
+==================================================
+
+If a playable drill has no valid diagram:
+
+DO NOT silently display a generic table.
+
+In development:
+
+throw/log a clear error such as:
+
+"Playable drill pot2 has no complete TrainingDiagram"
+
+In production:
+
+exclude that drill from assignment and surface a safe unavailable-state if somehow reached.
+
+Never display fake geometry.
+
+==================================================
+5. CREATE ONE GEOMETRY COMPLETENESS CONTRACT
+==================================================
+
+Create a pure helper:
+
+validatePlayableDrillGeometry(drill)
+
+Return:
+
+{
+  valid: boolean,
+  errors: string[]
+}
+
+This must validate the ACTUAL requirements of the drill.
+
+Not merely:
+
+diagram exists
+
+but:
+
+diagram contains everything its training content requires.
+
+==================================================
+6. VISUAL REQUIREMENT TYPES
+==================================================
+
+Standardise requirements such as:
+
+"cueBall"
+"objectBall"
+"targetPocket"
+"aimLine"
+"cueRoute"
+"targetZone"
+"baulkLine"
+"dSemicircle"
+"blackSpot"
+"rack"
+"problemBall"
+"obstacle"
+"trainingLabels"
+"playerGroup"
+
+Each drill explicitly declares its requirements.
+
+Example:
+
+requiresVisuals: [
+  "cueBall",
+  "objectBall",
+  "targetPocket",
+  "aimLine"
+]
+
+==================================================
+7. EVERY PLAYABLE EXECUTION DRILL MUST BE AUTHORED
+==================================================
+
+Audit ALL execution drills, not only assessment drills.
+
+This includes all current families:
+
+POTTING
+- pot1
+- pot2
+- pot3
+- pot4
+
+SPEED / TOUCH
+- spd1
+- spd2
+- spd3
+- spd4
+
+POSITIONAL EXECUTION
+- pos1
+- pos2
+- pos3
+- pos4
+
+CUE-BALL CONTROL
+- cue1
+- cue2
+- cue3
+
+PROBLEM-BALL EXECUTION
+- pbe1
+- pbe2
+- pbe3
+
+BREAK
+- brk1
+- brk2
+- brk3
+
+BLACK-BALL FINISHING
+- blk1
+- blk2
+- blk3
+
+and any additional current execution drills.
+
+EVERY one must receive a purpose-built diagram.
+
+==================================================
+8. POT DRILL GEOMETRY STANDARD
+==================================================
+
+Every potting drill must show:
+
+- exactly one white cue ball
+- exact object ball(s)
+- intended pocket
+- object-ball potting line
+- cue-to-object aim segment when instructional
+- table positions corresponding to stated difficulty
+
+Examples:
+
+STRAIGHT POT
+cue → object → pocket collinear
+
+ANGLED POT
+cue-object line differs from object-pocket line
+visible cut angle
+
+LONG POT
+object and cue separated by realistic table distance
+
+THIN CUT
+geometry visibly produces a thin cut
+
+Do not reuse straight-pot geometry for angled/thin drills.
+
+==================================================
+9. SPEED DRILL GEOMETRY STANDARD
+==================================================
+
+Every speed/touch drill must show:
+
+- white cue
+- object ball if applicable
+- intended pocket/contact
+- clearly visible target zone
+- cue-ball end zone
+- route length appropriate to drill difficulty
+
+Examples:
+
+Stop-Ball Speed Gate:
+small stop zone around contact position
+
+Two-Cushion Speed Control:
+visible two-cushion cue route
+target zone after second cushion
+
+Soft Touch Safety Roll:
+short-distance end zone
+safety/object-ball relationship
+
+Precision Lag:
+clear finishing zone near cushion
+
+==================================================
+10. POSITIONAL DRILL GEOMETRY STANDARD
+==================================================
+
+Every positional drill must show:
+
+- cue ball
+- current object ball
+- next ball
+- intended pocket
+- visible cue-ball target zone
+- cue-ball route
+
+For:
+
+Simple Follow
+→ forward route
+
+Screw Round the Angle
+→ draw/screw route backward from contact
+
+Side-Spin Route
+→ cushion interaction visible
+
+Congested Cluster Route
+→ actual obstacle balls forming the congestion
+
+The geometry must visibly distinguish these drills.
+
+==================================================
+11. CUE-BALL CONTROL STANDARD
+==================================================
+
+Basic Stun:
+- cue
+- object
+- intended pocket
+- cue stopping/sideways travel result
+- visible target marker
+
+Screw Shot:
+- cue
+- object
+- backward target zone
+- draw route
+
+Swerve:
+- blocker ball
+- curved/schematic route around blocker
+- target object
+
+Do NOT show identical diagrams for stun and screw.
+
+==================================================
+12. PROBLEM-BALL EXECUTION STANDARD
+==================================================
+
+Simple Nudge:
+- cue ball
+- striker ball
+- problem ball
+- intended development zone
+
+Cannon:
+- cue
+- first-contact ball
+- second ball
+- resulting development target
+
+Break-Out:
+- actual cluster
+- impact point
+- highlighted intended opened area
+
+The “problem” must be visible.
+
+==================================================
+13. BREAK DRILL STANDARD
+==================================================
+
+ALL break drills must use the correct English rack:
+
+7 red
+7 yellow
+1 black
++
+1 white cue ball
+
+and standard table orientation:
+
+RACK END = LEFT
+BAULK END = RIGHT
+
+All break diagrams must show:
+
+- 15-ball rack
+- vertical baulk line
+- right-side D
+- white cue
+- black spot / rack reference as appropriate
+
+Then vary drill intent:
+
+Controlled Break:
+control-oriented cue placement
+
+Break for a Pot:
+authored break line / target area relevant to pot attempt
+
+Restricted Break:
+ruleset-specific legal cue placement clearly shown
+
+Do not use a 2-ball diagram for ANY break drill.
+
+==================================================
+14. BLACK-BALL DRILL STANDARD
+==================================================
+
+Straight Black:
+- white cue
+- black
+- highlighted pocket
+- two-segment line
+
+Angled Black:
+- clear cut angle
+- black → pocket line
+- cue route if position relevant
+
+Pressure Black:
+- deliberately more difficult pocket angle / obstruction
+- diagram visibly harder than easier black drills
+
+==================================================
+15. EVERY DECISION DRILL MUST BE AUTHORED
+==================================================
+
+Audit ALL decision drills:
+
+Pattern Recognition
+Problem-Ball Identification
+Tactical / Safety
+
+Every decision drill must have a unique TrainingDiagram.
+
+No generic DecisionDrillDiagram.
+
+==================================================
+16. PATTERN DRILLS MUST BE VISUALLY UNIQUE
+==================================================
+
+PAT1:
+open natural pattern
+
+PAT2:
+black-access problem
+
+PAT3:
+problem ball / cushion constraint
+
+PAT4:
+lost-position recovery
+
+Their normalized layout signatures MUST differ.
+
+They must not merely move one ball a few percent.
+
+A human looking at the four diagrams should immediately see four different table problems.
+
+==================================================
+17. PROBLEM-BALL DECISION DRILLS
+==================================================
+
+pbd1:
+one clearly identifiable problem ball
+
+pbd2:
+development opportunity exists NOW
+
+pbd3:
+late-development risk
+
+Each requires different geometry.
+
+Do not reuse pbd1's cushion layout for pbd2/pbd3.
+
+==================================================
+18. TACTICAL DRILLS
+==================================================
+
+tac1 Attack or Safety:
+must show both a real attack and safety possibility
+
+tac2 Create a Snooker:
+must show blocker geometry enabling snooker
+
+tac3 Finish Onto Black:
+must show final-ball position and black access
+
+tac4 Pressure Call:
+must show a genuinely risk/reward layout
+
+Ruleset-specific tactical content must retain ruleset badge.
+
+==================================================
+19. CLEARANCE DIAGRAMS MUST ALL BE AUTHORED
+==================================================
+
+Audit every CLEARANCES item.
+
+No clearance may rely on:
+
+default spaced balls
+automatic decorative balls
+simple linear layouts
+
+Each clearance must define:
+
+diagram
+cue ball
+player group
+remaining balls
+black if applicable
+obstacles
+objective
+success criteria
+
+==================================================
+20. CLEARANCE DIFFICULTY MUST BE VISUAL
+==================================================
+
+clr2:
+simple two-ball natural route
+
+clr3:
+three-ball pattern choice
+
+clr4:
+structured four-ball route with black finish
+
+clr5:
+random/congested/problem-ball layout
+
+clrT:
+tactical-to-clearance transition
+
+These diagrams must be visually distinct.
+
+Difficulty must come from geometry, not merely more balls.
+
+==================================================
+21. CUE BALL ABSOLUTE ENFORCEMENT
+==================================================
+
+Every physical shot diagram must have exactly one:
+
+group: "cue"
+
+It MUST render:
+
+#F2F0E8
+
+No arbitrary fill.
+
+No fallback fill.
+
+No teal cue.
+No blue cue.
+No grey cue.
+No transparent cue.
+
+==================================================
+22. STANDARD ENGLISH TABLE GEOMETRY EVERYWHERE
+==================================================
+
+ALL PoolTable instances use the same permanent geometry:
+
+LANDSCAPE
+
+LEFT:
+rack / black end
+
+RIGHT:
+baulk end
+
+Permanent shared geometry includes:
+
+6 pockets
+rail diamonds
+black spot reference
+
+When relevant:
+
+vertical baulk line
+right-side D
+
+Never rotate the table based on drill.
+
+==================================================
+23. TABLE MARKINGS VS DRILL GEOMETRY
+==================================================
+
+Permanent table markings are consistent across all drills.
+
+Instructional overlays vary per drill.
+
+Permanent:
+- pockets
+- diamonds
+- orientation
+- black spot where enabled
+
+Instructional:
+- aim lines
+- target pockets
+- route arrows
+- zones
+- obstacles
+- rack
+
+Do not reinvent base table geometry per drill.
+
+==================================================
+24. AIM LINE CONTRACT
+==================================================
+
+Any drill where a player is expected to pot a specific ball into a specific pocket must define:
+
+targetPocket
+
+and:
+
+aimLine
+
+unless the instructional purpose specifically requires the player to choose the pocket themselves.
+
+Aim-line primitive must show:
+
+cue → object
+
+and:
+
+object → pocket
+
+for instructional pot drills.
+
+==================================================
+25. CUE ROUTE CONTRACT
+==================================================
+
+If drill objective contains:
+
+follow
+screw
+draw
+stun
+side spin
+two cushion
+position
+route
+
+then diagram must define an appropriate:
+
+cueBallRoute
+
+or:
+
+targetZone
+
+as required.
+
+If missing:
+validation fails.
+
+==================================================
+26. TARGET ZONE CONTRACT
+==================================================
+
+If success criteria depend on cue-ball finishing position:
+
+targetZone is mandatory.
+
+Target zone must be plainly visible:
+
+amber/gold border
+translucent cream fill
+label
+
+Do not allow zone-less position drills.
+
+==================================================
+27. TEXT-TO-VISUAL CONSISTENCY
+==================================================
+
+Implement explicit authored metadata instead of trying to infer language.
+
+Example:
+
+visualContract: {
+  cueBall: true,
+  targetPocket: true,
+  aimLine: true,
+  targetZone: false,
+  cueRoute: false
+}
+
+Validation reads this object.
+
+Do not rely on fragile text parsing.
+
+==================================================
+28. NO PLAYABLE DRILL WITHOUT CONTRACT
+==================================================
+
+Every current DRILLS item must define:
+
+visualContract
+
+Every CLEARANCES item must define:
+
+visualContract
+
+No exception for old drills.
+
+==================================================
+29. SESSION GENERATOR SAFETY FILTER
+==================================================
+
+Before a drill enters generated training:
+
+filter:
+
+validatePlayableDrillGeometry(drill).valid === true
+
+Invalid drills MUST NOT be assigned.
+
+If filtering causes insufficient content:
+
+do NOT silently insert invalid drill.
+
+Use another valid drill within same skill/family.
+
+If no valid replacement exists:
+
+report developer error.
+
+==================================================
+30. ASSESSMENT SAFETY FILTER
+==================================================
+
+ASSESSMENT_ITEMS must consist ONLY of:
+
+assessmentEligible === true
+
+AND
+
+validatePlayableDrillGeometry(drill).valid === true
+
+Add a startup/dev assertion that all intended assessment drills are valid.
+
+==================================================
+31. LIBRARY PLAYABILITY
+==================================================
+
+If Drill Library currently allows starting drills:
+
+only geometry-valid drills may be playable.
+
+Invalid content may optionally show:
+
+“Content being prepared”
+
+during development.
+
+But after this patch there should be NO invalid current production drills.
+
+==================================================
+32. UNIQUE DIAGRAM SIGNATURES
+==================================================
+
+Create:
+
+diagramSignature(diagram)
+
+based on normalized:
+
+ball groups
+coordinates
+zones
+target pocket
+route type
+obstacles
+
+Audit duplicates.
+
+No two distinct playable drills may have the SAME signature unless explicitly:
+
+allowSharedDiagram: true
+
+and documented why.
+
+==================================================
+33. VISUAL DIFFERENCE THRESHOLD
+==================================================
+
+For drills in the same family, don't accept trivial coordinate differences.
+
+Add a helper such as:
+
+diagramDistance(a, b)
+
+If same-family diagrams are >90% geometrically identical:
+
+flag as suspicious.
+
+This is a content QA warning/test.
+
+==================================================
+34. PLAYER-FACING INSTRUCTION STANDARD
+==================================================
+
+EVERY playable drill must show before interaction:
+
+SETUP
+OBJECTIVE
+SUCCESS
+
+Decision drills must show:
+
+SCENARIO
+QUESTION
+
+Clearance drills must show one intro brief before first shot.
+
+No drill should expect the diagram alone to explain everything.
+
+==================================================
+35. DRILL AUDIT MATRIX
+==================================================
+
+Create a development/test audit matrix for EVERY current drill with columns:
+
+drillId
+name
+type
+skill
+difficulty
+hasDiagram
+hasCue
+hasTargetPocket
+hasAimLine
+hasTargetZone
+hasCueRoute
+hasTableMarkings
+hasTrainingLabels
+valid
+signature
+
+Generate this programmatically from current data.
+
+Do not manually maintain a duplicate list.
+
+==================================================
+36. ASSERT ZERO INVALID PLAYABLE DRILLS
+==================================================
+
+After the audit:
+
+invalid playable drills count MUST equal:
+
+0
+
+duplicate unintended diagram signatures MUST equal:
+
+0
+
+This is required before completion.
+
+==================================================
+37. LIVE QA — NOT JUST ASSESSMENT
+==================================================
+
+Previous patches visually checked only selected assessment screens.
+
+This time you must inspect EVERY PLAYABLE DRILL FAMILY.
+
+At minimum screenshot one drill at EACH difficulty in EVERY family.
+
+==================================================
+38. REQUIRED LIVE SCREEN MATRIX
+==================================================
+
+Visually inspect all current playable drills or a complete representative matrix including:
+
+POTTING
+pot1
+pot2
+pot3
+pot4
+
+SPEED
+spd1
+spd2
+spd3
+spd4
+
+POSITIONAL
+pos1
+pos2
+pos3
+pos4
+
+CUE CONTROL
+cue1
+cue2
+cue3
+
+PROBLEM EXEC
+pbe1
+pbe2
+pbe3
+
+BREAK
+brk1
+brk2
+brk3
+
+BLACK
+blk1
+blk2
+blk3
+
+PATTERN
+pat1
+pat2
+pat3
+pat4
+
+PROBLEM DECISION
+pbd1
+pbd2
+pbd3
+
+TACTICAL
+tac1
+tac2
+tac3
+tac4
+
+ALL CLEARANCES
+
+Do not claim visual consistency after checking only 5 screens.
+
+==================================================
+39. LIVE QA ACCEPTANCE FOR EACH DRILL
+==================================================
+
+For EACH drill ask:
+
+A. Does the diagram match SETUP?
+
+B. Does it visibly support OBJECTIVE?
+
+C. Can the player identify what counts as SUCCESS?
+
+D. Are all referenced balls present?
+
+E. Is cue ball white?
+
+F. If a pot is instructed, is target pocket/line shown where needed?
+
+G. If position matters, is route/zone shown?
+
+H. Is this diagram materially different from other drills where it should be?
+
+Every answer must be YES.
+
+==================================================
+40. BUILD A DEVELOPER VISUAL QA SCREEN
+==================================================
+
+Add a DEV-ONLY route/view/component:
+
+TrainingDiagramAudit
+
+It must render ALL current drills in a scrollable grid/list:
+
+drill name
+ID
+skill
+difficulty
+PoolTable
+validation status
+
+This is NOT user-facing production navigation.
+
+It exists only in development/test mode.
+
+This lets us inspect all diagrams on one screen instead of navigating through adaptive sessions.
+
+Do not expose it in production UI.
+
+==================================================
+41. AUDIT SCREEN MUST USE REAL RENDERER
+==================================================
+
+TrainingDiagramAudit must render:
+
+the exact PoolTable component used by players.
+
+No separate preview renderer.
+
+This is essential.
+
+==================================================
+42. AUTOMATED SCREENSHOT QA
+==================================================
+
+Use Playwright on TrainingDiagramAudit.
+
+Capture screenshots covering every drill.
+
+If needed, split into:
+
+execution-audit.png
+decision-audit.png
+clearance-audit.png
+
+Inspect those screenshots before completion.
+
+==================================================
+43. NO GENERIC BALL FALLBACK IN AUDIT
+==================================================
+
+The audit screen should visibly show ERROR if a diagram is absent.
+
+It must never substitute:
+
+ExecDrillDiagram
+DecisionDrillDiagram
+
+==================================================
+44. TESTS — GQ ONWARDS
+==================================================
+
+Preserve all existing 268 tests.
+
+Add:
+
+GQ.
+Every playable DRILLS item has diagram.
+
+GR.
+Every playable CLEARANCES item has diagram.
+
+GS.
+Every playable drill has visualContract.
+
+GT.
+Every assessment item passes geometry validation.
+
+GU.
+Every generated-session candidate passes geometry validation.
+
+GV.
+Zero playable drills use generic diagram fallback.
+
+GW.
+Every physical drill has exactly one cue ball.
+
+GX.
+All cue balls resolve to canonical off-white.
+
+GY.
+Every potting drill requiring a target pocket has one.
+
+GZ.
+Every instructional pot drill requiring aim line has one.
+
+HA.
+Every positional drill defines target zone or cue route.
+
+HB.
+Every speed drill defines measurable zone/route.
+
+HC.
+Every break drill contains 15-ball rack + white cue.
+
+HD.
+Every break drill uses rack-left / baulk-right geometry.
+
+HE.
+Every black-ball drill has authored pocket geometry.
+
+HF.
+All Pattern diagrams have unique signatures.
+
+HG.
+All Problem Decision diagrams have unique signatures.
+
+HH.
+All Tactical diagrams have unique signatures.
+
+HI.
+All Clearance diagrams have unique signatures.
+
+HJ.
+No unintended duplicate playable diagram signatures exist globally.
+
+HK.
+Every decision option referencing a numbered ball maps to a visible trainingLabel.
+
+HL.
+All authored target pockets resolve through shared table geometry.
+
+HM.
+All authored aim lines resolve successfully.
+
+HN.
+All target zones have positive dimensions and visible render style.
+
+HO.
+Invalid playable drill count is zero.
+
+HP.
+TrainingDiagramAudit enumerates every playable drill exactly once.
+
+HQ.
+TrainingDiagramAudit uses same PoolTable renderer.
+
+==================================================
+45. DO NOT SATISFY TESTS WITH EMPTY GEOMETRY
+==================================================
+
+Tests must inspect meaningful geometry.
+
+Examples:
+
+aim line length > minimum threshold
+
+target zone area > minimum threshold
+
+cue route has >=2 points if route required
+
+rack has 15 object balls
+
+different-family/signature assertions
+
+Do not add placeholder aim lines of zero length just to pass validation.
+
+==================================================
+46. VISUAL CONSISTENCY STANDARD
+==================================================
+
+Every table must share:
+
+same rail thickness
+same pockets
+same cloth
+same ball radius
+same English ball colours
+same diamonds
+same black-spot geometry
+same orientation
+same line styles
+same target-zone style
+same target-pocket style
+
+Only the authored drill content varies.
+
+==================================================
+47. AIM LINE STYLE STANDARD
+==================================================
+
+Use one consistent visual language everywhere:
+
+CUE → OBJECT:
+white dashed
+
+OBJECT → TARGET POCKET:
+gold dashed
+
+CUE POSITION ROUTE:
+teal/slate dashed or arrowed
+
+Do not randomly change colours between drills.
+
+==================================================
+48. TARGET ZONE STYLE STANDARD
+==================================================
+
+All target zones:
+
+cream translucent fill
+gold border
+TARGET / STOP / LAND label as authored
+
+Do not use different styling per drill family.
+
+==================================================
+49. TABLE MARKING STYLE STANDARD
+==================================================
+
+Baulk line / D:
+off-white subtle dashed/solid style
+
+Black spot:
+small standard marker
+
+Diamonds:
+small standard rail markers
+
+Same in every drill.
+
+==================================================
+50. DO NOT ADD PHYSICS ENGINE
+==================================================
+
+Remain authored.
+
+No automatic trajectory simulation.
+
+No collision solver.
+
+No spin engine.
+
+No shot prediction.
+
+==================================================
+51. REGRESSION GATE
+==================================================
+
+All existing 268 tests remain green.
+
+Add GQ–HQ tests.
+
+Run:
+
+TypeScript
+
+Production build with:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Verify dist.
+
+Verify asset base path.
+
+==================================================
+52. COMPLETION GATE — MOST IMPORTANT
+==================================================
+
+DO NOT CLAIM COMPLETE UNTIL:
+
+invalid playable drill count = 0
+
+unintended duplicate diagram count = 0
+
+ALL current playable drills rendered in TrainingDiagramAudit
+
+Playwright screenshots reviewed
+
+NO generic diagram fallback visible anywhere
+
+ALL diagrams use the same table geometry system
+
+==================================================
+53. FINAL VISUAL REPORT
+==================================================
+
+Final report must provide:
+
+number of playable drills audited
+
+number with authored diagrams
+
+number using generic fallback
+
+number invalid
+
+number duplicate signatures
+
+and explicitly state:
+
+"Every playable drill was rendered through the same PoolTable component and visually audited."
+
+Do not report only selected examples.
+
+==================================================
+54. COMMIT
+==================================================
+
+Commit exact message:
+
+Standardize geometry across all training drills
+
+Push to origin/main.
+
+Confirm GitHub Pages workflow triggers.
+
+==================================================
+55. FINAL REPORT ONLY
+==================================================
+
+Report:
+
+- root cause of remaining inconsistent diagrams
+- generic fallback removal
+- authored diagrams added/updated
+- visualContract implementation
+- geometry validator
+- session/assessment safety filtering
+- diagram signature QA
+- TrainingDiagramAudit dev screen
+- total playable drills audited
+- invalid drill count
+- duplicate diagram count
+- GQ–HQ results
+- total tests
+- TypeScript
+- production build
+- Playwright screenshot audit
+- commit SHA
+- push status
+- Pages status
+- remaining limitations
+
+STOP.
+
+Do not begin another phase.
