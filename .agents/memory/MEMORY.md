@@ -1,0 +1,1 @@
+- [8-Ball Coach architecture](8bc-architecture.md) — Phase 1+2 complete; rules module, mixed mode, 30+ tests, correct imports to note
