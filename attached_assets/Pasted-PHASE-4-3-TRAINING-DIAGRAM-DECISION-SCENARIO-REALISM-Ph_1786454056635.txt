@@ -1,0 +1,800 @@
+PHASE 4.3 — TRAINING DIAGRAM & DECISION-SCENARIO REALISM
+
+Phase 4.2 is complete.
+
+The Sage–Teal theme, realistic English ball proportions, English red/yellow ball palette, assessment-state fix, adaptive engine, rules logic, match intelligence and persistence are APPROVED.
+
+Do NOT redesign the application.
+Do NOT change rating algorithms.
+Do NOT change adaptive weighting.
+Do NOT change match intelligence.
+Do NOT change rules legality.
+Do NOT change navigation.
+
+This patch has one objective:
+
+MAKE TRAINING DIAGRAMS AND PATTERN-RECOGNITION QUESTIONS ACT LIKE REAL COACHING EXERCISES RATHER THAN GENERIC GAME QUESTIONS.
+
+==================================================
+1. CORE PRINCIPLE
+==================================================
+
+8-Ball Coach is a TRAINING APPLICATION, not a game.
+
+Every physical-table drill or decision scenario should provide enough information for a player to:
+
+1. reproduce the position on a real table
+2. identify the exact balls being discussed
+3. understand the intended shot sequence
+4. compare realistic tactical/pattern options
+5. learn WHY one route is stronger than another
+
+Generic diagrams with arbitrary balls and generic answers are not acceptable for authored training content.
+
+==================================================
+2. KEEP REAL ENGLISH POOL BALLS
+==================================================
+
+Do NOT convert red/yellow balls into American numbered balls.
+
+Physical balls remain:
+
+RED
+YELLOW
+BLACK
+WHITE CUE BALL
+
+Do NOT print American-style numbers directly on red/yellow balls.
+
+Instead introduce separate TRAINING REFERENCE MARKERS.
+
+==================================================
+3. TRAINING REFERENCE NUMBERS
+==================================================
+
+For decision/pattern exercises, relevant balls may receive:
+
+trainingLabel: "1"
+trainingLabel: "2"
+trainingLabel: "3"
+etc.
+
+These labels are NOT physical markings on the balls.
+
+Render the label as a small external marker positioned next to the ball.
+
+Example:
+
+      ①
+      🔴
+
+or visually:
+
+[1] beside the red/yellow ball
+
+Use a compact circular or rounded marker:
+
+- white/light background
+- dark-teal text
+- thin dark-teal border
+- clearly legible
+- approximately 12–16px screen size depending on table scale
+
+The marker should sit slightly outside the physical ball.
+
+It must NOT:
+
+- cover the ball
+- enlarge the ball
+- look like an American ball number
+- obscure routes or target zones
+
+==================================================
+4. BALL DATA MODEL
+==================================================
+
+Extend the display/training ball model minimally.
+
+Example concept:
+
+type TrainingBall = {
+  id: string;
+  group: "red" | "yellow" | "black" | "cue";
+  x: number;
+  y: number;
+
+  trainingLabel?: string;
+
+  role?: "target" | "obstacle" | "black" | "cue";
+
+  playerBall?: boolean;
+}
+
+Do not alter the rules engine's fundamental ball identity.
+
+trainingLabel is presentation/training metadata only.
+
+==================================================
+5. PLAYER GROUP MUST BE EXPLICIT
+==================================================
+
+Every pattern/clearance scenario must state which group the player owns.
+
+Example:
+
+playerGroup: "yellow"
+
+Therefore:
+
+Yellow balls = player's legal group balls
+Red balls = opponent balls / obstacles
+Black = final ball
+White = cue ball
+
+OR vice versa.
+
+Do NOT present red and yellow balls as though the player can pot both groups.
+
+If both colours appear in a diagram, the opposing colour must have a genuine tactical purpose such as:
+
+- obstacle
+- blocked pocket
+- positional restriction
+- cannon opportunity
+- safety consideration
+
+==================================================
+6. NUMBER ONLY RELEVANT BALLS
+==================================================
+
+Training labels should primarily identify balls the question refers to.
+
+Example scenario:
+
+Player = Yellow
+
+Yellow Y1:
+trainingLabel: "1"
+
+Yellow Y2:
+trainingLabel: "2"
+
+Yellow Y3:
+trainingLabel: "3"
+
+Red obstacle:
+may be unnumbered unless referenced by the question.
+
+Black:
+normally labelled BLACK / visually obvious rather than included in the clearance-order numbering.
+
+Cue ball:
+never given a sequence number.
+
+==================================================
+7. AUTHOR REAL TABLE POSITIONS
+==================================================
+
+Pattern-recognition drills must stop using generic automatically-spaced diagrams.
+
+Each authored scenario must define actual normalized table coordinates.
+
+Example concept:
+
+diagram: {
+  cue: { x: 22, y: 61 },
+
+  balls: [
+    {
+      id: "Y1",
+      group: "yellow",
+      trainingLabel: "1",
+      x: 55,
+      y: 62
+    },
+    {
+      id: "Y2",
+      group: "yellow",
+      trainingLabel: "2",
+      x: 77,
+      y: 32
+    },
+    {
+      id: "Y3",
+      group: "yellow",
+      trainingLabel: "3",
+      x: 42,
+      y: 37
+    },
+
+    {
+      id: "R1",
+      group: "red",
+      role: "obstacle",
+      x: 70,
+      y: 52
+    },
+
+    {
+      id: "BLK",
+      group: "black",
+      x: 84,
+      y: 67
+    }
+  ]
+}
+
+Use the existing table coordinate system if one already exists.
+
+Do NOT hard-code layout coordinates inside React components.
+
+Coordinates belong in scenario/drill data.
+
+==================================================
+8. DECISION OPTIONS MUST REFERENCE THE DIAGRAM
+==================================================
+
+Replace vague decision options such as:
+
+"Take the nearest straight pot first, then reassess"
+
+with concrete options referring to labelled balls and shot types.
+
+Example:
+
+A.
+"Ball 3 — stun for Ball 1, then left draw from Ball 1 to Ball 2."
+
+B.
+"Ball 1 — follow through for Ball 2, then recover across table to Ball 3."
+
+C.
+"Ball 2 first with screw, then attack Ball 3 before Ball 1."
+
+D.
+"Ball 1 first, then decide the rest after the shot."
+
+The exact wording must correspond to the actual authored diagram.
+
+==================================================
+9. SHOT TERMINOLOGY
+==================================================
+
+Allow decision options to use realistic coaching terms such as:
+
+- stun
+- stun-run-through
+- screw / draw
+- follow
+- left side
+- right side
+- left draw
+- right draw
+- check side
+- running side
+- natural angle
+- two-cushion route
+- hold
+- soft roll
+- cannon
+- develop
+- nudge
+- safety
+- snooker
+- containing shot
+
+Do not use advanced terminology where unnecessary.
+
+Difficulty should control complexity.
+
+Foundation scenarios:
+simple terms and routes.
+
+Advanced scenarios:
+more detailed cue-ball routes and tactical considerations.
+
+==================================================
+10. OPTION DATA MODEL
+==================================================
+
+Extend authored decision options so they may contain structured route information.
+
+Example concept:
+
+{
+  id: "routeA",
+
+  label:
+    "Ball 3 — stun for Ball 1, then left draw from Ball 1 to Ball 2.",
+
+  tier: "optimal",
+
+  sequence: [
+    {
+      ballId: "Y3",
+      shot: "stun",
+      positionFor: "Y1"
+    },
+    {
+      ballId: "Y1",
+      shot: "left-draw",
+      positionFor: "Y2"
+    },
+    {
+      ballId: "Y2",
+      shot: "natural",
+      positionFor: "black"
+    }
+  ],
+
+  rationale:
+    "Starting with Ball 3 gives the largest positional margin. The stun leaves a natural line to Ball 1, and the left draw from Ball 1 opens the angle to Ball 2 while preserving access to the black."
+}
+
+Do NOT require every simple scenario to use every structured field.
+
+But authored pattern exercises should support it.
+
+==================================================
+11. RATIONALE MUST TEACH THE PLAYER
+==================================================
+
+After the player selects an answer, feedback must explain the table.
+
+Bad:
+
+"Correct. This is the easiest route."
+
+Good:
+
+"Strong choice. Starting with Ball 3 allows a simple stun into the line of Ball 1. From Ball 1, a small amount of left draw brings the cue ball back into the natural angle for Ball 2 while keeping the black accessible."
+
+Explain:
+
+- why the first ball matters
+- cue-ball route
+- risk
+- positional margin
+- problem-ball management
+- black access when relevant
+
+==================================================
+12. SHOW SELECTED ROUTE AFTER ANSWER
+==================================================
+
+Where route sequence data exists, after the player answers:
+
+highlight the chosen/optimal sequence on the table.
+
+Example:
+
+① Ball 3
+↓
+② Ball 1
+↓
+③ Ball 2
+↓
+BLACK
+
+Use subtle route lines/arrows.
+
+Do not animate excessively.
+
+This is instructional feedback.
+
+==================================================
+13. ROUTE LINE VISUALS
+==================================================
+
+PoolTable should support optional:
+
+routeSegments
+
+Example:
+
+{
+  fromBallId: "Y3",
+  toBallId: "Y1",
+  type: "cueBallRoute"
+}
+
+Use:
+
+- thin teal/dark-teal line
+- arrowhead
+- optional dashed style for cue-ball travel
+- low opacity so balls remain visible
+
+Do not imply physically exact ball trajectories unless the scenario explicitly defines them.
+
+The route is a coaching diagram, not physics simulation.
+
+==================================================
+14. POT DIRECTION SUPPORT
+==================================================
+
+If useful, allow authored scenarios to identify intended pocket.
+
+Example:
+
+targetPocket: "topRight"
+
+The diagram may show a very subtle object-ball arrow to the intended pocket.
+
+Again:
+
+diagram aid only
+not a physics simulation.
+
+==================================================
+15. PATTERN RECOGNITION ASSESSMENT
+==================================================
+
+Update Pattern Recognition assessment items so the player is genuinely tested on table reading.
+
+The current screenshot's generic:
+
+"Choose the Ball Order"
+
+must become an authored table scenario.
+
+At minimum for the initial pattern assessment:
+
+- define player group
+- display 3 numbered player balls
+- white cue ball
+- black if relevant
+- optional red/yellow opponent obstacle(s)
+- realistic positions
+- 4 concrete route options
+- each option references Ball 1 / Ball 2 / Ball 3
+- optimal answer has genuine tactical rationale
+
+Do not show a response such as:
+
+"Play in the order the balls happen to be numbered"
+
+unless that is intentionally a poor distractor AND makes sense for the authored layout.
+
+==================================================
+16. DO NOT CONFUSE TRAINING LABEL WITH POT ORDER
+==================================================
+
+Important:
+
+Ball numbers identify balls.
+
+They do NOT inherently prescribe the correct sequence.
+
+Ball 1 is simply reference Ball 1.
+
+The correct route could be:
+
+3 → 1 → 2
+
+or:
+
+2 → 3 → 1
+
+This is essential because otherwise players will assume numbering itself indicates the answer.
+
+Add small explanatory text on first use:
+
+"Numbers identify the balls — they do not show the correct order."
+
+This may appear once during assessment/training and should not interrupt every scenario.
+
+==================================================
+17. EXECUTION DRILL DIAGRAMS ALSO NEED REAL POSITIONS
+==================================================
+
+Begin moving execution diagrams away from generic decorative placement.
+
+For each current execution drill, the diagram should eventually correspond to its instruction.
+
+For this patch, at minimum correct the assessment execution drills.
+
+Example:
+
+Straight Pot — Middle Pocket
+
+Instruction:
+
+"Set the object ball one diamond from a middle pocket, straight in."
+
+The diagram must actually show:
+
+- cue ball
+- one red/yellow object ball
+- object ball one diamond from the middle pocket
+- cue ball on the straight potting line
+- intended middle pocket obvious
+
+Do NOT show two arbitrary balls simply because it is an execution drill.
+
+==================================================
+18. DIAGRAM DATA SHOULD LIVE WITH DRILLS
+==================================================
+
+Do not create separate hard-coded React diagram presets such as:
+
+if (drill.id === "pat1") ...
+
+Prefer data-driven definitions:
+
+drill.diagram
+
+or
+
+scenario.diagram
+
+Example:
+
+{
+  id: "pat1",
+
+  diagram: {
+    playerGroup: "yellow",
+    cueBall: {...},
+    balls: [...],
+    targetPocket: ...,
+  },
+
+  options: [...]
+}
+
+PoolTable should render what the drill data declares.
+
+This allows the library to grow without rewriting UI code.
+
+==================================================
+19. RULESET-SPECIFIC SCENARIOS
+==================================================
+
+If Blackball and International Rules produce different optimal decisions:
+
+do NOT fake one universal answer.
+
+Use existing ruleset-specific option support.
+
+Example:
+
+rulesetOptions: {
+  blackball: [...],
+  international: [...]
+}
+
+The visual table may be shared if position is identical.
+
+The answer/rationale may differ by ruleset.
+
+Ruleset badge must remain visible.
+
+==================================================
+20. MIXED TRAINING
+==================================================
+
+During Mixed Training:
+
+Every rules-sensitive decision scenario must clearly indicate:
+
+BLACKBALL
+
+or
+
+INTERNATIONAL
+
+Do not alter Mixed allocation logic.
+
+==================================================
+21. CREATE REUSABLE TRAINING-DIAGRAM TYPES
+==================================================
+
+Implement the minimum maintainable structure required.
+
+Suggested concepts:
+
+TrainingDiagram
+TrainingBall
+TrainingLabel
+RouteSegment
+TargetPocket
+DecisionSequenceStep
+
+Do not over-engineer.
+
+Keep pure display/training metadata separate from rules-engine state.
+
+==================================================
+22. PATTERN SCENARIO VALIDATION
+==================================================
+
+Add development-time/data validation where practical.
+
+A decision scenario using sequence references must not reference a ball ID that does not exist in its diagram.
+
+Example:
+
+option sequence contains Y3
+
+but diagram has no Y3
+
+→ validation/test failure.
+
+Also validate:
+
+- duplicate training labels
+- duplicate ball IDs
+- more than one cue ball
+- more than one black
+- illegal English colour groups
+- missing playerGroup where group-based pattern exercise requires it
+
+==================================================
+23. TESTS — CW ONWARDS
+==================================================
+
+Preserve ALL existing 171 tests.
+
+Add deterministic tests.
+
+CW.
+Pattern scenario has labelled target balls.
+
+CX.
+Training labels are unique per diagram.
+
+CY.
+Training labels are external metadata and do not change ball group/colour.
+
+CZ.
+Numbers do not imply route order:
+an optimal route such as 3 → 1 → 2 is valid.
+
+DA.
+Every sequence ballId exists in the diagram.
+
+DB.
+Pattern option text references valid labelled balls.
+
+DC.
+Pattern scenario defines playerGroup.
+
+DD.
+Opponent-colour balls are not treated as player's clearance targets.
+
+DE.
+Cue ball has no training sequence label.
+
+DF.
+Black ball has no normal player-group sequence number unless a specifically authored scenario requires a reference label.
+
+DG.
+Execution assessment diagrams use authored coordinates.
+
+DH.
+Straight Pot — Middle Pocket diagram places the object ball and cue ball on a genuine straight potting line toward a middle pocket.
+
+DI.
+Ruleset-specific decision content remains supported.
+
+DJ.
+Route feedback corresponds to the selected option's structured sequence.
+
+==================================================
+24. VISUAL QA
+==================================================
+
+At 390px and 430px inspect:
+
+Pattern Recognition assessment
+
+Confirm:
+
+- balls are realistic size
+- English red/yellow colours remain correct
+- player target balls carry clear external 1/2/3 markers
+- cue ball has no marker
+- black remains visually obvious
+- labels do not overlap balls/pockets
+- option cards explicitly reference numbered balls
+- text fits comfortably
+- no horizontal overflow
+
+==================================================
+25. MANUAL TRAINING QA
+==================================================
+
+Run the pattern scenario.
+
+The player should be able to look at the table and understand exactly what this means:
+
+"Ball 3 — stun for Ball 1, then left draw from Ball 1 to Ball 2."
+
+After choosing it:
+
+the feedback should explain why.
+
+The table should optionally highlight:
+
+3 → 1 → 2
+
+if structured route data is present.
+
+==================================================
+26. CONTENT QUALITY RULE
+==================================================
+
+Do NOT mass-generate superficially different scenarios with arbitrary coordinates.
+
+The initial content library is small enough that the important assessment/decision scenarios should be intentionally authored.
+
+Correctness and coaching usefulness matter more than quantity.
+
+==================================================
+27. NO PHYSICS ENGINE
+==================================================
+
+Do NOT build:
+
+- collision simulation
+- trajectory physics
+- spin physics simulation
+- automatic shot solver
+
+This phase is authored instructional content + diagram rendering only.
+
+==================================================
+28. REGRESSION GATE
+==================================================
+
+All existing 171 tests remain green.
+
+Then run:
+
+- CW–DJ tests
+- TypeScript
+- production build
+- runtime
+
+Visually inspect the key assessment scenario.
+
+==================================================
+29. COMMIT
+==================================================
+
+Commit with exact message:
+
+Improve training diagrams and pattern scenarios
+
+Push to origin/main.
+
+Confirm the GitHub Pages workflow triggers.
+
+==================================================
+30. FINAL REPORT
+==================================================
+
+Report only:
+
+- training-label implementation
+- pattern scenario data structure
+- first authored Pattern Recognition scenario
+- example optimal sequence
+- shot terminology support
+- route-feedback implementation
+- execution diagram changes
+- validation added
+- existing 171 tests result
+- CW–DJ tests result
+- typecheck
+- build
+- runtime
+- commit SHA
+- GitHub push status
+- GitHub Pages deployment status
+- remaining diagram/content limitations
+
+STOP after this patch.
+
+Do not begin another phase.
