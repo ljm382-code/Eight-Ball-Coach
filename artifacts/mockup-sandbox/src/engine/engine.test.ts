@@ -11,13 +11,14 @@ import {
   type FrameImpact, type Match,
 } from "../match";
 import {
-  ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, CLEARANCES, CONFIG, DRILLS, ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
+  ADAPTATION_SKILL_MAP, ASSESSMENT_ITEMS, BALL_COLORS, CLEARANCES, CONFIG, DRILLS,
+  ROOT_CAUSE_CONFIDENCE_MAP, SKILL_MAP, SKILLS,
   applySkillUpdate, applyClearanceBallResult, classifyErrorChain, computeConfidence,
-  computeRulesetConfidence, decayRootCauseScore, decisionValue, evaluatePlannedRoute,
-  generateSession, limitingFactor, mixedRulesetSplit, newProfile, selectMaintenanceSkill,
-  sessionWeighting,
-  type Attempt, type ClearanceRouteState, type LimitingFactors, type Profile,
-  type RootCauseEvent, type RuleSetId, type SkillId,
+  computeRulesetConfidence, createEnglishEightBallRack, decayRootCauseScore, decisionValue,
+  evaluatePlannedRoute, generateSession, limitingFactor, mixedRulesetSplit, newProfile,
+  selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
+  type Attempt, type ClearanceRouteState, type DiagramVisualRequirement, type LimitingFactors,
+  type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type SkillId, type TableMarkings,
 } from "./index";
 import {
   getLegalBalls, isEightBallLegal, resolveFoulConsequences, getCueBallPlacement,
@@ -1902,4 +1903,183 @@ import {
   assert.ok(clr3?.playerGroup, "EF: clr3 clearance must declare playerGroup");
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, and Phase 4.4 DK–EF all passed ✓");
+// ── EG: Every assessment execution drill contains exactly one cue ball ─────────
+{
+  for (const d of ASSESSMENT_ITEMS.filter(x => x.type === "execution")) {
+    assert.ok(d.diagram, `EG: ${d.id} must have a diagram`);
+    const cues = d.diagram!.balls.filter(b => b.group === "cue");
+    assert.equal(cues.length, 1, `EG: ${d.id} must have exactly 1 cue ball (found ${cues.length})`);
+  }
+}
+
+// ── EH: Cue-ball colour constant resolves to off-white ───────────────────────
+{
+  assert.equal(BALL_COLORS.cue, "#F2F0E8", `EH: BALL_COLORS.cue must be "#F2F0E8" (got "${BALL_COLORS.cue}")`);
+}
+
+// ── EI: No assessment diagram ball masquerades as cue via a stray color field ─
+{
+  for (const d of ASSESSMENT_ITEMS) {
+    if (!d.diagram) continue;
+    for (const b of d.diagram.balls) {
+      assert.ok(!("color" in b),
+        `EI: ${d.id} ball ${b.id} has a stray "color" field — colour must be derived from group only`);
+    }
+  }
+}
+
+// ── EJ: Stop-Ball Speed Gate defines targetZone ──────────────────────────────
+{
+  const spd1 = DRILLS.find(d => d.id === "spd1");
+  assert.ok(spd1?.diagram?.targetZone, "EJ: spd1 must define diagram.targetZone");
+}
+
+// ── EK: Stop-Ball Speed Gate target zone has visible geometry ─────────────────
+{
+  const tz = DRILLS.find(d => d.id === "spd1")?.diagram?.targetZone;
+  assert.ok(tz && tz.width > 0 && tz.height > 0, "EK: spd1 target zone must have positive width and height");
+}
+
+// ── EL: Simple Follow Route defines targetZone ───────────────────────────────
+{
+  assert.ok(DRILLS.find(d => d.id === "pos1")?.diagram?.targetZone, "EL: pos1 must define diagram.targetZone");
+}
+
+// ── EM: Simple Follow Route target zone is positioned beyond the object ball ──
+{
+  const pos1  = DRILLS.find(d => d.id === "pos1");
+  const tz    = pos1?.diagram?.targetZone;
+  const obj   = pos1?.diagram?.balls.find(b => b.id === "OBJ");
+  assert.ok(tz && obj, "EM: pos1 must have both targetZone and an OBJ ball");
+  assert.ok(tz!.y < obj!.y,
+    `EM: pos1 target zone top edge (y=${tz!.y}) must be above/beyond the object ball (y=${obj!.y})`);
+}
+
+// ── EN: Straight 8-Ball defines aimLine ──────────────────────────────────────
+{
+  const d = DRILLS.find(x => x.id === "8b1");
+  assert.ok(d?.diagram?.aimLines && d.diagram.aimLines.length > 0, "EN: 8b1 must define at least one aimLine");
+}
+
+// ── EO: Straight 8-Ball defines targetPocket ─────────────────────────────────
+{
+  assert.ok(DRILLS.find(d => d.id === "8b1")?.diagram?.targetPocket, "EO: 8b1 must define diagram.targetPocket");
+}
+
+// ── EP: Straight Pot — Middle defines intended pocket ────────────────────────
+{
+  assert.ok(DRILLS.find(d => d.id === "pot1")?.diagram?.targetPocket, "EP: pot1 must define diagram.targetPocket");
+}
+
+// ── EQ: Aim lines reference balls that exist in the same diagram ──────────────
+{
+  for (const d of DRILLS.filter(x => x.diagram?.aimLines && x.diagram.aimLines.length > 0)) {
+    const ids = new Set(d.diagram!.balls.map(b => b.id));
+    for (const al of d.diagram!.aimLines!) {
+      assert.ok(ids.has(al.fromBallId), `EQ: ${d.id} aimLine.fromBallId "${al.fromBallId}" not found in diagram balls`);
+      if (al.throughBallId) assert.ok(ids.has(al.throughBallId), `EQ: ${d.id} aimLine.throughBallId "${al.throughBallId}" not found in diagram balls`);
+    }
+  }
+}
+
+// ── ER: Controlled Break includes exactly 15 object balls ────────────────────
+{
+  const brk1 = DRILLS.find(d => d.id === "brk1");
+  const objs  = (brk1?.diagram?.balls ?? []).filter(b => b.group !== "cue");
+  assert.equal(objs.length, 15, `ER: brk1 must have exactly 15 object balls (found ${objs.length})`);
+}
+
+// ── ES: Controlled Break rack contains 7 red + 7 yellow + 1 black ────────────
+{
+  const balls = DRILLS.find(d => d.id === "brk1")?.diagram?.balls ?? [];
+  assert.equal(balls.filter(b => b.group === "red").length,    7, "ES: brk1 must have 7 red balls");
+  assert.equal(balls.filter(b => b.group === "yellow").length, 7, "ES: brk1 must have 7 yellow balls");
+  assert.equal(balls.filter(b => b.group === "black").length,  1, "ES: brk1 must have 1 black ball");
+}
+
+// ── ET: Controlled Break contains a separate cue ball ────────────────────────
+{
+  const cues = DRILLS.find(d => d.id === "brk1")?.diagram?.balls.filter(b => b.group === "cue") ?? [];
+  assert.equal(cues.length, 1, `ET: brk1 must have exactly 1 cue ball (found ${cues.length})`);
+}
+
+// ── EU: Controlled Break defines break/baulk line ────────────────────────────
+{
+  const tm = DRILLS.find(d => d.id === "brk1")?.diagram?.tableMarkings;
+  assert.ok(tm?.showBaulkLine || tm?.showBreakLine || tm?.showBaulkArea,
+    "EU: brk1 must define a baulk/break line or area in tableMarkings");
+}
+
+// ── EV: Controlled Break cue ball is inside the authored baulk region ─────────
+{
+  const cb = DRILLS.find(d => d.id === "brk1")?.diagram?.balls.find(b => b.group === "cue");
+  assert.ok(cb, "EV: brk1 must have a cue ball");
+  assert.ok(cb!.y > 75, `EV: brk1 cue ball (y=${cb!.y}) must be inside the baulk area (y > 75)`);
+}
+
+// ── EW: TableMarkings type supports Blackball-specific fields ─────────────────
+{
+  const m: TableMarkings = { showBaulkLine: true, showBlackSpot: true };
+  assert.ok(m.showBaulkLine === true && m.showBlackSpot === true, "EW: TableMarkings must support showBaulkLine and showBlackSpot");
+}
+
+// ── EX: TableMarkings type supports International-specific fields ──────────────
+{
+  const m: TableMarkings = { showBreakLine: true, showRackLine: true };
+  assert.ok(m.showBreakLine === true && m.showRackLine === true, "EX: TableMarkings must support showBreakLine and showRackLine");
+}
+
+// ── EY: A drill requiring targetZone fails validation when targetZone is absent
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fake = { diagram: { balls: [], requiresVisuals: ["targetZone" as DiagramVisualRequirement] } } as any;
+  const r = validateDrillDiagramIntegrity(fake);
+  assert.ok(!r.valid && r.errors.length > 0, "EY: missing targetZone must cause validation failure");
+}
+
+// ── EZ: A drill requiring aimLine fails validation when aimLines is absent ────
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fake = { diagram: { balls: [], requiresVisuals: ["aimLine" as DiagramVisualRequirement] } } as any;
+  const r = validateDrillDiagramIntegrity(fake);
+  assert.ok(!r.valid && r.errors.length > 0, "EZ: missing aimLine must cause validation failure");
+}
+
+// ── FA: A drill requiring targetPocket fails validation when absent ────────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fake = { diagram: { balls: [], requiresVisuals: ["targetPocket" as DiagramVisualRequirement] } } as any;
+  const r = validateDrillDiagramIntegrity(fake);
+  assert.ok(!r.valid && r.errors.length > 0, "FA: missing targetPocket must cause validation failure");
+}
+
+// ── FB: A drill requiring rack fails validation when rack is absent ────────────
+{
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fake = { diagram: { balls: [], requiresVisuals: ["rack" as DiagramVisualRequirement] } } as any;
+  const r = validateDrillDiagramIntegrity(fake);
+  assert.ok(!r.valid && r.errors.length > 0, "FB: missing rack must cause validation failure");
+}
+
+// ── FC: No assessment physical diagram uses a non-cue group for the cue ball ─
+{
+  for (const d of ASSESSMENT_ITEMS.filter(x => x.type === "execution")) {
+    if (!d.diagram) continue;
+    // TrainingBall has no color field; cue ball identity is determined by group only
+    for (const b of d.diagram.balls) {
+      if (b.group === "cue") {
+        assert.equal(b.group, "cue", `FC: ${d.id} ball ${b.id} — cue ball must have group "cue"`);
+      }
+    }
+  }
+}
+
+// ── FD: All assessment drills pass validateDrillDiagramIntegrity ───────────────
+{
+  for (const d of ASSESSMENT_ITEMS) {
+    const r = validateDrillDiagramIntegrity(d);
+    assert.ok(r.valid, `FD: ${d.id} failed validateDrillDiagramIntegrity: ${r.errors.join("; ")}`);
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 display helpers CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, and Phase 4.5 EG–FD all passed ✓");

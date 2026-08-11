@@ -95,13 +95,67 @@ export type TrainingBall = {
   playerBall?: boolean;
 };
 
-/** Diagram metadata attached to a drill for data-driven table rendering. */
+export type PocketId = "topLeft" | "topMiddle" | "topRight" | "bottomLeft" | "bottomMiddle" | "bottomRight";
+
+export type TableMarkings = {
+  /** Blackball: transverse line 1/5 of playing length from the baulk cushion (bottom of diagram) */
+  showBaulkLine?: boolean;
+  /** Shade the baulk region (bottom 1/5 of playing surface) */
+  showBaulkArea?: boolean;
+  /** Blackball: cross/dot at the black-ball rack position */
+  showBlackSpot?: boolean;
+  /** International: longitudinal rack line through the black spot */
+  showRackLine?: boolean;
+  /** International: marker at the head ball position on the rack line */
+  showHeadBallSpot?: boolean;
+  /** International: transverse break line — same geometry as baulk line */
+  showBreakLine?: boolean;
+  /** Both: faint centre transverse line */
+  showCentreLine?: boolean;
+  /** Optional: D-shaped training reference — NOT a rules requirement */
+  showTrainingD?: boolean;
+  /** Optional label rendered in the baulk/break area */
+  baulkLabel?: string;
+};
+
+export type AimLine = {
+  /** Ball ID (usually cue ball) to start from */
+  fromBallId: string;
+  /** Ball ID to pass through (usually object ball) */
+  throughBallId?: string;
+  /** Target pocket */
+  toPocket?: PocketId;
+  style?: "solid" | "dashed";
+};
+
+export type RackMetadata = {
+  /** Apex (front) ball, 0–100% of playing surface (lowest y = top/rack end) */
+  apexX: number;
+  apexY: number;
+  /** True = English 8-ball rack: 7 red + 7 yellow + 1 black */
+  englishEightBall?: boolean;
+};
+
+export type DiagramVisualRequirement = "targetZone" | "aimLine" | "targetPocket" | "baulkArea" | "rack";
+
+/** Diagram metadata attached to a drill for data-driven table rendering.
+ *  Orientation convention: BAULK END = bottom (y=100%), RACK END = top (y=0%). */
 export type TrainingDiagram = {
   /** The group the player owns. Required for pattern/clearance exercises. */
   playerGroup?: "red" | "yellow";
   balls: TrainingBall[];
-  /** Optional shaded zone shown on the table (positional/speed drills). Coordinates 0–100 % of playing surface. */
+  /** Shaded coaching zone. Coordinates 0–100% of playing surface. */
   targetZone?: { x: number; y: number; width: number; height: number };
+  /** Nominated pocket — rendered with a highlight ring. */
+  targetPocket?: PocketId;
+  /** Optional ruleset-relevant table markings (baulk line, black spot, etc.). */
+  tableMarkings?: TableMarkings;
+  /** Instructional aim/potting lines: cue ball → object ball → pocket. */
+  aimLines?: AimLine[];
+  /** Rack geometry for break drills. */
+  rack?: RackMetadata;
+  /** Visual elements that setup/objective text references; checked by validateDrillDiagramIntegrity. */
+  requiresVisuals?: DiagramVisualRequirement[];
 };
 
 export type DecisionOption = {
@@ -348,6 +402,79 @@ export const RULES_MODE_INFO: Record<RulesMode, { label: string; description: st
   mixed:        { label: "Both",               description: "Your training will include both rulesets. Every rules-specific exercise will be clearly labelled." },
 };
 
+// ─── Canonical ball colours (shared by renderer and tests) ────────────────────
+/** Off-white cue, English pool red/yellow/near-black. Use these everywhere — never infer colour from an arbitrary string. */
+export const BALL_COLORS = {
+  cue:    "#F2F0E8",
+  red:    "#B83E35",
+  yellow: "#D6A52E",
+  black:  "#151918",
+} as const;
+
+// ─── English 8-ball rack helper ───────────────────────────────────────────────
+/**
+ * Produce 15 TrainingBall objects for an English 8-ball rack (7 red, 7 yellow, 1 black).
+ * Apex (front/top ball, lowest y) at (apexX, apexY).  Rows expand downward (+y = toward baulk).
+ *   dX ≈ 3.4  — one ball diameter in x-coordinate space (ballR ≈ 1.7% of playing width)
+ *   dY ≈ 5.89 — equilateral-triangle row height in y-coordinate space (2:1 playing-surface ratio)
+ */
+export function createEnglishEightBallRack(apexX: number, apexY: number): TrainingBall[] {
+  const dX = 3.4, dY = 5.89;
+  const row = (r: number) => apexY + r * dY;
+  const col = (offset: number) => apexX + offset * dX;
+  return [
+    // Row 0 — apex
+    { id: "Y1",  group: "yellow", x: col(0),    y: row(0) },
+    // Row 1
+    { id: "R1",  group: "red",    x: col(-0.5), y: row(1) },
+    { id: "R2",  group: "red",    x: col( 0.5), y: row(1) },
+    // Row 2 — black at centre
+    { id: "Y2",  group: "yellow", x: col(-1),   y: row(2) },
+    { id: "BLK", group: "black",  x: col( 0),   y: row(2), role: "black" as const },
+    { id: "Y3",  group: "yellow", x: col( 1),   y: row(2) },
+    // Row 3
+    { id: "R3",  group: "red",    x: col(-1.5), y: row(3) },
+    { id: "Y4",  group: "yellow", x: col(-0.5), y: row(3) },
+    { id: "R4",  group: "red",    x: col( 0.5), y: row(3) },
+    { id: "Y5",  group: "yellow", x: col( 1.5), y: row(3) },
+    // Row 4 — base
+    { id: "R5",  group: "red",    x: col(-2),   y: row(4) },
+    { id: "Y6",  group: "yellow", x: col(-1),   y: row(4) },
+    { id: "R6",  group: "red",    x: col( 0),   y: row(4) },
+    { id: "Y7",  group: "yellow", x: col( 1),   y: row(4) },
+    { id: "R7",  group: "red",    x: col( 2),   y: row(4) },
+  ];
+}
+
+// ─── Diagram integrity validation ─────────────────────────────────────────────
+/** Validate that all elements listed in diagram.requiresVisuals are actually present. */
+export function validateDrillDiagramIntegrity(drill: Drill): { valid: boolean; errors: string[] } {
+  const d = drill.diagram;
+  if (!d) return { valid: true, errors: [] };
+  const errors: string[] = [];
+  for (const req of d.requiresVisuals ?? []) {
+    switch (req) {
+      case "targetZone":
+        if (!d.targetZone) errors.push("'targetZone' required but diagram.targetZone is missing");
+        break;
+      case "aimLine":
+        if (!d.aimLines || d.aimLines.length === 0) errors.push("'aimLine' required but diagram.aimLines is empty/missing");
+        break;
+      case "targetPocket":
+        if (!d.targetPocket) errors.push("'targetPocket' required but diagram.targetPocket is missing");
+        break;
+      case "baulkArea":
+        if (!d.tableMarkings?.showBaulkLine && !d.tableMarkings?.showBreakLine && !d.tableMarkings?.showBaulkArea)
+          errors.push("'baulkArea' required but no baulk/break table marking is defined");
+        break;
+      case "rack":
+        if (!d.rack) errors.push("'rack' required but diagram.rack is missing");
+        break;
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
 // ─── Decision option helpers ──────────────────────────────────────────────────
 
 const opt = (label: string, tier: DecisionTier, rationale: string, risk: DecisionOption["risk"]): DecisionOption =>
@@ -374,21 +501,21 @@ export const DRILLS: Drill[] = [
   { ...execDrill("pot1","potting",2,"Straight Pot — Middle Pocket","Set the object ball one diamond from a middle pocket, straight in.",true), diagram: { balls: [
     { id: "OBJ", group: "yellow" as const, x: 50, y: 22 },
     { id: "CB",  group: "cue"    as const, x: 50, y: 72 },
-  ] }, objective: "Pot the yellow into the top-middle pocket.", setup: "Place the yellow one diamond below the top-middle pocket. Position the cue ball directly in line, approximately two diamonds away.", successCriteria: ["Yellow ball potted cleanly into the top-middle pocket."] },
+  ], targetPocket: "topMiddle", aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topMiddle", style: "dashed" }], requiresVisuals: ["targetPocket"] }, objective: "Pot the yellow into the top-middle pocket.", setup: "Place the yellow one diamond below the top-middle pocket. Position the cue ball directly in line, approximately two diamonds away.", successCriteria: ["Yellow ball potted cleanly into the top-middle pocket."] },
   execDrill("pot2","potting",4,"Angled Pot — 30°","Cut angle pot into a corner pocket."),
   execDrill("pot3","potting",6,"Long Pot — Full Length","Full-length straight pot, top rail to bottom rail."),
   execDrill("pot4","potting",8,"Thin Cut Under Pressure","Thin cut with a problem ball nearby restricting the cue-ball path."),
-  { ...execDrill("spd1","speed",2,"Stop-Ball Speed Gate","Stun the cue ball dead in a large marked zone.",true), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 60, y: 50 },
-    { id: "CB",  group: "cue"    as const, x: 28, y: 50 },
-  ], targetZone: { x: 38, y: 22, width: 22, height: 56 } }, objective: "Pot the object ball and stop the cue ball inside the marked zone.", setup: "Place the object ball as shown. Mark the cue-ball target zone with two chalk markers on the baize.", successCriteria: ["Object ball potted.", "Cue ball finishes within the marked zone."] },
+  { ...execDrill("spd1","speed",2,"Stop-Ball Speed Gate","Stun the cue ball dead inside the marked zone.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 55, y: 45 },
+    { id: "CB",  group: "cue"    as const, x: 35, y: 65 },
+  ], targetZone: { x: 44, y: 35, width: 24, height: 24 }, targetPocket: "topRight", aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topRight", style: "dashed" }], requiresVisuals: ["targetZone", "targetPocket"] }, objective: "Pot the object ball and stop the cue ball inside the marked zone.", setup: "Place the yellow and cue ball as shown. Pot the yellow into the top-right corner using a stun shot. The cue ball must stop within the highlighted target zone near the contact point.", successCriteria: ["Object ball potted.", "Cue ball finishes within the marked zone."] },
   execDrill("spd2","speed",4,"Two-Cushion Speed Control","Land the cue ball in a target zone after two cushions."),
   execDrill("spd3","speed",6,"Soft Touch Safety Roll","Roll the cue ball just past the object ball at minimal pace."),
   execDrill("spd4","speed",8,"Precision Lag to Baulk","Cue ball must finish within a tight zone by the baulk cushion."),
-  { ...execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into an open zone.",true), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 63, y: 28 },
+  { ...execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into the highlighted zone.",true), diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 68, y: 30 },
     { id: "CB",  group: "cue"    as const, x: 38, y: 58 },
-  ], targetZone: { x: 38, y: 5, width: 52, height: 32 } }, objective: "Pot the yellow and follow the cue ball into the highlighted zone.", setup: "Place the yellow as shown. Position the cue ball with a natural potting angle into the pocket.", successCriteria: ["Yellow potted.", "Cue ball finishes in the highlighted follow zone."] },
+  ], targetZone: { x: 60, y: 5, width: 36, height: 28 }, targetPocket: "topRight", aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topRight", style: "dashed" }], requiresVisuals: ["targetZone", "targetPocket"] }, objective: "Pot the yellow and follow the cue ball into the highlighted zone.", setup: "Place the yellow and cue ball as shown. Pot the yellow into the top-right corner with follow. The cue ball must continue into the highlighted zone beyond the contact point.", successCriteria: ["Yellow potted.", "Cue ball finishes in the highlighted follow zone."] },
   execDrill("pos2","positional",4,"Screw Round the Angle","Pot and screw the cue ball back around a cluster."),
   execDrill("pos3","positional",6,"Side-Spin Route","Use side spin to reach a tucked-away next ball."),
   execDrill("pos4","positional",8,"Congested Cluster Route","Navigate the cue ball through a tight cluster to the next ball."),
@@ -405,15 +532,15 @@ export const DRILLS: Drill[] = [
   execDrill("pbe2","problemBallExec",4,"Cannon Off Two Balls","Use a cannon to move two problem balls apart."),
   execDrill("pbe3","problemBallExec",6,"Break-Out From a Cluster","Break out a buried ball from a tight cluster."),
   { ...execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true), diagram: { balls: [
-    { id: "BLK", group: "black" as const, x: 50, y: 50 },
-    { id: "CB",  group: "cue"   as const, x: 50, y: 82 },
-  ] }, objective: "Break the rack and achieve a stable, controlled spread.", setup: "Rack all 15 balls in the standard triangle. Place the cue ball anywhere in the D (baulk area) as shown.", successCriteria: ["At least 4 balls reach the cushions.", "Cue ball does not follow a ball into a pocket."] },
+    ...createEnglishEightBallRack(50, 22),
+    { id: "CB", group: "cue" as const, x: 50, y: 83 },
+  ], tableMarkings: { showBaulkLine: true, showBaulkArea: true, showBlackSpot: true, baulkLabel: "BAULK" }, rack: { apexX: 50, apexY: 22, englishEightBall: true }, requiresVisuals: ["baulkArea", "rack"] }, objective: "Break the rack and achieve a stable, controlled spread.", setup: "Rack all 15 balls tightly in the triangle shown at the rack end of the table. Place the white cue ball anywhere inside the highlighted baulk area.", successCriteria: ["Cue ball strikes the rack cleanly.", "Balls spread across the table.", "Cue ball does not enter a pocket (no scratch)."] },
   execDrill("brk2","breakExec",4,"Break for a Pot","Break attempting to pot a ball off the break."),
   execDrill("brk3","breakExec",6,"Break Under Baulk Restriction","Break within tighter baulk-area constraints."),
   { ...execDrill("8b1","eightBall",2,"Straight 8-Ball","Simple straight 8-ball pot.",true), diagram: { balls: [
     { id: "BLK", group: "black" as const, x: 50, y: 28 },
     { id: "CB",  group: "cue"   as const, x: 50, y: 70 },
-  ] }, objective: "Pot the 8-ball into a nominated pocket.", setup: "Place the 8-ball on the straight potting line as shown. Place the cue ball directly in line.", successCriteria: ["8-ball potted into the nominated pocket.", "Cue ball does not scratch."] },
+  ], targetPocket: "topMiddle", aimLines: [{ fromBallId: "CB", throughBallId: "BLK", toPocket: "topMiddle", style: "dashed" }], requiresVisuals: ["aimLine", "targetPocket"] }, objective: "Pot the 8-ball into the nominated top-middle pocket.", setup: "Place the 8-ball on the straight potting line as shown. Place the cue ball directly in line behind it.", successCriteria: ["8-ball potted into the nominated pocket.", "Cue ball does not scratch."] },
   execDrill("8b2","eightBall",4,"Angled 8-Ball With Position","Angled 8-ball; cue ball must finish clear of cushions."),
   execDrill("8b3","eightBall",6,"8-Ball Under Pressure","8-ball pot with a tight pocket angle."),
 

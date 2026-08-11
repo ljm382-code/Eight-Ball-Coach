@@ -1,0 +1,1018 @@
+PHASE 4.5 — RULESET-ACCURATE TABLE MARKINGS + EXACT DRILL DIAGRAMS
+
+Phase 4.4 is complete.
+
+The current application has improved drill instructions, but the diagrams still fail to represent several instructions accurately.
+
+THIS IS A TRAINING APPLICATION.
+
+A player must be able to reproduce every drill from the diagram and written instructions without guessing.
+
+This patch is strictly about TABLE GEOMETRY, TABLE MARKINGS, DIAGRAM SEMANTICS, and DRILL/DIAGRAM CONSISTENCY.
+
+DO NOT alter:
+- adaptive rating logic
+- confidence logic
+- match intelligence
+- rules penalties
+- mixed-training allocation
+- persistence
+- navigation
+- approved Sage–Teal theme
+
+==================================================
+1. CURRENT LIVE ISSUES
+==================================================
+
+The following problems are visible in the deployed app:
+
+A. Drills refer to a “marked zone” or “highlighted zone”, but the target zone is effectively invisible.
+
+B. “Controlled Break” instructs the player to rack all 15 balls and place the cue ball in baulk, but:
+- the 15-ball rack is not drawn
+- the baulk/break line is not clearly drawn
+- the baulk area is not visually identifiable
+- the diagram currently shows only a cue ball and black ball, which is completely wrong for a break drill.
+
+C. Drills refer to a “straight potting line”, but no instructional line is drawn.
+
+D. Some diagrams do not make the intended pocket obvious.
+
+E. Cue-ball rendering is inconsistent.
+
+THE CUE BALL MUST ALWAYS BE WHITE/OFF-WHITE.
+
+It must never inherit:
+- teal
+- blue
+- yellow
+- red
+- obstacle styling
+- selection fill
+- generic palette colour
+
+F. The same generic diagram approach is still being used where the exercise requires specific geometry.
+
+These are training-integrity defects.
+
+==================================================
+2. TABLE MARKINGS MUST BE RULESET-AWARE
+==================================================
+
+Do NOT blindly draw identical markings for both rulesets.
+
+Implement table-marking metadata in the training diagram.
+
+Suggested structure:
+
+tableMarkings?: {
+  showBaulkOrBreakLine?: boolean;
+  showBaulkArea?: boolean;
+
+  showBlackSpot?: boolean;
+
+  showRackLine?: boolean;
+  showHeadBallSpot?: boolean;
+
+  showCentreLine?: boolean;
+
+  baulkLabel?: string;
+}
+
+The PoolTable renderer should render the markings requested by the authored drill/ruleset.
+
+==================================================
+3. WPA BLACKBALL TABLE REFERENCE
+==================================================
+
+For Blackball training diagrams, support:
+
+BAULK LINE
+- transverse line across the playing surface
+- positioned 1/5 of the playing length from the baulk cushion
+
+BLACK SPOT
+- clearly marked spot for the black
+- located at the intersection of the imaginary diagonals running from the centre pockets to the opposite corner pockets
+
+When a drill discusses baulk, visibly identify:
+
+BAULK
+
+with a subtle shaded region or small label.
+
+Do not clutter every normal drill with the label if it is irrelevant.
+
+==================================================
+4. INTERNATIONAL RULES TABLE REFERENCE
+==================================================
+
+For International Rules training diagrams, support:
+
+BREAK LINE
+- parallel to the baulk cushion
+- 1/5 of the table length from the baulk cushion
+
+RACK LINE
+- longitudinal line approximately 280mm through the eight-ball/black spot toward the top cushion
+
+HEAD-BALL MARKER
+- marker point on the rack line
+
+BLACK / EIGHT-BALL MARKER
+- marker point on the rack line
+
+Use these where relevant to:
+- break setup
+- rerack/rack instruction
+- black positioning
+- rules scenarios
+
+==================================================
+5. OPTIONAL D-SHAPED TRAINING REFERENCE
+==================================================
+
+Do NOT describe a semicircular D as a mandatory current-rule marking for both Blackball and International Rules.
+
+If the product wants a familiar English-pool visual baulk reference, support it only as:
+
+showTrainingD?: boolean
+
+and label it as a training/table reference, NOT as a rules requirement.
+
+Do not let this optional marking alter legal cue-ball placement logic.
+
+==================================================
+6. TABLE ORIENTATION
+==================================================
+
+Standardise orientation throughout the app.
+
+Define and document:
+
+BAULK END = bottom of diagram
+TOP / RACK END = top of diagram
+
+OR the exact opposite if the existing app already consistently uses another orientation.
+
+Pick one convention and use it everywhere.
+
+Do not rotate orientation from drill to drill.
+
+The same screen coordinate must always represent the same end of the table.
+
+==================================================
+7. BLACK SPOT / RACK END MUST BE VISIBLE
+==================================================
+
+Add a small but visible spot marker at the correct authored black/8-ball location where relevant.
+
+Use a subtle dot/cross.
+
+It must remain visible even when the black is not currently sitting on it.
+
+The player should be able to understand:
+
+“place the black on the black spot”
+
+without guessing.
+
+==================================================
+8. TARGET ZONES MUST ACTUALLY BE VISIBLE
+==================================================
+
+The current target zones are too faint / effectively invisible.
+
+Fix PoolTable target-zone rendering.
+
+Target zones must use:
+
+- translucent fill
+- clearly visible boundary
+- high enough contrast against BOTH teal and light-blue cloth
+- no confusion with the physical balls
+
+Recommended visual style:
+
+fill:
+rgba(255,255,255,0.12–0.20)
+
+stroke:
+#F2F0E8 or dark teal depending on cloth contrast
+
+strokeWidth:
+approximately 1.5–2 SVG units
+
+strokeDasharray:
+4 3 where useful
+
+Optional label:
+TARGET
+
+Do not rely only on a tiny colour difference in the cloth.
+
+==================================================
+9. SPEED-GATE DRILL — FIX EXACTLY
+==================================================
+
+The current:
+
+STOP-BALL SPEED GATE
+
+says:
+
+“stop the cue ball inside the marked zone”
+
+but the zone is not visible enough.
+
+Author and render:
+
+- white cue ball
+- yellow or red object ball
+- intended pocket
+- clear target zone immediately after the object-ball contact line
+- cue-ball starting position
+- optional straight/object-ball aim line
+
+The diagram must visibly answer:
+
+Where does the object ball go?
+Where should the cue ball finish?
+
+Add a visible target-zone rectangle/ellipse.
+
+Written setup should correspond exactly to the diagram.
+
+==================================================
+10. SIMPLE FOLLOW ROUTE — FIX EXACTLY
+==================================================
+
+The current:
+
+SIMPLE FOLLOW ROUTE
+
+says:
+
+“follow the cue ball into the highlighted zone”
+
+but the highlighted zone is effectively not shown.
+
+Author:
+
+- white cue ball
+- yellow object ball
+- actual intended pocket
+- visible follow target zone beyond the object ball
+- optional cue-ball route arrow from contact point into target zone
+
+The geometry must represent a physically plausible follow shot.
+
+The target zone must be easily visible.
+
+==================================================
+11. CONTROLLED BREAK — COMPLETE REDESIGN OF DIAGRAM
+==================================================
+
+The current break diagram is incorrect and must be replaced.
+
+It must show:
+
+1 WHITE CUE BALL
+
+PLUS THE COMPLETE 15-BALL ENGLISH 8-BALL RACK:
+
+7 reds
+7 yellows
+1 black
+
+The balls must be tightly arranged in a realistic triangle.
+
+Do NOT use American stripes/solids.
+
+==================================================
+12. 15-BALL ENGLISH RACK DATA
+==================================================
+
+Create a reusable function/data helper:
+
+createEnglishEightBallRack(...)
+
+It must produce exactly:
+
+7 red
+7 yellow
+1 black
+
+plus the separately positioned white cue ball.
+
+Do not randomise during rendering.
+
+Use a stable authored rack pattern.
+
+Black must occupy the correct central rack position required by the app's supported rule/reference implementation.
+
+The triangle geometry should visually touch/tightly pack the balls.
+
+==================================================
+13. BREAK DIAGRAM — BAULK/BREAK AREA
+==================================================
+
+For Controlled Break:
+
+render the relevant ruleset's:
+
+- baulk/break line
+- cue-ball placement area
+- rack position
+- black/8-ball marker where applicable
+
+Place the white cue ball clearly inside the legal starting region.
+
+If Mixed Training assessment uses a rules-neutral break drill:
+
+either:
+
+A. make the drill shared and use only markings common enough for coaching purposes
+
+OR
+
+B. present a ruleset-specific version with the correct badge and markings.
+
+Do NOT display one misleading hybrid rule diagram.
+
+==================================================
+14. BREAK SETUP TEXT
+==================================================
+
+Rewrite vague setup text if necessary.
+
+Example:
+
+SETUP
+
+“Rack all 15 object balls tightly in the triangle shown at the rack end of the table. Place the white cue ball inside the highlighted baulk/break area.”
+
+The image must visibly show:
+
+15-ball triangle
+white cue
+placement region
+line defining the region
+
+==================================================
+15. BREAK SUCCESS CRITERIA MUST BE RULESET-CORRECT
+==================================================
+
+Do not hard-code generic “4 balls hit cushions” language unless that is genuinely correct for the active ruleset.
+
+Use existing rule modules.
+
+If Blackball and International Rules define a legal break differently:
+
+present ruleset-specific success criteria.
+
+Do not change the rules engine.
+
+Use the existing rules implementation/content to select the correct coaching text.
+
+==================================================
+16. STRAIGHT POTTING LINE VISUAL
+==================================================
+
+Add a reusable instructional line type:
+
+aimLine / pottingLine
+
+Suggested metadata:
+
+aimLine?: {
+  from: { x: number; y: number };
+  throughBallId?: string;
+  toPocket?: PocketId;
+  style?: "solid" | "dashed";
+}
+
+Draw a subtle straight line:
+
+cue ball
+→ object ball
+→ intended pocket
+
+where the drill explicitly teaches a straight pot.
+
+Do NOT draw this automatically for every shot.
+
+==================================================
+17. STRAIGHT 8-BALL — FIX EXACTLY
+==================================================
+
+Current text says:
+
+“Place the 8-ball on the straight potting line as shown.”
+
+Therefore the diagram must SHOW the potting line.
+
+It must include:
+
+- white cue ball
+- black 8-ball
+- selected/nominated pocket
+- dashed or subtle straight line cue → black → pocket
+
+The target pocket should receive a subtle highlight/ring.
+
+The player should understand the entire shot without reading the paragraph.
+
+==================================================
+18. NOMINATED POCKET DISPLAY
+==================================================
+
+Add optional:
+
+targetPocket
+
+to TrainingDiagram if not already robustly implemented.
+
+Supported identifiers:
+
+topLeft
+topMiddle
+topRight
+bottomLeft
+bottomMiddle
+bottomRight
+
+PoolTable should visibly highlight the target pocket.
+
+Possible style:
+
+- brass/teal outer ring
+- small “TARGET” label if space permits
+
+Do not change actual pocket size.
+
+==================================================
+19. STRAIGHT POT — MIDDLE POCKET
+==================================================
+
+Verify the existing drill:
+
+Straight Pot — Middle Pocket
+
+actually renders:
+
+- intended middle pocket
+- object ball positioned on a real straight line to that pocket
+- white cue ball directly behind object ball
+- optional potting line
+
+If text says “one diamond from a middle pocket”, the diagram should geometrically approximate that distance.
+
+==================================================
+20. CUE BALL TYPE MUST BE AUTHORITATIVE
+==================================================
+
+Fix cue-ball representation at the model/rendering level.
+
+Do NOT infer cue ball by arbitrary colour.
+
+Every training diagram must represent it explicitly as:
+
+group/type: "cue"
+
+The renderer MUST map:
+
+cue → BALL.cue / #F2F0E8
+
+unconditionally.
+
+Any supplied display colour for a cue ball must be ignored.
+
+Conceptually:
+
+function resolveBallColor(ball) {
+  switch (ball.group) {
+    case "cue":
+      return BALL.cue;
+    case "red":
+      return BALL.red;
+    case "yellow":
+      return BALL.yellow;
+    case "black":
+      return BALL.black;
+  }
+}
+
+Never:
+
+ball.color || defaultColor
+
+for canonical English-pool ball identity.
+
+==================================================
+21. VALIDATE CUE BALL IN EVERY PHYSICAL DRILL
+==================================================
+
+Every physical shot/setup diagram must contain exactly:
+
+1 cue ball
+
+Exceptions are allowed only for diagrams that intentionally illustrate rack/table state without a shot.
+
+Assessment execution drills must have exactly one cue ball.
+
+Clearance drills must have exactly one cue ball.
+
+Decision shot scenarios should have exactly one cue ball where cue-ball position matters.
+
+==================================================
+22. NO FAKE BALL SUBSTITUTION
+==================================================
+
+Never substitute:
+
+- blue ball for cue
+- grey ball for cue
+- generic teal sphere
+- translucent unknown ball
+
+Cue = off-white.
+
+Red = red.
+Yellow = yellow.
+Black = black.
+
+This must be deterministic.
+
+==================================================
+23. DIAGRAM SEMANTIC LAYERS
+==================================================
+
+Extend TrainingDiagram cleanly to support instructional layers.
+
+Suggested structure:
+
+type TrainingDiagram = {
+  playerGroup?: "red" | "yellow";
+
+  cueBall: TrainingBall;
+  balls: TrainingBall[];
+
+  tableMarkings?: TableMarkings;
+
+  targetZone?: TargetZone;
+
+  targetPocket?: PocketId;
+
+  aimLines?: AimLine[];
+
+  routeSegments?: RouteSegment[];
+
+  rack?: RackMetadata;
+}
+
+Do not force every field to exist.
+
+==================================================
+24. RENDER ORDER
+==================================================
+
+Render SVG layers in this logical order:
+
+1. cloth
+2. permanent/ruleset table markings
+3. shaded baulk/break areas
+4. target zones
+5. aim/potting lines
+6. route lines
+7. rack/ball placement indicators
+8. balls
+9. training-number markers
+10. selection rings
+11. target-pocket emphasis
+
+This prevents instructional graphics from covering the balls.
+
+==================================================
+25. EVERY INSTRUCTIONAL NOUN MUST HAVE A VISUAL REFERENT
+==================================================
+
+Add a content/diagram validation principle:
+
+If setup/objective text uses phrases such as:
+
+“marked zone”
+“highlighted zone”
+“target zone”
+
+the diagram MUST define targetZone.
+
+If text uses:
+
+“potting line”
+“straight line”
+
+the diagram MUST define aimLine.
+
+If text uses:
+
+“nominated pocket”
+“target pocket”
+
+the diagram MUST define targetPocket.
+
+If text uses:
+
+“baulk”
+“break area”
+
+the diagram MUST define relevant tableMarkings / placement area.
+
+If text uses:
+
+“rack all 15 balls”
+
+the diagram MUST include rack metadata + 15 object balls.
+
+==================================================
+26. AUTOMATED CONTENT-DIAGRAM VALIDATION
+==================================================
+
+Create a pure validation helper such as:
+
+validateDrillDiagramIntegrity(drill)
+
+Return structured errors.
+
+Example:
+
+{
+  valid: false,
+  errors: [
+    "objective references target zone but diagram.targetZone is missing"
+  ]
+}
+
+Use deterministic string/metadata checks.
+
+Do not perform AI/NLP inference.
+
+A small explicit requirement field is preferable.
+
+Suggested authored metadata:
+
+requiresVisuals?: [
+  "targetZone",
+  "aimLine",
+  "targetPocket",
+  "baulkArea",
+  "rack"
+]
+
+Then validation ensures those visual components exist.
+
+==================================================
+27. BREAK RACK VALIDATION
+==================================================
+
+Validate:
+
+- exactly 15 object balls
+- exactly 7 red
+- exactly 7 yellow
+- exactly 1 black
+- exactly 1 cue ball outside the rack
+- no duplicate IDs
+- rack coordinates form intended triangle
+- cue ball is inside required authored break/baulk region
+
+==================================================
+28. TABLE MARKING VISIBILITY
+==================================================
+
+Do not make markings nearly invisible.
+
+They should be subtle but clearly readable on a phone.
+
+At 390px width:
+
+a user must be able to identify:
+
+- baulk/break line
+- black spot
+- target zone
+- target pocket
+
+without zooming.
+
+==================================================
+29. RESPONSIVE SVG QUALITY
+==================================================
+
+Check at:
+
+390px
+430px
+
+Ensure:
+
+- lines remain visible
+- dashed lines don't disappear
+- target zones don't vanish
+- ball radius remains realistic
+- rack balls remain distinguishable
+- labels don't overlap
+- target-pocket rings don't cover pocket openings
+
+==================================================
+30. DRILL-BY-DRILL AUDIT
+==================================================
+
+Audit every ASSESSMENT_ITEMS drill against:
+
+diagram
+setup
+objective
+successCriteria
+
+For each one ask:
+
+Does the diagram literally show what the words describe?
+
+If NO:
+fix the authored diagram/data.
+
+Do NOT just weaken/rewrite the text to avoid drawing the required information unless the text was genuinely incorrect.
+
+==================================================
+31. SPECIFIC ASSESSMENT EXPECTATIONS
+==================================================
+
+STOP-BALL SPEED GATE
+
+Must visibly show:
+✓ white cue ball
+✓ target object ball
+✓ target pocket
+✓ clearly visible target zone
+
+--------------------------------------------------
+
+SIMPLE FOLLOW ROUTE
+
+Must visibly show:
+✓ white cue ball
+✓ yellow/red target
+✓ target pocket
+✓ follow target zone
+✓ optional follow route arrow
+
+--------------------------------------------------
+
+CONTROLLED BREAK
+
+Must visibly show:
+✓ white cue ball
+✓ full 15-ball English rack
+✓ 7 red / 7 yellow / 1 black
+✓ break/baulk line
+✓ cue-ball placement region
+✓ correct rack location
+
+--------------------------------------------------
+
+STRAIGHT 8-BALL
+
+Must visibly show:
+✓ white cue ball
+✓ black ball
+✓ target pocket
+✓ straight potting line
+
+--------------------------------------------------
+
+STRAIGHT POT — MIDDLE
+
+Must visibly show:
+✓ white cue
+✓ red/yellow object ball
+✓ intended middle pocket
+✓ straight potting geometry
+
+==================================================
+32. RULESET-SPECIFIC TABLE MARKING DATA
+==================================================
+
+Keep rules metadata separate from visual styling.
+
+Create helpers such as:
+
+getTableMarkingsForRuleset(
+  ruleset,
+  purpose
+)
+
+where appropriate.
+
+Do NOT duplicate rules definitions inside App.tsx.
+
+For shared physical execution drills, use common coaching markings.
+
+For rules-sensitive break/rule scenarios, use activeRuleset.
+
+==================================================
+33. MIXED TRAINING
+==================================================
+
+Mixed Training remains a training preference, not a hybrid ruleset.
+
+A rules-sensitive drill must still resolve to:
+
+BLACKBALL
+
+or
+
+INTERNATIONAL
+
+before determining rules-specific table markings or success criteria.
+
+Do not create a fake “mixed break rule”.
+
+==================================================
+34. TESTS — EG ONWARDS
+==================================================
+
+Preserve all existing 205 tests.
+
+Add deterministic tests:
+
+EG.
+Every assessment execution drill contains exactly one cue ball.
+
+EH.
+Cue-ball renderer always resolves cue to off-white.
+
+EI.
+Canonical cue-ball colour cannot be overridden by arbitrary display colour.
+
+EJ.
+Stop-Ball Speed Gate defines targetZone.
+
+EK.
+Stop-Ball Speed Gate target zone has visible geometry.
+
+EL.
+Simple Follow Route defines targetZone.
+
+EM.
+Simple Follow Route target zone is positioned beyond/along intended follow route.
+
+EN.
+Straight 8-Ball defines aimLine.
+
+EO.
+Straight 8-Ball defines targetPocket.
+
+EP.
+Straight Pot — Middle defines intended pocket.
+
+EQ.
+Aim line references real cue/object ball geometry.
+
+ER.
+Controlled Break includes exactly 15 object balls.
+
+ES.
+Controlled Break rack contains 7 red + 7 yellow + 1 black.
+
+ET.
+Controlled Break contains a separate white cue ball.
+
+EU.
+Controlled Break defines break/baulk line.
+
+EV.
+Controlled Break cue ball is inside its authored placement region.
+
+EW.
+Blackball table markings include baulk-line support + black spot.
+
+EX.
+International table markings include break-line + rack-line/head/black marker support where relevant.
+
+EY.
+A drill requiring targetZone fails validation if targetZone is absent.
+
+EZ.
+A drill requiring aimLine fails validation if aimLine is absent.
+
+FA.
+A drill requiring targetPocket fails validation if targetPocket is absent.
+
+FB.
+A drill requiring rack fails validation if rack is absent.
+
+FC.
+No assessment physical diagram renders a non-white cue ball.
+
+FD.
+All assessment visual requirements pass validateDrillDiagramIntegrity.
+
+==================================================
+35. VISUAL QA
+==================================================
+
+Manually inspect at 390px and 430px:
+
+1. Stop-Ball Speed Gate
+2. Simple Follow Route
+3. Controlled Break
+4. Straight 8-Ball
+5. Straight Pot — Middle Pocket
+
+Take screenshots if supported.
+
+A human should immediately be able to point at:
+
+“THAT is the marked zone.”
+
+“THAT is the baulk/break line.”
+
+“THAT is where the rack goes.”
+
+“THAT is the target pocket.”
+
+“THAT is the potting line.”
+
+“THAT white ball is the cue ball.”
+
+No guessing.
+
+==================================================
+36. REGRESSION GATE
+==================================================
+
+All existing 205 tests must remain green.
+
+Then run:
+
+EG–FD tests.
+
+Run TypeScript.
+
+Run production build using:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Verify dist exists.
+
+Verify asset paths start with:
+
+/Eight-Ball-Coach/
+
+Run runtime verification.
+
+==================================================
+37. COMMIT
+==================================================
+
+Commit exact message:
+
+Make training diagrams match drill instructions
+
+Push to origin/main.
+
+Confirm GitHub Pages workflow triggers.
+
+==================================================
+38. FINAL REPORT
+==================================================
+
+Report only:
+
+- table marking implementation
+- Blackball markings
+- International markings
+- target-zone visibility changes
+- aim/potting-line implementation
+- target-pocket implementation
+- Controlled Break rack implementation
+- English rack inventory verification
+- cue-ball enforcement
+- diagram-integrity validation
+- assessment drills corrected
+- existing 205 tests
+- EG–FD tests
+- TypeScript
+- GitHub Pages production build
+- runtime
+- commit SHA
+- GitHub push
+- Pages deployment status
+- remaining diagram limitations
+
+STOP.
+
+Do not start another phase.

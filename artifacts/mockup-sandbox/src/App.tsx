@@ -2,15 +2,15 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import { PolarAngleAxis, PolarGrid, Radar, RadarChart, ResponsiveContainer } from "recharts";
 import { Check, ChevronRight, Play, RotateCcw, TrendingDown, TrendingUp, Minus, X, BookOpen, Settings, Dumbbell, Trophy } from "lucide-react";
 import {
-  ADAPTATION_SKILL_MAP, ASSESSMENT_CLEARANCE, ASSESSMENT_ITEMS, CLEARANCES, DRILLS,
+  ADAPTATION_SKILL_MAP, ASSESSMENT_CLEARANCE, ASSESSMENT_ITEMS, BALL_COLORS, CLEARANCES, DRILLS,
   ERROR_CODES, RULESETS, SKILLS, SKILL_MAP,
   applySkillUpdate, appendRatingSnapshots, buildErrorChainNarrative, buildRootCauseEvents,
   buildSummary, classifyErrorChain, confidenceLabel, computeConfidence, computeRulesetConfidence,
   decisionValue, evaluatePlannedRoute, generateSession, isStale, limitingFactor,
   newProfile, sessionWeighting, trendFor,
-  type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
-  type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
-  type TrainingDiagram,
+  type AimLine, type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
+  type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
+  type TableMarkings, type TrainingDiagram,
 } from "./engine";
 import { clearProfile, loadProfile, saveProfile, updateRulesMode } from "./persistence/profileStorage";
 import { loadMatches, saveMatches } from "./persistence/matchStorage";
@@ -64,13 +64,8 @@ const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 } as const;
 const R  = { sm: 8, md: 12, lg: 16, xl: 24 } as const;
 
 // ─── English pool ball colours ─────────────────────────────────────────────────
-// red = deep English pool red; yellow = warm English yellow; black = 8-ball near-black; cue = warm off-white
-const BALL = {
-  red:    "#B83E35",
-  yellow: "#D6A52E",
-  black:  "#151918",
-  cue:    "#F2F0E8",
-} as const;
+// Sourced from engine BALL_COLORS — renderer always maps group → colour deterministically
+const BALL = BALL_COLORS;
 
 const fontImport = "@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;600&family=Inter:wght@400;500;600;700&display=swap');";
 
@@ -239,6 +234,9 @@ function PoolTable({
   selectedBall = null,
   routeSegments = [],
   targetZone,
+  tableMarkings,
+  targetPocket,
+  aimLines = [],
 }: {
   width?: number;
   balls?: BallSpec[];
@@ -246,110 +244,182 @@ function PoolTable({
   selectedBall?: string | null;
   routeSegments?: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }>;
   targetZone?: { x: number; y: number; width: number; height: number };
+  tableMarkings?: TableMarkings;
+  targetPocket?: PocketId;
+  aimLines?: AimLine[];
 }) {
-  const h = width * 0.56;
-  const pW = width * 0.08;   // frame padding
-  const bX = pW, bY = pW * 0.85;
-  const bW = width - pW * 2, bH = h - bY * 2;
-  const pR = pW * 0.42;      // pocket radius
-  // Pocket positions [x, y]
-  const pockets: [number, number][] = [
-    [bX, bY], [bX + bW / 2, bY - pR * 0.3], [bX + bW, bY],
-    [bX, bY + bH], [bX + bW / 2, bY + bH + pR * 0.3], [bX + bW, bY + bH],
-  ];
-  // Ball radius: ~2.8% of playing length — English pool proportion (2″ ball on 6×3 ft table)
+  const h   = width * 0.56;
+  const pW  = width * 0.08;
+  const bX  = pW, bY = pW * 0.85;
+  const bW  = width - pW * 2, bH = h - bY * 2;
+  const pR  = pW * 0.42;
   const ballR = bW * 0.017;
+
+  // Pocket positions — order matches PocketId keys
+  const pockets: [number, number][] = [
+    [bX,          bY],                         // topLeft
+    [bX + bW / 2, bY - pR * 0.3],              // topMiddle
+    [bX + bW,     bY],                         // topRight
+    [bX,          bY + bH],                    // bottomLeft
+    [bX + bW / 2, bY + bH + pR * 0.3],         // bottomMiddle
+    [bX + bW,     bY + bH],                    // bottomRight
+  ];
+  const pocketMap: Record<PocketId, [number, number]> = {
+    topLeft: pockets[0], topMiddle: pockets[1], topRight: pockets[2],
+    bottomLeft: pockets[3], bottomMiddle: pockets[4], bottomRight: pockets[5],
+  };
+
+  // Baulk line: 1/5 of playing length from the baulk cushion (bottom of diagram)
+  const baulkLineY  = bY + 0.80 * bH;
+  // Black spot: row-2 centre of a rack with apex at y=22%
+  const blackSpotX  = bX + 0.50 * bW;
+  const blackSpotY  = bY + 0.338 * bH;
 
   return <svg viewBox={`0 0 ${width} ${h}`} width={width} height={h} style={{ display: "block", borderRadius: R.md }}>
     <defs>
-      {/* Shared sphere shading overlay — bright at off-centre, darkened at rim */}
       <radialGradient id="ballShade" cx="38%" cy="32%" r="72%">
         <stop offset="0%"   stopColor="#ffffff" stopOpacity={0.20} />
         <stop offset="55%"  stopColor="#000000" stopOpacity={0} />
         <stop offset="100%" stopColor="#000000" stopOpacity={0.30} />
       </radialGradient>
-      {/* Arrowhead for coached route lines */}
       <marker id="routeArrow" markerWidth="5" markerHeight="5" refX="4.5" refY="2.5" orient="auto">
         <polygon points="0 0, 5 2.5, 0 5" fill={COLORS.primaryDark} opacity={0.65} />
       </marker>
     </defs>
-    {/* Table frame */}
+
+    {/* ── 1. Table shell ── */}
     <rect x={0} y={0} width={width} height={h} rx={pW * 0.7} fill="#2a1a0a" />
-    {/* Cushion rail */}
     <rect x={pW * 0.35} y={pW * 0.35} width={width - pW * 0.7} height={h - pW * 0.7} rx={pW * 0.5} fill="#3d2510" />
-    {/* Baize surface */}
     <rect x={bX} y={bY} width={bW} height={bH} rx={R.sm * 0.4} fill="#2A8790" />
-    {/* Centre line (faint) */}
     <line x1={bX + bW / 2} y1={bY + 4} x2={bX + bW / 2} y2={bY + bH - 4} stroke="#ffffff" strokeOpacity={0.04} strokeWidth={1} />
-    {/* Pockets */}
+
+    {/* ── 2. Table markings (baulk area, baulk/break line, black spot, rack line) ── */}
+    {tableMarkings?.showBaulkArea && <rect
+      x={bX} y={baulkLineY} width={bW} height={bY + bH - baulkLineY}
+      fill="#FFFFFF" fillOpacity={0.08}
+    />}
+    {(tableMarkings?.showBaulkLine || tableMarkings?.showBreakLine) && <line
+      x1={bX} y1={baulkLineY} x2={bX + bW} y2={baulkLineY}
+      stroke="#F2F0E8" strokeOpacity={0.50} strokeWidth={1.6} strokeDasharray="5,3"
+    />}
+    {tableMarkings?.baulkLabel && <text
+      x={bX + 5} y={baulkLineY + 9}
+      fontSize={6.5} fill="#F2F0E8" fillOpacity={0.58}
+      fontFamily="'IBM Plex Mono', monospace" letterSpacing={0.5}
+    >{tableMarkings.baulkLabel}</text>}
+    {tableMarkings?.showBlackSpot && <>
+      <line x1={blackSpotX - 4} y1={blackSpotY} x2={blackSpotX + 4} y2={blackSpotY}
+        stroke="#F2F0E8" strokeOpacity={0.55} strokeWidth={1.3} />
+      <line x1={blackSpotX} y1={blackSpotY - 4} x2={blackSpotX} y2={blackSpotY + 4}
+        stroke="#F2F0E8" strokeOpacity={0.55} strokeWidth={1.3} />
+      <circle cx={blackSpotX} cy={blackSpotY} r={1.8} fill="#F2F0E8" fillOpacity={0.60} />
+    </>}
+    {tableMarkings?.showRackLine && <line
+      x1={bX + bW / 2} y1={bY + 2} x2={bX + bW / 2} y2={baulkLineY}
+      stroke="#F2F0E8" strokeOpacity={0.16} strokeWidth={1}
+    />}
+
+    {/* ── 3. Target zone (coaching area — visibly shaded + bordered) ── */}
+    {targetZone && <>
+      <rect
+        x={bX + (targetZone.x / 100) * bW}
+        y={bY + (targetZone.y / 100) * bH}
+        width={(targetZone.width / 100) * bW}
+        height={(targetZone.height / 100) * bH}
+        fill="rgba(255,255,255,0.18)"
+        stroke="#F2F0E8"
+        strokeWidth={1.8}
+        strokeDasharray="4,3"
+        strokeOpacity={0.75}
+        rx={2}
+      />
+      <text
+        x={bX + (targetZone.x / 100) * bW + ((targetZone.width / 100) * bW) / 2}
+        y={bY + (targetZone.y / 100) * bH + ((targetZone.height / 100) * bH) / 2}
+        textAnchor="middle" dominantBaseline="central"
+        fontSize={6} fill="#F2F0E8" fillOpacity={0.65}
+        fontFamily="'IBM Plex Mono', monospace" letterSpacing={0.5}
+      >TARGET</text>
+    </>}
+
+    {/* ── 4. Aim / potting lines (instructional shot geometry) ── */}
+    {aimLines.map((al, i) => {
+      const fromB = balls.find(b => b.label === al.fromBallId);
+      const thruB = al.throughBallId ? balls.find(b => b.label === al.throughBallId) : null;
+      const pPos  = al.toPocket ? pocketMap[al.toPocket] : null;
+      if (!fromB) return null;
+      const dash  = al.style !== "solid";
+      const fx = fromB.x * width, fy = fromB.y * h;
+      const segs: [number, number, number, number][] = [];
+      if (thruB) {
+        const tx = thruB.x * width, ty = thruB.y * h;
+        segs.push([fx, fy, tx, ty]);
+        if (pPos) segs.push([tx, ty, pPos[0], pPos[1]]);
+      } else if (pPos) {
+        segs.push([fx, fy, pPos[0], pPos[1]]);
+      }
+      return segs.map(([x1, y1, x2, y2], j) => <line
+        key={`al-${i}-${j}`} x1={x1} y1={y1} x2={x2} y2={y2}
+        stroke="#F2F0E8" strokeOpacity={0.42} strokeWidth={1.4}
+        strokeDasharray={dash ? "5,3" : undefined}
+      />);
+    })}
+
+    {/* ── 5. Pockets ── */}
     {pockets.map(([px, py], i) => (
       <g key={i}>
         <circle cx={px} cy={py} r={pR * 1.15} fill="#0d1a14" />
         <circle cx={px} cy={py} r={pR * 0.75} fill="#060e0a" />
       </g>
     ))}
-    {/* Target zone — shaded coaching area for positional/speed drills */}
-    {targetZone && <rect
-      x={bX + (targetZone.x / 100) * bW}
-      y={bY + (targetZone.y / 100) * bH}
-      width={(targetZone.width / 100) * bW}
-      height={(targetZone.height / 100) * bH}
-      fill={COLORS.primary}
-      fillOpacity={0.13}
-      stroke={COLORS.primary}
-      strokeWidth={1}
-      strokeOpacity={0.38}
-      strokeDasharray="3,2"
-      rx={2}
-    />}
-    {/* Balls — all same physical radius; selection shown by outer ring only */}
+
+    {/* ── 6. Balls ── */}
     {balls.map((b, i) => {
       const sel = selectedBall === b.label;
-      const bx  = b.x * width;
-      const by  = b.y * h;
+      const bx  = b.x * width, by = b.y * h;
       return <g key={i} opacity={b.opacity ?? 1}>
-        {/* Contact shadow */}
         <ellipse cx={bx} cy={by + ballR * 0.90} rx={ballR * 0.88} ry={ballR * 0.26} fill="#000000" opacity={0.14} />
-        {/* Selection ring — outer glow + stroke; does NOT enlarge the ball */}
         {sel && <>
           <circle cx={bx} cy={by} r={ballR + 3.5} fill={COLORS.primary} opacity={0.10} />
           <circle cx={bx} cy={by} r={ballR + 2.5} fill="none" stroke={COLORS.primary} strokeWidth={1.5} opacity={0.85} />
         </>}
-        {/* Ball flat colour */}
         <circle cx={bx} cy={by} r={ballR} fill={b.color} stroke="#00000030" strokeWidth={0.5} />
-        {/* Sphere shading overlay */}
         <circle cx={bx} cy={by} r={ballR} fill="url(#ballShade)" />
-        {/* Specular highlight — small and restrained */}
         {b.highlight && <circle cx={bx - ballR * 0.26} cy={by - ballR * 0.30} r={ballR * 0.21} fill="#ffffff" opacity={0.40} />}
-        {/* Training label — external coaching marker, sits top-right of ball, NOT on the ball */}
         {b.trainingLabel && <g>
           <circle cx={bx + ballR + 5.5} cy={by - ballR - 5.5} r={5} fill="#FFFFFF" stroke={COLORS.primaryDark} strokeWidth={0.8} opacity={0.93} />
           <text x={bx + ballR + 5.5} y={by - ballR - 5.5} textAnchor="middle" dominantBaseline="central" fontSize={5.5} fontFamily="'IBM Plex Mono', monospace" fontWeight="700" fill={COLORS.primaryDark}>{b.trainingLabel}</text>
         </g>}
       </g>;
     })}
-    {/* Route segments — coached cue-ball travel paths drawn as dashed arrows */}
+
+    {/* ── 7. Route segments ── */}
     {routeSegments.map((seg, i) => {
       const fromSpec = balls.find(b => b.label === seg.fromBallId);
       const toSpec   = balls.find(b => b.label === seg.toBallId);
       if (!fromSpec || !toSpec) return null;
       const fx = fromSpec.x * width, fy = fromSpec.y * h;
       const tx = toSpec.x   * width, ty = toSpec.y   * h;
-      const dx = tx - fx, dy = ty - fy;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dx = tx - fx, dy = ty - fy, dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 1) return null;
       const nx = dx / dist, ny = dy / dist;
-      return <line
-        key={`seg-${i}`}
+      return <line key={`seg-${i}`}
         x1={fx + nx * (ballR + 2)}   y1={fy + ny * (ballR + 2)}
         x2={tx - nx * (ballR + 6.5)} y2={ty - ny * (ballR + 6.5)}
-        stroke={COLORS.primaryDark}
-        strokeWidth={1.1}
+        stroke={COLORS.primaryDark} strokeWidth={1.1}
         strokeDasharray={seg.type === "cueBallRoute" ? "4,2.5" : undefined}
-        strokeOpacity={0.55}
-        markerEnd="url(#routeArrow)"
+        strokeOpacity={0.55} markerEnd="url(#routeArrow)"
       />;
     })}
+
+    {/* ── 8. Target pocket emphasis (gold ring — rendered last, on top of pocket) ── */}
+    {targetPocket && (() => {
+      const [px, py] = pocketMap[targetPocket];
+      return <>
+        <circle cx={px} cy={py} r={pR * 1.65} fill="none" stroke={COLORS.gold} strokeWidth={2.0} strokeOpacity={0.82} />
+        <circle cx={px} cy={py} r={pR * 1.95} fill="none" stroke={COLORS.gold} strokeWidth={0.9} strokeOpacity={0.38} />
+      </>;
+    })()}
   </svg>;
 }
 
@@ -816,7 +886,7 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
     ];
     return <div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.lg, padding: "0 8px" }}>
-        <PoolTable width={260} balls={execBalls} targetZone={drill.diagram?.targetZone} />
+        <PoolTable width={260} balls={execBalls} targetZone={drill.diagram?.targetZone} tableMarkings={drill.diagram?.tableMarkings} targetPocket={drill.diagram?.targetPocket} aimLines={drill.diagram?.aimLines ?? []} />
       </div>
       <Card>
         {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
