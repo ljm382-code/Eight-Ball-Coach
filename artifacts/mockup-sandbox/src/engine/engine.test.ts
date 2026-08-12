@@ -20,9 +20,13 @@ import {
   limitingFactor, mixedRulesetSplit,
   newProfile, selectMaintenanceSkill, sessionWeighting, validateDrillDiagramIntegrity,
   validatePlayableDrillGeometry, diagramSignature, diagramDistance,
+  shuffleDecisionOptions, generateBallOrderPermutations, formatRouteSequence,
+  validateUniqueDecisionOptions, auditOptimalOptionPositions,
+  inferPrimaryShotAxis, isLongAxisShot,
   PLAYABLE_DRILLS, PLAYABLE_CLEARANCES,
   type Attempt, type ClearanceRouteState, type DiagramVisualRequirement, type LimitingFactors,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type SkillId, type TableMarkings,
+  type TrainingDiagram,
 } from "./index";
 import {
   getLegalBalls, isEightBallLegal, resolveFoulConsequences, getCueBallPlacement,
@@ -2977,4 +2981,413 @@ const GEO = getEnglishPoolTableGeometry(260);
   }
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, Phase 4.7 FW–GP, Phase 4.8 GQ–HQ, and Phase 4.9 HR–IO all passed ✓");
+// ══════════════════════════════════════════════════════════════════════════════
+// PHASE 5 TESTS — IP–JX
+// Shot geometry, decision helpers, drill library quality, pbd3 spatial claims
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── IP: inferPrimaryShotAxis — long axis ─────────────────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 82, y: 50 },
+    { id: "OBJ", group: "yellow", x: 12, y: 50 },
+  ] };
+  assert.equal(inferPrimaryShotAxis(diagram), "long",
+    "IP: CB(82,50)→OBJ(12,50) is long axis (deltaX=70, deltaY=0)");
+}
+
+// ── IQ: inferPrimaryShotAxis — cross axis ────────────────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 50, y: 80 },
+    { id: "OBJ", group: "yellow", x: 50, y: 10 },
+  ] };
+  assert.equal(inferPrimaryShotAxis(diagram), "cross",
+    "IQ: CB(50,80)→OBJ(50,10) is cross axis (deltaX=0, deltaY=70)");
+}
+
+// ── IR: inferPrimaryShotAxis — diagonal ──────────────────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 70, y: 70 },
+    { id: "OBJ", group: "yellow", x: 30, y: 30 },
+  ] };
+  assert.equal(inferPrimaryShotAxis(diagram), "diagonal",
+    "IR: CB(70,70)→OBJ(30,30) equal deltas → diagonal");
+}
+
+// ── IS: inferPrimaryShotAxis — null diagram → mixed ──────────────────────────
+{
+  assert.equal(inferPrimaryShotAxis(null), "mixed",
+    "IS: null diagram returns mixed");
+}
+
+// ── IT: isLongAxisShot — true for qualifying geometry ───────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 82, y: 50 },
+    { id: "OBJ", group: "yellow", x: 12, y: 50 },
+  ] };
+  assert.ok(isLongAxisShot(diagram),
+    "IT: deltaX=70 >= 55 and deltaX > deltaY=0 → isLongAxisShot");
+}
+
+// ── IU: isLongAxisShot — false when deltaX < 55 ──────────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 60, y: 50 },
+    { id: "OBJ", group: "yellow", x: 12, y: 50 },
+  ] };
+  assert.ok(!isLongAxisShot(diagram),
+    "IU: deltaX=48 < 55 → isLongAxisShot false");
+}
+
+// ── IV: isLongAxisShot — false when deltaX < deltaY ─────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 50, y: 85 },
+    { id: "OBJ", group: "yellow", x: 10, y: 15 },
+  ] };
+  assert.ok(!isLongAxisShot(diagram),
+    "IV: deltaX=40 < deltaY=70 → isLongAxisShot false");
+}
+
+// ── IW: pot3 is now long-axis geometry ───────────────────────────────────────
+{
+  const pot3 = DRILLS.find(d => d.id === "pot3")!;
+  assert.ok(pot3, "IW: pot3 drill must exist");
+  const cb  = pot3.diagram!.balls.find(b => b.group === "cue")!;
+  const obj = pot3.diagram!.balls.find(b => b.group !== "cue")!;
+  const dx = Math.abs(obj.x - cb.x);
+  const dy = Math.abs(obj.y - cb.y);
+  assert.ok(dx > dy * 1.5,
+    `IW: pot3 must be long-axis (deltaX=${dx}, deltaY=${dy})`);
+  assert.equal((pot3 as any).shotAxis, "long",
+    "IW: pot3 must have shotAxis='long'");
+}
+
+// ── IX: pot3 is a qualifying long-axis shot (deltaX >= 55) ──────────────────
+{
+  const pot3 = DRILLS.find(d => d.id === "pot3")!;
+  assert.ok(isLongAxisShot(pot3.diagram),
+    "IX: pot3 new geometry must satisfy isLongAxisShot (deltaX >= 55)");
+}
+
+// ── IY: cue2 (Screw Shot) is long-axis ──────────────────────────────────────
+{
+  const cue2 = DRILLS.find(d => d.id === "cue2")!;
+  assert.ok(cue2, "IY: cue2 drill must exist");
+  assert.equal(inferPrimaryShotAxis(cue2.diagram), "long",
+    "IY: cue2 must have long inferred axis");
+  assert.equal((cue2 as any).shotAxis, "long",
+    "IY: cue2 must have shotAxis='long'");
+}
+
+// ── IZ: cue2 routeSegments is set (draw-back route) ─────────────────────────
+{
+  const cue2 = DRILLS.find(d => d.id === "cue2")!;
+  const rs = cue2.diagram?.routeSegments ?? [];
+  assert.ok(rs.length > 0,
+    "IZ: cue2 must have at least one routeSegment for draw-back path");
+  assert.equal(rs[0].type, "cueBallRoute",
+    "IZ: cue2 routeSegment[0].type must be 'cueBallRoute'");
+}
+
+// ── JA: pos1 (Simple Follow) is long-axis ────────────────────────────────────
+{
+  const pos1 = DRILLS.find(d => d.id === "pos1")!;
+  assert.ok(pos1, "JA: pos1 drill must exist");
+  assert.equal(inferPrimaryShotAxis(pos1.diagram), "long",
+    "JA: pos1 must have long inferred axis");
+  assert.equal((pos1 as any).shotAxis, "long",
+    "JA: pos1 must have shotAxis='long'");
+}
+
+// ── JB: cue1 (Basic Stun) is long-axis ───────────────────────────────────────
+{
+  const cue1 = DRILLS.find(d => d.id === "cue1")!;
+  assert.ok(cue1, "JB: cue1 drill must exist");
+  assert.equal(inferPrimaryShotAxis(cue1.diagram), "long",
+    "JB: cue1 must have long inferred axis");
+  assert.equal((cue1 as any).shotAxis, "long",
+    "JB: cue1 must have shotAxis='long'");
+}
+
+// ── JC: brk1/brk2/brk3 have shotAxis="long" ─────────────────────────────────
+{
+  for (const id of ["brk1", "brk2", "brk3"] as const) {
+    const d = DRILLS.find(x => x.id === id)!;
+    assert.equal((d as any).shotAxis, "long",
+      `JC: ${id} must have shotAxis='long'`);
+  }
+}
+
+// ── JD: validatePlayableDrillGeometry rejects mismatched shotAxis ─────────────
+{
+  const fakeDrill = {
+    id: "fake-axis",
+    shotAxis: "long" as const,
+    visualContract: { cueBall: true },
+    diagram: { balls: [
+      { id: "CB",  group: "cue"    as const, x: 50, y: 20 },
+      { id: "OBJ", group: "yellow" as const, x: 50, y: 80 },
+    ] },
+  };
+  const result = validatePlayableDrillGeometry(fakeDrill);
+  assert.ok(!result.valid,
+    "JD: drill with shotAxis='long' but cross geometry must fail validation");
+  assert.ok(result.errors.some(e => e.includes("shotAxis")),
+    `JD: error must mention shotAxis — got: ${result.errors.join("; ")}`);
+}
+
+// ── JE: validatePlayableDrillGeometry accepts matching shotAxis ───────────────
+{
+  const fakeDrill = {
+    id: "fake-long-ok",
+    shotAxis: "long" as const,
+    visualContract: { cueBall: true },
+    diagram: { balls: [
+      { id: "CB",  group: "cue"    as const, x: 82, y: 50 },
+      { id: "OBJ", group: "yellow" as const, x: 12, y: 50 },
+    ] },
+  };
+  const result = validatePlayableDrillGeometry(fakeDrill);
+  assert.ok(result.valid,
+    `JE: long-axis drill with matching shotAxis must pass — ${result.errors.join("; ")}`);
+}
+
+// ── JF: pat1 opt-d is not a duplicate of opt-b ───────────────────────────────
+{
+  const pat1 = DRILLS.find(d => d.id === "pat1")!;
+  assert.ok(pat1, "JF: pat1 must exist");
+  const opts = pat1.options ?? [];
+  const labels = opts.map(o => o.label.trim().toLowerCase());
+  const labelSet = new Set(labels);
+  assert.equal(labelSet.size, labels.length,
+    `JF: pat1 must have no duplicate option labels — found: ${labels.join(" | ")}`);
+}
+
+// ── JG: pat1 has exactly one optimal option ───────────────────────────────────
+{
+  const pat1 = DRILLS.find(d => d.id === "pat1")!;
+  const optimalCount = (pat1.options ?? []).filter(o => o.tier === "optimal").length;
+  assert.equal(optimalCount, 1,
+    `JG: pat1 must have exactly 1 optimal option, found ${optimalCount}`);
+}
+
+// ── JH: pbd3 has Y3 ball near top cushion (y <= 12) ─────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  assert.ok(pbd3, "JH: pbd3 must exist");
+  const y3 = pbd3.diagram?.balls.find(b => b.id === "Y3");
+  assert.ok(y3, "JH: pbd3 diagram must have ball with id 'Y3'");
+  assert.ok(y3.y <= 12,
+    `JH: Y3 must be near top cushion (y <= 12), got y=${y3.y}`);
+}
+
+// ── JI: pbd3 has R1 obstacle blocking Y3 ────────────────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  const r1 = pbd3.diagram?.balls.find(b => b.id === "R1");
+  assert.ok(r1, "JI: pbd3 must have R1 obstacle ball");
+  assert.equal(r1.role, "obstacle",
+    "JI: R1 in pbd3 must have role='obstacle'");
+}
+
+// ── JJ: pbd3 focusBallId is 'Y3' ────────────────────────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  assert.equal(pbd3.focusBallId, "Y3",
+    "JJ: pbd3 focusBallId must be 'Y3'");
+}
+
+// ── JK: pbd3 spatialClaims has nearCushion for Y3 ───────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  const claims = (pbd3 as any).spatialClaims ?? [];
+  const cushionClaim = claims.find((c: any) => c.type === "nearCushion" && c.ballId === "Y3");
+  assert.ok(cushionClaim,
+    "JK: pbd3 must have a nearCushion spatialClaim for Y3");
+  assert.equal(cushionClaim.cushion, "top",
+    "JK: Y3 cushion claim must reference 'top' cushion");
+}
+
+// ── JL: pbd3 spatialClaims has blockedBy for Y3 ──────────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  const claims = (pbd3 as any).spatialClaims ?? [];
+  const blockClaim = claims.find((c: any) => c.type === "blockedBy" && c.ballId === "Y3");
+  assert.ok(blockClaim,
+    "JL: pbd3 must have a blockedBy spatialClaim for Y3");
+  assert.equal(blockClaim.blockerId, "R1",
+    "JL: pbd3 blockedBy claim for Y3 must reference R1 as blockerId");
+}
+
+// ── JM: pbd3 still passes geometry validation ────────────────────────────────
+{
+  const pbd3 = DRILLS.find(d => d.id === "pbd3")!;
+  const result = validatePlayableDrillGeometry(pbd3);
+  assert.ok(result.valid,
+    `JM: pbd3 must pass geometry validation — ${result.errors.join("; ")}`);
+}
+
+// ── JN: generateBallOrderPermutations correctness ────────────────────────────
+{
+  const perms = generateBallOrderPermutations(["B1", "B2", "B3"], "BLK");
+  assert.equal(perms.length, 6,
+    "JN: 3 balls → 6 permutations");
+  assert.ok(perms.every(p => p[p.length - 1] === "BLK"),
+    "JN: every permutation must end with BLK (finishing ball)");
+  const labels = perms.map(p => p.join(","));
+  assert.equal(new Set(labels).size, 6,
+    "JN: all 6 permutations must be distinct");
+}
+
+// ── JO: generateBallOrderPermutations 2-ball case ────────────────────────────
+{
+  const perms = generateBallOrderPermutations(["B1", "B2"], "BLK");
+  assert.equal(perms.length, 2,
+    "JO: 2 balls → 2 permutations");
+  assert.ok(perms.some(p => p[0] === "B1"),
+    "JO: one permutation starts with B1");
+  assert.ok(perms.some(p => p[0] === "B2"),
+    "JO: one permutation starts with B2");
+}
+
+// ── JP: formatRouteSequence uses trainingLabel ────────────────────────────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 50, y: 70 },
+    { id: "B1",  group: "yellow", x: 30, y: 30, trainingLabel: "1", role: "target" as const },
+    { id: "B3",  group: "yellow", x: 20, y: 50, trainingLabel: "3", role: "target" as const },
+    { id: "BLK", group: "black",  x: 50, y: 15, role: "black" as const },
+  ] };
+  const label = formatRouteSequence(["B3", "B1", "BLK"], diagram);
+  assert.equal(label, "Ball 3 → Ball 1 → Black",
+    `JP: formatRouteSequence must render labels correctly — got "${label}"`);
+}
+
+// ── JQ: formatRouteSequence falls back to id when no trainingLabel ─────────
+{
+  const diagram: TrainingDiagram = { balls: [
+    { id: "CB",  group: "cue",    x: 50, y: 70 },
+    { id: "OBJ", group: "yellow", x: 30, y: 30 },
+  ] };
+  const label = formatRouteSequence(["OBJ"], diagram);
+  assert.equal(label, "OBJ",
+    "JQ: formatRouteSequence falls back to ball id when no trainingLabel");
+}
+
+// ── JR: shuffleDecisionOptions — same seed produces same order ───────────────
+{
+  const opts = [
+    { key: "a", label: "A", tier: "optimal" as const, rationale: "", risk: "low" as const },
+    { key: "b", label: "B", tier: "acceptable" as const, rationale: "", risk: "low" as const },
+    { key: "c", label: "C", tier: "highrisk" as const, rationale: "", risk: "high" as const },
+    { key: "d", label: "D", tier: "poor" as const, rationale: "", risk: "high" as const },
+  ];
+  const r1 = shuffleDecisionOptions(opts, "test-seed-42");
+  const r2 = shuffleDecisionOptions(opts, "test-seed-42");
+  assert.deepEqual(r1.map(o => o.key), r2.map(o => o.key),
+    "JR: same seed must produce identical shuffle order");
+}
+
+// ── JS: shuffleDecisionOptions — different seed produces different order ──────
+{
+  const opts = [
+    { key: "a", label: "A", tier: "optimal" as const, rationale: "", risk: "low" as const },
+    { key: "b", label: "B", tier: "acceptable" as const, rationale: "", risk: "low" as const },
+    { key: "c", label: "C", tier: "highrisk" as const, rationale: "", risk: "high" as const },
+    { key: "d", label: "D", tier: "poor" as const, rationale: "", risk: "high" as const },
+  ];
+  const orders = new Set<string>();
+  for (let i = 0; i < 20; i++) {
+    orders.add(shuffleDecisionOptions(opts, `seed-${i}`).map(o => o.key).join(","));
+  }
+  assert.ok(orders.size >= 2,
+    `JS: different seeds should produce at least 2 distinct orderings (got ${orders.size})`);
+}
+
+// ── JT: shuffleDecisionOptions — all 4 positions covered across seeds ─────────
+{
+  const opts = [
+    { key: "a", label: "A", tier: "optimal" as const, rationale: "", risk: "low" as const },
+    { key: "b", label: "B", tier: "acceptable" as const, rationale: "", risk: "low" as const },
+    { key: "c", label: "C", tier: "highrisk" as const, rationale: "", risk: "high" as const },
+    { key: "d", label: "D", tier: "poor" as const, rationale: "", risk: "high" as const },
+  ];
+  const positions = new Set<number>();
+  for (let i = 0; i < 30; i++) {
+    const shuffled = shuffleDecisionOptions(opts, `pos-test-${i}`);
+    positions.add(shuffled.findIndex(o => o.key === "a"));
+  }
+  assert.ok(positions.size >= 3,
+    `JT: optimal option should appear in at least 3 distinct positions across seeds (got ${positions.size})`);
+}
+
+// ── JU: shuffleDecisionOptions preserves all options (no loss) ───────────────
+{
+  const opts = [
+    { key: "a", label: "A", tier: "optimal" as const, rationale: "", risk: "low" as const },
+    { key: "b", label: "B", tier: "acceptable" as const, rationale: "", risk: "low" as const },
+    { key: "c", label: "C", tier: "highrisk" as const, rationale: "", risk: "high" as const },
+    { key: "d", label: "D", tier: "poor" as const, rationale: "", risk: "high" as const },
+  ];
+  const shuffled = shuffleDecisionOptions(opts, "any-seed");
+  const keys = new Set(shuffled.map(o => o.key));
+  assert.equal(keys.size, 4,
+    "JU: shuffleDecisionOptions must preserve all 4 options");
+}
+
+// ── JV: validateUniqueDecisionOptions passes clean set ────────────────────────
+{
+  const result = validateUniqueDecisionOptions([
+    { key: "a", label: "Option A", tier: "optimal"    as const, rationale: "", risk: "low"  as const },
+    { key: "b", label: "Option B", tier: "acceptable" as const, rationale: "", risk: "low"  as const },
+    { key: "c", label: "Option C", tier: "highrisk"   as const, rationale: "", risk: "high" as const },
+    { key: "d", label: "Option D", tier: "poor"       as const, rationale: "", risk: "high" as const },
+  ]);
+  assert.ok(result.valid,
+    `JV: clean option set must pass uniqueness check — ${result.errors.join("; ")}`);
+}
+
+// ── JW: validateUniqueDecisionOptions detects duplicate key ──────────────────
+{
+  const result = validateUniqueDecisionOptions([
+    { key: "a", label: "Option A", tier: "optimal"  as const, rationale: "", risk: "low"  as const },
+    { key: "a", label: "Option B", tier: "poor"     as const, rationale: "", risk: "high" as const },
+  ]);
+  assert.ok(!result.valid,
+    "JW: duplicate key 'a' must fail uniqueness check");
+  assert.ok(result.errors.some(e => e.includes("key") && e.includes("a")),
+    `JW: error must mention key 'a' — got: ${result.errors.join("; ")}`);
+}
+
+// ── JX: all PLAYABLE_DRILLS decision drills pass uniqueness QA ───────────────
+{
+  for (const drill of PLAYABLE_DRILLS) {
+    if (drill.type !== "decision") continue;
+    // drills with rulesetOptions store per-ruleset options; check each ruleset set
+    if (drill.rulesetOptions) {
+      for (const [ruleset, ropts] of Object.entries(drill.rulesetOptions)) {
+        const result = validateUniqueDecisionOptions(ropts as any);
+        assert.ok(result.valid,
+          `JX: drill "${drill.id}" ruleset=${ruleset} must have unique option keys/labels — ${result.errors.join("; ")}`);
+        const optimalCount = (ropts as any[]).filter((o: any) => o.tier === "optimal").length;
+        assert.equal(optimalCount, 1,
+          `JX: drill "${drill.id}" ruleset=${ruleset} must have exactly 1 optimal option (found ${optimalCount})`);
+      }
+      continue;
+    }
+    const opts = drill.options ?? [];
+    if (opts.length === 0) continue;
+    const result = validateUniqueDecisionOptions(opts);
+    assert.ok(result.valid,
+      `JX: drill "${drill.id}" must have unique option keys/labels — ${result.errors.join("; ")}`);
+    const optimalCount = opts.filter(o => o.tier === "optimal").length;
+    assert.equal(optimalCount, 1,
+      `JX: drill "${drill.id}" must have exactly 1 optimal option (found ${optimalCount})`);
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, Phase 4.7 FW–GP, Phase 4.8 GQ–HQ, Phase 4.9 HR–IO, and Phase 5 IP–JX all passed ✓");

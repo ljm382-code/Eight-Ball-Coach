@@ -1,0 +1,984 @@
+PHASE 5 — TRAINING CONTENT QUALITY, DYNAMIC DECISIONS & REMAINING DIAGRAM FIXES
+
+Phase 4 rendering infrastructure is now the LOCKED BASELINE.
+
+Do NOT redesign or rewrite the renderer architecture.
+
+The following Phase 4 systems are considered stable and must not be replaced:
+
+* PoolTable
+* shared English table geometry helper
+* rack-left / baulk-right orientation
+* cue-ball canonical colour logic
+* player-group header logic
+* focusBallId
+* target-zone rendering
+* aim/potting-line rendering
+* route rendering
+* target-pocket rendering
+* table markings rendering
+* training labels
+* visual contracts
+* geometry validation
+* generic-fallback removal
+* TrainingDiagramAudit
+* session filtering of invalid drills
+
+However:
+
+If a CURRENT PLAYABLE DRILL still renders incorrectly because its authored data is incomplete, miswired, or not reaching the existing renderer, FIX THAT SPECIFIC DRILL/DATA PATH.
+
+Do not use “renderer is locked” as a reason to leave a broken live drill.
+
+The goal of Phase 5 is:
+
+1. fix the remaining incorrect drill diagrams;
+2. make drills more spatially varied and realistic;
+3. remove predictable decision-answer patterns;
+4. remove duplicate/weak answer options;
+5. make wording and diagrams agree exactly;
+6. improve coaching realism without changing adaptive mathematics.
+
+⸻
+
+1. FIRST TASK — AUDIT THE CURRENT LIVE PLAYABLE CONTENT
+
+Before editing, use the existing TrainingDiagramAudit and the actual live training flow.
+
+Inspect every currently playable drill.
+
+Create a concise internal audit with:
+
+* drill ID
+* name
+* family
+* difficulty
+* current diagram
+* current shot axis
+* target pocket
+* aim line
+* target zone
+* cue route
+* table markings
+* decision option count
+* optimal option position
+* wording/diagram consistency
+
+Do NOT rebuild infrastructure.
+
+Use the audit to identify CONTENT defects.
+
+⸻
+
+2. REMAINING TABLE-RENDERING FIXES ARE ALLOWED ONLY AT THE CONTENT/WIRING LEVEL
+
+Examples of allowed fixes:
+
+* drill is missing tableMarkings
+* drill has wrong coordinates
+* drill has incorrect target pocket
+* drill has no aim line even though its visual contract requires it
+* drill has aim line wired to wrong ball
+* drill has wrong route direction
+* target zone is placed incorrectly
+* wrong shot axis
+* drill uses a geometry object but UI is passing the wrong drill diagram
+* specific screen hides the table despite authored diagram existing
+
+Examples of NOT allowed fixes unless absolutely necessary:
+
+* replacing PoolTable
+* changing global table orientation
+* rewriting canonical ball rendering
+* creating another geometry system
+* replacing visual-contract architecture
+* changing all existing renderer APIs
+
+If a renderer bug is discovered that affects multiple drills, make the SMALLEST possible patch and document it.
+
+⸻
+
+3. FIX LONG POT — FULL LENGTH
+
+The current live Long Pot — Full Length is wrong.
+
+It currently uses the short table dimension.
+
+This drill must run predominantly along the LONG axis.
+
+Required result:
+
+* cue ball near the right/baulk-side half
+* object ball toward the left/rack-side end
+* target pocket at the left end
+* shot travels most of the playable table length
+* white cue → object line visible
+* object → target pocket line visible
+
+The distance along the long axis must be substantially greater than cross-table displacement.
+
+Add:
+
+shotAxis: "long"
+
+and validate it against the authored coordinates.
+
+⸻
+
+4. LONG-POT DISTANCE REQUIREMENT
+
+Add a helper or validation rule:
+
+isLongAxisShot(diagram)
+
+For Long Pot:
+
+* abs(deltaX) must be clearly greater than abs(deltaY)
+* long-axis separation should cover at least approximately 55% of playable table length
+
+Do not accept a short-axis shot simply because total Euclidean distance is large.
+
+⸻
+
+5. FIX SCREW SHOT
+
+The current Screw Shot also uses the short axis.
+
+Redesign its authored geometry to use the LONG axis.
+
+Required:
+
+* white cue ball to the right
+* yellow/red object ball nearer mid/left
+* target pocket to the left
+* potting line along the long axis
+* separate backward cue-ball draw route
+* visible screw-back target zone behind the cue ball/contact direction
+
+Do not make Screw Shot look like Stop Ball with a box added.
+
+⸻
+
+6. SCREW SHOT VISUAL SEMANTICS
+
+The player must be able to identify three distinct things:
+
+1. cue → object
+2. object → pocket
+3. cue ball draw-back route after impact
+
+Use the existing line/route styles.
+
+Do not invent a new visual system.
+
+⸻
+
+7. EXECUTION DRILL SPATIAL VARIETY
+
+Audit all execution drills and classify each:
+
+type ShotAxis = "long" | "cross" | "diagonal" | "mixed";
+
+Add shotAxis metadata where useful.
+
+Target broad variety across the library:
+
+* approximately 50–60% long-axis
+* 15–20% cross-table
+* 20–25% diagonal
+* remainder mixed/multi-cushion
+
+These are QA targets, not adaptive weights.
+
+Do not mechanically force percentages if a skill requires another geometry.
+
+⸻
+
+8. MOST PHYSICAL DRILLS SHOULD USE THE LONG TABLE DIMENSION
+
+When there is no coaching reason to use the short dimension, prefer long-axis geometry.
+
+Especially for:
+
+* long pots
+* screw/draw drills
+* long follow drills
+* speed control
+* break-position recovery
+* pressure pots
+* positional transitions
+
+Cross-table setups should remain where they genuinely teach something.
+
+⸻
+
+9. DO NOT REPEAT THE SAME CENTRAL VERTICAL LAYOUT
+
+Audit for repeated patterns such as:
+
+* cue centered below object
+* object centered below middle pocket
+* identical centre-line geometry
+
+If multiple drills differ only in text, redesign the content data.
+
+⸻
+
+10. FAMILY VARIETY REQUIREMENTS
+
+Potting family should contain visibly different:
+
+* straight pot
+* long pot
+* diagonal cut
+* thin cut / awkward angle
+
+Speed family should contain:
+
+* short stop
+* long lag
+* cushion route
+* longer positional-speed exercise
+
+Positional family should contain:
+
+* follow
+* screw/draw
+* diagonal natural angle
+* cushion route
+
+Cue control should visibly distinguish:
+
+* stun
+* screw
+* follow
+* side
+* swerve
+
+Problem-ball execution should visibly distinguish:
+
+* nudge
+* cannon
+* break-out
+
+Break drills should differ by tactical purpose while retaining correct rack geometry.
+
+⸻
+
+11. TABLE MARKINGS — FIX REMAINING MISSING DRILLS
+
+Some live tables still do not show the existing baulk/table references.
+
+Do NOT redesign markings.
+
+Audit the authored content and rendering props.
+
+For physical training diagrams, ensure the existing permanent table geometry is consistently shown.
+
+At minimum:
+
+* diamonds/sights
+* black spot/reference where appropriate
+* correct orientation
+
+When relevant to the setup, also include:
+
+* baulk line
+* D
+
+Examples where baulk/D should normally appear:
+
+* break drills
+* drills explicitly referencing baulk
+* long-table orientation drills if useful to setup
+* rules-sensitive placement drills
+
+If a table is missing markings because the authored diagram does not request them, fix the diagram data.
+
+⸻
+
+12. CHOOSE THE BALL ORDER — REMOVE DUPLICATE OPTIONS
+
+The current Ball Order question contains duplicate-equivalent routes.
+
+Specifically:
+
+Ball 1 → Ball 2 → Ball 3 → Black
+
+and:
+
+Play in numbered order — Ball 1 first
+
+represent the same route.
+
+This must be removed.
+
+⸻
+
+13. GENERATE ALL 3-BALL ROUTE PERMUTATIONS
+
+Create a pure helper:
+
+generateBallOrderPermutations(
+  ballIds: string[],
+  finishingBallId: string
+)
+
+For:
+
+["Y1", "Y2", "Y3"]
+
+ending in:
+
+"BLK"
+
+produce exactly:
+
+* 1 → 2 → 3 → Black
+* 1 → 3 → 2 → Black
+* 2 → 1 → 3 → Black
+* 2 → 3 → 1 → Black
+* 3 → 1 → 2 → Black
+* 3 → 2 → 1 → Black
+
+No duplicates.
+
+⸻
+
+14. PRESENT FOUR UNIQUE BALL-ORDER OPTIONS
+
+For mobile UX:
+
+* keep the authored optimal route
+* choose 3 DISTINCT alternatives from the other 5
+* show 4 total
+
+The available authoring logic must still support all 6 permutations.
+
+No duplicate prose distractor.
+
+No “play numbered order” if that duplicates an actual sequence.
+
+⸻
+
+15. STRUCTURE ROUTE OPTIONS
+
+Each route option must contain structured sequence data.
+
+Example:
+
+{
+  id: "route_312",
+  tier: "optimal",
+  sequence: ["Y3", "Y1", "Y2", "BLK"]
+}
+
+Generate the visible label from the sequence.
+
+Do not manually type the label separately if it can drift from the sequence.
+
+⸻
+
+16. FORMAT ROUTES FROM TRAINING LABELS
+
+Create:
+
+formatRouteSequence(sequence, diagram)
+
+Output:
+
+Ball 3 → Ball 1 → Ball 2 → Black
+
+Use training labels from the actual diagram.
+
+⸻
+
+17. CORRECT ANSWER MUST NOT ALWAYS BE FIRST
+
+This is a confirmed usability flaw.
+
+The app must stop placing the strongest/optimal option in a predictable position.
+
+Correctness must be attached to the option:
+
+tier: "optimal"
+
+NOT to:
+
+index === 0
+
+⸻
+
+18. SEEDED OPTION SHUFFLE
+
+Create a pure deterministic helper:
+
+shuffleDecisionOptions(options, seed)
+
+Use a stable seed based on existing session/drill/attempt identifiers.
+
+Do NOT use uncontrolled Math.random().
+
+For one presented attempt:
+
+option order must remain stable.
+
+Across different attempts/seeds:
+
+order may change.
+
+⸻
+
+19. SHUFFLE AFTER RULESET RESOLUTION
+
+For ruleset-specific drills:
+
+first resolve:
+
+rulesetOptions[activeRuleset]
+
+then shuffle those options.
+
+Never mix Blackball and International options.
+
+⸻
+
+20. SCORE BY OPTION ID
+
+When user selects an option:
+
+store/select by:
+
+option.id
+
+not display index.
+
+Feedback and scoring must locate the original option by ID.
+
+⸻
+
+21. CORRECT-OPTION DISTRIBUTION
+
+Create a QA helper:
+
+auditOptimalOptionPositions(...)
+
+Run all decision drills across many deterministic seeds.
+
+Report how often the optimal answer appears in:
+
+* position 1
+* position 2
+* position 3
+* position 4
+
+Completion requirement:
+
+all four positions must occur.
+
+There must be no hardcoded first-position bias.
+
+⸻
+
+22. LATE DEVELOPMENT RISK — FIX CONTENT + GEOMETRY
+
+The current Late Development Risk wording and diagram still do not agree.
+
+The diagram must be rewritten around the teaching point.
+
+Player:
+
+YELLOWS
+
+Focus:
+
+Ball 3
+
+Make Ball 3 visibly:
+
+* near a cushion
+* partially restricted by a red obstacle
+* harder to access later
+* but still reachable/developable from the current cue-ball position
+
+Keep:
+
+focusBallId: "Y3"
+
+⸻
+
+23. LATE DEVELOPMENT SPATIAL RELATION
+
+Use explicit metadata such as:
+
+spatialClaims: [
+  {
+    type: "nearCushion",
+    ballId: "Y3",
+    cushion: "top",
+    maxDistance: 10
+  },
+  {
+    type: "blockedBy",
+    ballId: "Y3",
+    blockerId: "R1"
+  }
+]
+
+Only use relations that genuinely match the final coordinates.
+
+⸻
+
+24. LATE DEVELOPMENT WORDING
+
+Make the question match the final diagram exactly.
+
+Example:
+
+Ball 3 has been left near the top cushion and the red now restricts its clean route. From the current cue-ball position, you still have a development angle. What is the strongest plan?
+
+Do not mention:
+
+* cushion
+* blocker
+* partial route
+
+unless those are visibly true.
+
+⸻
+
+25. LATE DEVELOPMENT ANSWERS
+
+Use four plausible distinct choices.
+
+Example concepts:
+
+* develop Ball 3 now while access still exists
+* pot Ball 1 first and approach Ball 3 from another angle
+* continue to Ball 2 and postpone Ball 3
+* abandon Ball 3 / attempt to finish without addressing it
+
+Then SHUFFLE the displayed order.
+
+Do not force the optimal option into position 1.
+
+⸻
+
+26. LATE DEVELOPMENT RATIONALE
+
+Feedback must explain THIS position:
+
+* why Ball 3 is difficult
+* how the red/cushion affects it
+* why current cue position matters
+* why delay increases risk
+
+Do not give only generic “develop problem balls early” advice.
+
+⸻
+
+27. DECISION OPTION QUALITY
+
+For normal four-choice questions:
+
+author approximately:
+
+* 1 Optimal
+* 1 Acceptable
+* 1 High-risk
+* 1 Poor
+
+But presentation order must be shuffled.
+
+Before answer selection, all four cards must look visually equivalent.
+
+No colour/style hint for the optimal option.
+
+⸻
+
+28. REMOVE SILLY OR DUPLICATE DISTRACTORS
+
+Audit all decision drills.
+
+Remove options that are:
+
+* semantically duplicate
+* obviously absurd
+* merely restating another answer
+* unrelated to the table
+
+Distractors should represent plausible mistakes a real player might make.
+
+⸻
+
+29. OPTION DUPLICATE VALIDATION
+
+Create:
+
+validateUniqueDecisionOptions(options)
+
+For structured route options:
+
+compare sequences.
+
+If two options encode the same route:
+
+invalid.
+
+⸻
+
+30. SHOT AXIS INFERENCE
+
+Create a pure helper:
+
+inferPrimaryShotAxis(diagram)
+
+Use authored cue/object/route geometry.
+
+Return:
+
+* long
+* cross
+* diagonal
+* mixed
+
+Use reasonable thresholds.
+
+⸻
+
+31. SHOT AXIS VALIDATION
+
+If a drill declares:
+
+shotAxis: "long"
+
+but inferred geometry is cross-table:
+
+validation FAILS.
+
+This should specifically prevent Long Pot and Screw Shot from regressing.
+
+⸻
+
+32. FULL-LENGTH TEXT VALIDATION
+
+For any drill with authored metadata:
+
+distanceClass: "full-table"
+
+or equivalent:
+
+validate that long-axis distance exceeds a documented minimum.
+
+Avoid fragile text parsing where possible.
+
+⸻
+
+33. EXTEND TRAINING DIAGRAM AUDIT
+
+Add columns:
+
+* shotAxis
+* inferredAxis
+* axisValid
+* option count
+* optimal presented position
+* duplicate-option status
+
+Add family summaries:
+
+* long
+* cross
+* diagonal
+* mixed
+
+⸻
+
+34. DO NOT RANDOMISE TABLE POSITIONS
+
+Dynamic does NOT mean random layouts.
+
+Keep physical table coordinates intentionally authored.
+
+Randomise/personalise only:
+
+* option order
+* distractor selection
+
+Do not scatter balls randomly.
+
+⸻
+
+35. OPTIONAL MIRRORING — ONLY IF SAFE
+
+If existing geometry helpers make it trivial and fully correct, support deterministic mirroring of eligible drills.
+
+But only if ALL of these mirror correctly:
+
+* balls
+* target pocket
+* target zone
+* aim lines
+* route lines
+* focus ball
+* obstacles
+
+If unsafe, DO NOT implement it in this phase.
+
+Report it as future work.
+
+⸻
+
+36. EXISTING PHASE 4 SYSTEMS MUST REMAIN INTACT
+
+Do not rewrite:
+
+* cue colour logic
+* PoolTable architecture
+* route rendering
+* target zone rendering
+* table orientation
+* PlayerGroupHeader
+* focusBallId
+* diagram validation
+* TrainingDiagramAudit infrastructure
+
+Only extend where needed.
+
+⸻
+
+37. TESTS — PHASE 5
+
+Preserve all existing 335 tests.
+
+Add tests for:
+
+Long Pot
+
+* declares long axis
+* inferred long axis
+* long-axis separation exceeds threshold
+* not predominantly cross-table
+
+Screw Shot
+
+* declares long axis
+* inferred long axis
+* separate draw-back cue route exists
+* target zone is behind the cue/object contact direction
+
+Library Variety
+
+* each multi-drill execution family contains more than one geometry pattern
+* no whole family is accidentally identical
+
+Ball Order
+
+* 6 permutations generated
+* all unique
+* each uses Y1/Y2/Y3 exactly once
+* all end with black
+* presented 4 options are unique
+* no duplicate numbered-order route
+
+Option Randomisation
+
+* same seed produces same order
+* different seeds produce different orders
+* optimal appears in position 1 for at least one seed
+* position 2 for at least one seed
+* position 3 for at least one seed
+* position 4 for at least one seed
+* scoring by option ID remains correct
+* ruleset resolution occurs before shuffle
+
+Late Development
+
+* focus Ball 3 exists
+* near-cushion spatial claim passes
+* blocker exists
+* wording metadata matches geometry
+* rationale is scenario-specific
+
+Global Decision QA
+
+* exactly one optimal option per decision drill
+* no duplicate option IDs
+* no duplicate structured sequences
+* all playable drills still pass validation
+
+⸻
+
+38. MANUAL LIVE QA — REQUIRED
+
+At ~390px, inspect:
+
+1. Long Pot — Full Length
+2. Screw Shot
+3. Choose the Ball Order
+4. Late Development Risk
+5. one cross-table execution drill
+6. one diagonal drill
+7. one long-axis positional drill
+
+⸻
+
+39. LONG POT ACCEPTANCE
+
+PASS only if:
+
+* shot visibly runs along table length
+* cue/object separation is predominantly horizontal in current landscape orientation
+* target pocket is near the opposite end
+* aim lines match
+
+If it is still mostly top-to-bottom:
+
+FAIL.
+
+⸻
+
+40. SCREW SHOT ACCEPTANCE
+
+PASS only if:
+
+* shot runs predominantly lengthwise
+* object-ball path is visible
+* separate backward cue route is visible
+* target zone sits in a physically sensible draw-back region
+
+⸻
+
+41. BALL ORDER ACCEPTANCE
+
+Verify across multiple deterministic seeds:
+
+* 4 unique choices
+* no duplicate route
+* correct route moves between display positions
+* option order stays stable during the current attempt
+
+⸻
+
+42. LATE DEVELOPMENT ACCEPTANCE
+
+PASS only if the diagram visually supports the wording.
+
+Ball 3 must actually look:
+
+* restricted
+* near declared cushion
+* affected by declared blocker
+* still developable from current cue-ball position
+
+⸻
+
+43. TABLE MARKINGS ACCEPTANCE
+
+Check the drills you identified as missing markings.
+
+Ensure they now use the existing marking system consistently.
+
+Do not rebuild the renderer.
+
+⸻
+
+44. COMPLETION METRICS
+
+Final report must include:
+
+Execution axis distribution:
+long:
+cross:
+diagonal:
+mixed:
+
+and:
+
+Optimal answer position audit:
+position 1:
+position 2:
+position 3:
+position 4:
+
+and:
+
+Duplicate decision sequences: 0
+Invalid playable drills: 0
+
+⸻
+
+45. REGRESSION GATE
+
+Run:
+
+* all existing tests
+* new Phase 5 tests
+* TypeScript
+* production build with:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Verify:
+
+* dist exists
+* asset paths use /Eight-Ball-Coach/
+
+⸻
+
+46. PLAYWRIGHT QA
+
+Before committing:
+
+visually inspect the required live screens.
+
+Do not report completion from tests alone.
+
+⸻
+
+47. COMMIT
+
+Commit exact message:
+
+Improve training geometry and decision variety
+
+Push to:
+
+origin/main
+
+Confirm GitHub Pages workflow triggers.
+
+⸻
+
+48. FINAL REPORT ONLY
+
+Report:
+
+* remaining rendering defects found
+* specific diagram/wiring fixes made
+* Long Pot geometry fix
+* Screw Shot geometry fix
+* shot-axis implementation
+* execution axis distribution
+* table-marking consistency fix
+* route permutation generator
+* duplicate Ball Order fix
+* seeded option shuffle
+* optimal position audit
+* Late Development geometry rewrite
+* Late Development wording rewrite
+* duplicate sequence count
+* invalid drill count
+* test result
+* TypeScript
+* production build
+* Playwright QA
+* commit SHA
+* push status
+* Pages status
+
+STOP.
+
+Do not start Phase 6.

@@ -4,6 +4,15 @@ export type RuleSetId = "blackball" | "international";
 /** Training-preference mode. "mixed" is NOT a ruleset — it drives session generation only. */
 export type RulesMode = "blackball" | "international" | "mixed";
 export type SkillType = "execution" | "decision";
+export type ShotAxis = "long" | "cross" | "diagonal" | "mixed";
+
+export type SpatialClaim = {
+  type: "nearCushion" | "blockedBy" | "nearBall";
+  ballId: string;
+  cushion?: "top" | "bottom" | "left" | "right";
+  maxDistance?: number;
+  blockerId?: string;
+};
 export type SkillId =
   | "potting" | "cueBall" | "speed" | "positional"
   | "problemBallExec" | "breakExec" | "eightBall"
@@ -171,6 +180,8 @@ export type TrainingDiagram = {
   tableMarkings?: TableMarkings;
   /** Instructional aim/potting lines: cue ball → object ball → pocket. */
   aimLines?: AimLine[];
+  /** Cue-ball travel routes (e.g. draw-back path for screw shots). */
+  routeSegments?: RouteSegment[];
   /** Rack geometry for break drills. */
   rack?: RackMetadata;
   /** Visual elements that setup/objective text references; checked by validateDrillDiagramIntegrity. */
@@ -220,6 +231,10 @@ export type Drill = {
   visualContract?: VisualContract;
   /** ID of the ball in diagram that should receive a focus highlight (gold outer ring). */
   focusBallId?: string;
+  /** Shot geometry classification for library-variety QA. */
+  shotAxis?: ShotAxis;
+  /** Explicit spatial claims validated against diagram coordinates. */
+  spatialClaims?: SpatialClaim[];
 };
 
 export type ClearanceBall = {
@@ -565,6 +580,106 @@ export function diagramDistance(
   return Math.min(1, Math.sqrt(totalDistSq / count) / Math.sqrt(20000));
 }
 
+// ─── Shot-geometry helpers ─────────────────────────────────────────────────────
+
+/** Return the primary axis of a shot based on CB→first-object-ball delta. */
+export function inferPrimaryShotAxis(diagram: TrainingDiagram | undefined | null): ShotAxis {
+  if (!diagram) return "mixed";
+  const cb = diagram.balls.find(b => b.group === "cue");
+  const ob = diagram.balls.find(b => b.group !== "cue" && b.role !== "obstacle");
+  if (!cb || !ob) return "mixed";
+  const dx = Math.abs(ob.x - cb.x);
+  const dy = Math.abs(ob.y - cb.y);
+  if (dx > dy * 1.5 && dx > 20) return "long";
+  if (dy > dx * 1.5 && dy > 20) return "cross";
+  if (dx > 12 && dy > 12) return "diagonal";
+  return "mixed";
+}
+
+/** True only when the shot is strictly along the long axis with significant travel distance. */
+export function isLongAxisShot(diagram: TrainingDiagram | undefined | null): boolean {
+  if (!diagram) return false;
+  const cb = diagram.balls.find(b => b.group === "cue");
+  const ob = diagram.balls.find(b => b.group !== "cue" && b.role !== "obstacle");
+  if (!cb || !ob) return false;
+  const dx = Math.abs(ob.x - cb.x);
+  const dy = Math.abs(ob.y - cb.y);
+  return dx > dy && dx >= 55;
+}
+
+/** Seeded Fisher-Yates shuffle (FNV-1a seed). Same seed → same order. */
+export function shuffleDecisionOptions<T extends { key: string }>(options: T[], seed: string): T[] {
+  let h = 2166136261;
+  for (let i = 0; i < seed.length; i++) {
+    h ^= seed.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const result = [...options];
+  for (let i = result.length - 1; i > 0; i--) {
+    h ^= h >>> 16;
+    h = Math.imul(h, 0x45d9f3b);
+    h ^= h >>> 16;
+    const j = ((h >>> 0) % (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+}
+
+/** All permutations of ballIds with finishingBallId appended. */
+export function generateBallOrderPermutations(ballIds: string[], finishingBallId: string): string[][] {
+  const perms: string[][] = [];
+  const permute = (current: string[], remaining: string[]) => {
+    if (remaining.length === 0) { perms.push([...current, finishingBallId]); return; }
+    for (let i = 0; i < remaining.length; i++) {
+      permute([...current, remaining[i]], [...remaining.slice(0, i), ...remaining.slice(i + 1)]);
+    }
+  };
+  permute([], ballIds);
+  return perms;
+}
+
+/** Human-readable route string: "Ball 3 → Ball 1 → Black". */
+export function formatRouteSequence(sequence: string[], diagram: TrainingDiagram): string {
+  return sequence.map(id => {
+    const ball = diagram.balls.find(b => b.id === id);
+    if (!ball) return id;
+    if (ball.group === "black") return "Black";
+    if (ball.trainingLabel) return `Ball ${ball.trainingLabel}`;
+    return id;
+  }).join(" → ");
+}
+
+/** Check that all option keys and labels are unique within a set. */
+export function validateUniqueDecisionOptions(options: DecisionOption[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  const seenKeys = new Set<string>();
+  const seenLabels = new Set<string>();
+  for (const opt of options) {
+    if (seenKeys.has(opt.key)) errors.push(`Duplicate option key: "${opt.key}"`);
+    seenKeys.add(opt.key);
+    const norm = opt.label.trim().toLowerCase();
+    if (seenLabels.has(norm)) errors.push(`Duplicate option label: "${opt.label}"`);
+    seenLabels.add(norm);
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+/** Distribution of optimal-option positions across drills & seeds. */
+export function auditOptimalOptionPositions(drills: Drill[], seeds: string[]): Record<number, number> {
+  const counts: Record<number, number> = { 0: 0, 1: 0, 2: 0, 3: 0 };
+  for (const drill of drills) {
+    if (drill.type !== "decision") continue;
+    const opts = drill.options ?? [];
+    if (!opts.length) continue;
+    for (const seed of seeds) {
+      const shuffled = shuffleDecisionOptions(opts, drill.id + seed);
+      const idx = shuffled.findIndex(o => o.tier === "optimal");
+      if (idx >= 0 && idx < 4) counts[idx]++;
+    }
+  }
+  return counts;
+}
+
 /**
  * Validate that a playable drill or clearance has a complete, authored diagram
  * that fulfils its declared visual contract.
@@ -650,6 +765,12 @@ export function validatePlayableDrillGeometry(
   const hasRedBalls      = d.balls.some(b => b.group === "red");
   if (hasYellowTargets && hasRedBalls && !d.playerGroup) {
     errors.push(`${id}: diagram has yellow targets and red balls but playerGroup is not set on diagram`);
+  }
+
+  // shotAxis: if declared on the drill, inferPrimaryShotAxis must agree
+  const drillWithAxis = item as { shotAxis?: ShotAxis };
+  if (drillWithAxis.shotAxis === "long" && inferPrimaryShotAxis(d) !== "long") {
+    errors.push(`${id}: shotAxis="long" declared but inferPrimaryShotAxis returns "${inferPrimaryShotAxis(d)}"`);
   }
 
   return { valid: errors.length === 0, errors };
@@ -1039,10 +1160,10 @@ export const DRILLS: Drill[] = [
     { id: "OBJ", group: "yellow" as const, x: 80, y: 25 },
     { id: "CB",  group: "cue"    as const, x: 50, y: 55 },
   ], targetPocket: "topRight" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topRight" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true }, setup: "Place the yellow near the top-right area. Position the cue ball to the side to create a 30° cut angle.", objective: "Pot the yellow into the top-right corner pocket using an angled cut shot.", successCriteria: ["Yellow potted cleanly into the top-right pocket.", "Correct cut angle demonstrated."] },
-  { ...execDrill("pot3","potting",6,"Long Pot — Full Length","Full-length straight pot, top rail to bottom rail."), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 48, y: 10 },
-    { id: "CB",  group: "cue"    as const, x: 52, y: 84 },
-  ], targetPocket: "topMiddle" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topMiddle" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true }, setup: "Place the yellow near the top cushion close to the middle pocket. Place the cue ball near the opposite end.", objective: "Pot the yellow into the top-middle pocket across the full length of the table.", successCriteria: ["Yellow potted from full-table distance.", "Cue-ball delivery remains controlled."] },
+  { ...execDrill("pot3","potting",6,"Long Pot — Full Length","Full-length straight pot along the long axis of the table."), shotAxis: "long" as const, diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 12, y: 50 },
+    { id: "CB",  group: "cue"    as const, x: 82, y: 50 },
+  ], targetPocket: "topLeft" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topLeft" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true }, setup: "Place the yellow near the left (rack) end cushion, centred across the table width. Place the cue ball near the right (baulk) end. Both balls run along the long axis.", objective: "Pot the yellow into the top-left pocket with a full-length straight shot along the long axis.", successCriteria: ["Yellow potted from full-table distance.", "Cue-ball delivery remains controlled."] },
   { ...execDrill("pot4","potting",8,"Thin Cut Under Pressure","Thin cut with a problem ball nearby restricting the cue-ball path."), diagram: { balls: [
     { id: "OBJ", group: "yellow" as const, x: 88, y: 18 },
     { id: "CB",  group: "cue"    as const, x: 40, y: 55 },
@@ -1064,10 +1185,10 @@ export const DRILLS: Drill[] = [
     { id: "OBJ", group: "yellow" as const, x: 28, y: 40 },
     { id: "CB",  group: "cue"    as const, x: 55, y: 62 },
   ], targetZone: { x: 76, y: 22, width: 20, height: 56 }, tableMarkings: { showBaulkLine: true, showD: true }, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", style: "dashed" as const }] }, visualContract: { cueBall: true, aimLine: true, targetZone: true }, setup: "Place the yellow and cue ball as shown. Strike the yellow and lag the cue ball precisely into the tight baulk-side target zone.", objective: "Hit the object ball and lag the cue ball precisely into the target zone near the baulk cushion.", successCriteria: ["Object ball contacted.", "Cue ball finishes within the baulk-side target zone."] },
-  { ...execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into the highlighted zone.",true), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 68, y: 30 },
-    { id: "CB",  group: "cue"    as const, x: 38, y: 58 },
-  ], targetZone: { x: 60, y: 5, width: 36, height: 28 }, targetPocket: "topRight", aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topRight", style: "dashed" }], requiresVisuals: ["targetZone", "targetPocket"] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, objective: "Pot the yellow and follow the cue ball into the highlighted zone.", setup: "Place the yellow and cue ball as shown. Pot the yellow into the top-right corner with follow. The cue ball must continue into the highlighted zone beyond the contact point.", successCriteria: ["Yellow potted.", "Cue ball finishes in the highlighted follow zone."] },
+  { ...execDrill("pos1","positional",2,"Simple Follow Route","Pot and follow the cue ball into the highlighted zone.",true), shotAxis: "long" as const, diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 20, y: 45 },
+    { id: "CB",  group: "cue"    as const, x: 76, y: 55 },
+  ], targetZone: { x: 4, y: 10, width: 28, height: 34 }, targetPocket: "topLeft" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topLeft" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, objective: "Pot the yellow and use follow (topspin) to continue the cue ball into the highlighted zone near the rack-end corner.", setup: "Place the yellow and cue ball along the long axis as shown. Strike with topspin so the cue ball continues forward after contact.", successCriteria: ["Yellow potted.", "Cue ball finishes in the highlighted follow zone."] },
   { ...execDrill("pos2","positional",4,"Screw Round the Angle","Pot and screw the cue ball back around a cluster."), diagram: { balls: [
     { id: "OBJ", group: "yellow" as const, x: 72, y: 28 },
     { id: "CB",  group: "cue"    as const, x: 45, y: 52 },
@@ -1086,14 +1207,14 @@ export const DRILLS: Drill[] = [
     { id: "BL3", group: "red"    as const, x: 40, y: 28, role: "obstacle" as const },
     { id: "NXT", group: "yellow" as const, x: 18, y: 22, trainingLabel: "N" },
   ], targetZone: { x: 10, y: 12, width: 26, height: 32 }, targetPocket: "bottomLeft" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "bottomLeft" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, setup: "The cluster of red balls blocks the natural cue-ball route. Pot the yellow and navigate the cue ball into the target zone.", objective: "Pot the yellow and thread the cue ball through the congested cluster to reach ball N in the target zone.", successCriteria: ["Yellow potted into bottom-left pocket.", "Cue ball finishes in the target zone without disturbing obstacle balls."] },
-  { ...execDrill("cue1","cueBall",2,"Basic Stun","Play a clean stun shot; the cue ball stops on the contact line.",true), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 58, y: 42 },
-    { id: "CB",  group: "cue"    as const, x: 33, y: 62 },
-  ], targetZone: { x: 50, y: 36, width: 16, height: 14 }, targetPocket: "topRight" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topRight" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, objective: "Pot the yellow using a stun shot. The cue ball must stop near the contact point.", setup: "Place the yellow as shown. Position the cue ball at a straight or near-straight angle.", successCriteria: ["Yellow potted.", "Cue ball stops within one ball-width of the original contact point."] },
-  { ...execDrill("cue2","cueBall",4,"Screw Shot","Basic screw back off the object ball."), diagram: { balls: [
-    { id: "OBJ", group: "yellow" as const, x: 50, y: 30 },
-    { id: "CB",  group: "cue"    as const, x: 50, y: 60 },
-  ], targetZone: { x: 38, y: 65, width: 24, height: 24 }, targetPocket: "topMiddle" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topMiddle" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, setup: "Place the yellow straight in front of the cue ball as shown. Apply backspin and pot the yellow.", objective: "Pot the yellow and use backspin to draw the cue ball back into the target zone behind the starting position.", successCriteria: ["Yellow potted into top-middle pocket.", "Cue ball finishes in the screw-back target zone."] },
+  { ...execDrill("cue1","cueBall",2,"Basic Stun","Play a clean stun shot; the cue ball stops on the contact line.",true), shotAxis: "long" as const, diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 30, y: 50 },
+    { id: "CB",  group: "cue"    as const, x: 72, y: 50 },
+  ], targetZone: { x: 22, y: 40, width: 16, height: 20 }, targetPocket: "topLeft" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topLeft" as const, style: "dashed" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, objective: "Pot the yellow with a stun shot along the long axis. The cue ball must stop at or near the contact point.", setup: "Place the yellow and cue ball along the long axis as shown. Strike with backspin to remove all cue-ball roll.", successCriteria: ["Yellow potted.", "Cue ball stops within one ball-width of the original contact point."] },
+  { ...execDrill("cue2","cueBall",4,"Screw Shot","Basic screw back off the object ball along the long axis."), shotAxis: "long" as const, diagram: { balls: [
+    { id: "OBJ", group: "yellow" as const, x: 22, y: 50 },
+    { id: "CB",  group: "cue"    as const, x: 78, y: 50 },
+  ], targetZone: { x: 65, y: 38, width: 22, height: 24 }, targetPocket: "topLeft" as const, aimLines: [{ fromBallId: "CB", throughBallId: "OBJ", toPocket: "topLeft" as const, style: "dashed" as const }], routeSegments: [{ fromBallId: "OBJ", toBallId: "CB", type: "cueBallRoute" as const }] }, visualContract: { cueBall: true, targetPocket: true, aimLine: true, targetZone: true }, setup: "Place the yellow and cue ball along the long axis as shown. Apply heavy backspin (screw) to draw the cue ball back toward the baulk end.", objective: "Pot the yellow into the top-left pocket and draw the cue ball back into the highlighted target zone using backspin.", successCriteria: ["Yellow potted into the top-left pocket.", "Cue ball draws back into the target zone."] },
   { ...execDrill("cue3","cueBall",6,"Swerve Around a Blocker","Use swerve to avoid a blocking ball."), diagram: { balls: [
     { id: "CB",  group: "cue"    as const, x: 50, y: 72 },
     { id: "BLO", group: "red"    as const, x: 50, y: 50, role: "obstacle" as const },
@@ -1115,16 +1236,16 @@ export const DRILLS: Drill[] = [
     { id: "CL2", group: "yellow" as const, x: 20, y: 38 },
     { id: "CL3", group: "yellow" as const, x: 28, y: 48 },
   ], targetZone: { x: 10, y: 22, width: 28, height: 38 } }, visualContract: { cueBall: true, targetZone: true }, setup: "Set up the cluster of balls as shown. Ball T is buried in the cluster. Strike T to scatter the cluster into open space.", objective: "Contact the target ball (T) to shatter the cluster, dispersing balls into the highlighted development zone.", successCriteria: ["Target ball separates from the cluster.", "Cluster balls disperse into the highlighted zone.", "Cue ball does not pocket (no scratch)."] },
-  { ...execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true), diagram: { balls: [
+  { ...execDrill("brk1","breakExec",2,"Controlled Break","Break with control and aim for a stable spread.",true), shotAxis: "long" as const, diagram: { balls: [
     // Rack at LEFT (rack end). Apex at x=25 faces RIGHT toward baulk. CB at x=82 (right of baulk line) y=83 (>75 for baulk-area check).
     ...createEnglishEightBallRack(25, 50),
     { id: "CB", group: "cue" as const, x: 82, y: 83 },
   ], tableMarkings: { showBaulkLine: true, showBaulkArea: true, showBlackSpot: true, showD: true }, rack: { apexX: 25, apexY: 50, englishEightBall: true }, requiresVisuals: ["baulkArea", "rack"] }, visualContract: { cueBall: true }, objective: "Break the rack and achieve a stable, controlled spread.", setup: "Rack all 15 balls tightly in the triangle shown at the left (rack) end of the table. Place the white cue ball anywhere inside the D area at the right (baulk) end.", successCriteria: ["Cue ball strikes the rack cleanly.", "Balls spread across the table.", "Cue ball does not enter a pocket (no scratch)."] },
-  { ...execDrill("brk2","breakExec",4,"Break for a Pot","Break attempting to pot a ball off the break."), diagram: { balls: [
+  { ...execDrill("brk2","breakExec",4,"Break for a Pot","Break attempting to pot a ball off the break."), shotAxis: "long" as const, diagram: { balls: [
     ...createEnglishEightBallRack(25, 50),
     { id: "CB", group: "cue" as const, x: 82, y: 50 },
   ], targetPocket: "topLeft" as const, tableMarkings: { showBaulkLine: true, showBaulkArea: true, showD: true, showBlackSpot: true }, rack: { apexX: 25, apexY: 50, englishEightBall: true } }, visualContract: { cueBall: true, targetPocket: true }, setup: "Rack all 15 balls at the left (rack) end. Place the cue ball in the D area. Drive the cue ball into the apex ball aiming to pot a ball off the break.", objective: "Break the rack and pot at least one ball directly from the break.", successCriteria: ["Cue ball strikes the rack cleanly.", "At least one ball is potted from the break.", "Cue ball does not pocket (no scratch)."] },
-  { ...execDrill("brk3","breakExec",6,"Break Under Baulk Restriction","Break within tighter baulk-area constraints."), diagram: { balls: [
+  { ...execDrill("brk3","breakExec",6,"Break Under Baulk Restriction","Break within tighter baulk-area constraints."), shotAxis: "long" as const, diagram: { balls: [
     ...createEnglishEightBallRack(25, 50),
     { id: "CB", group: "cue" as const, x: 85, y: 65 },
   ], tableMarkings: { showBaulkLine: true, showBaulkArea: true, showD: true, showBlackSpot: true, showBaulkPoints: true }, rack: { apexX: 25, apexY: 50, englishEightBall: true } }, visualContract: { cueBall: true }, setup: "Rack all 15 balls at the left (rack) end. The cue ball must be placed within the restricted portion of the D shown. Execute a legal break from this constrained position.", objective: "Break the rack legally from the restricted cue-ball placement, achieving a stable spread.", successCriteria: ["Cue ball placed legally within the highlighted zone.", "Cue ball strikes the rack cleanly.", "Balls spread across the table."] },
@@ -1156,7 +1277,7 @@ export const DRILLS: Drill[] = [
       { ballId: "BLK", shot: "natural",   positionFor: "pocket" },
     ] },
     { key: "opt-c", label: "Ball 2 → Ball 3 → Ball 1 → Black", tier: "highrisk"   as const, rationale: "Starting on Ball 2 leaves a hard cross-table route to Ball 3 with speculative position for Ball 1.", risk: "high"   as const },
-    { key: "opt-d", label: "Play in the order the balls are numbered — Ball 1 first, always", tier: "poor" as const, rationale: "Treating the labels as the intended shot order is a common misread. They are coaching reference numbers only.", risk: "high" as const },
+    { key: "opt-d", label: "Ball 1 → Ball 3 → Ball 2 → Black", tier: "poor" as const, rationale: "Starting on Ball 1 and pivoting cross-table to Ball 3 creates a difficult positional problem before Ball 2, making the final approach to the black much harder than it needs to be.", risk: "high" as const },
   ],true), diagram: { playerGroup: "yellow" as const, balls: [
     { id: "CB",  group: "cue"    as const, x: 50, y: 77 },
     { id: "B1",  group: "yellow" as const, x: 40, y: 24, trainingLabel: "1", role: "target"  as const },
@@ -1245,18 +1366,21 @@ export const DRILLS: Drill[] = [
     { id: "OPP",  group: "red"    as const, x: 72, y: 48, role: "obstacle" as const },
     { id: "BLK",  group: "black"  as const, x: 30, y: 12, role: "black"    as const },
   ] } },
-  { ...decDrill("pbd3","problemBallDec",6,"Late-Development Risk","Player is Yellow. Ball 3 was left and is now harder to reach. What do you do?",[
-    { key: "opt-a", label: "Develop ball 3 now — a partial route still exists from this angle", tier: "optimal" as const, rationale: "The window for safely reaching ball 3 is closing. A harder development is still better than a forced leave at the end of the clearance.", risk: "low" as const },
-    { key: "opt-b", label: "Pot ball 1 first, then approach ball 3 from the new angle", tier: "acceptable" as const, rationale: "Playing ball 1 first may open a better line to ball 3 — this can work if ball 1 naturally delivers position nearby.", risk: "medium" as const },
-    { key: "opt-c", label: "Continue to ball 2 and hope position for ball 3 appears", tier: "highrisk" as const, rationale: "Deferring further risks leaving ball 3 completely inaccessible — the opponent's ball already blocks the most natural route.", risk: "high" as const },
-    { key: "opt-d", label: "Write off ball 3 and complete the clearance without it", tier: "poor" as const, rationale: "Abandoning a ball prematurely when a route exists is the most common planning error. The window is narrow but has not closed.", risk: "high" as const },
-  ]), visualContract: { cueBall: true }, scenarioPurpose: "problem_ball", objective: "Decide whether to address the late-developing ball now or risk losing access to it entirely.", diagram: { playerGroup: "yellow" as const, balls: [
-    { id: "CB",       group: "cue"    as const, x: 55, y: 68 },
-    { id: "LATEPROB", group: "yellow" as const, x: 12, y: 20, trainingLabel: "3", role: "target"   as const },
-    { id: "Y1",       group: "yellow" as const, x: 45, y: 32, trainingLabel: "1", role: "target"   as const },
-    { id: "Y2",       group: "yellow" as const, x: 68, y: 25, trainingLabel: "2", role: "target"   as const },
-    { id: "OPP",      group: "red"    as const, x: 25, y: 55, role: "obstacle" as const },
-    { id: "BLK",      group: "black"  as const, x: 50, y: 15, role: "black"    as const },
+  { ...decDrill("pbd3","problemBallDec",6,"Late-Development Risk","Player is Yellow. Ball 3 is near the top cushion and the red now restricts its clean route. From your current cue-ball position a development angle still exists. What is the strongest plan?",[
+    { key: "opt-a", label: "Develop Ball 3 now — the access angle still exists from this cue-ball position", tier: "optimal" as const, rationale: "The window for safely reaching Ball 3 is closing. The red blocks the natural route but a development angle still exists from here — acting now avoids a forced leave at the end.", risk: "low" as const },
+    { key: "opt-b", label: "Pot Ball 1 first, then approach Ball 3 from the new cue-ball angle", tier: "acceptable" as const, rationale: "Potting Ball 1 may deliver position closer to Ball 3. This works if Ball 1 naturally leads toward the restricted area.", risk: "medium" as const },
+    { key: "opt-c", label: "Continue to Ball 2 and hope Ball 3 becomes accessible later", tier: "highrisk" as const, rationale: "Deferring further risks Ball 3 becoming completely inaccessible — the red already limits the angle, and more balls potted means fewer route options.", risk: "high" as const },
+    { key: "opt-d", label: "Write off Ball 3 and complete the clearance without it", tier: "poor" as const, rationale: "Abandoning Ball 3 while a development angle still exists is the most common planning error. The window is narrow but has not closed from this cue-ball position.", risk: "high" as const },
+  ]), focusBallId: "Y3", spatialClaims: [
+    { type: "nearCushion" as const, ballId: "Y3", cushion: "top" as const, maxDistance: 10 },
+    { type: "blockedBy" as const, ballId: "Y3", blockerId: "R1" },
+  ], visualContract: { cueBall: true }, scenarioPurpose: "problem_ball", objective: "Decide whether to develop Ball 3 now or risk losing access entirely as the red restricts the route.", diagram: { playerGroup: "yellow" as const, balls: [
+    { id: "CB",  group: "cue"    as const, x: 55, y: 68 },
+    { id: "Y3",  group: "yellow" as const, x: 14, y: 8,  trainingLabel: "3", role: "target"   as const },
+    { id: "R1",  group: "red"    as const, x: 22, y: 20, role: "obstacle" as const },
+    { id: "Y1",  group: "yellow" as const, x: 58, y: 32, trainingLabel: "1", role: "target"   as const },
+    { id: "Y2",  group: "yellow" as const, x: 35, y: 48, trainingLabel: "2", role: "target"   as const },
+    { id: "BLK", group: "black"  as const, x: 72, y: 18, role: "black"    as const },
   ] } },
   { ...decDrill("tac1","tactical",2,"Attack or Safety","Player is Yellow. The cue ball is central with a clear, unobstructed angle on Ball 1 near the top-right area. The red ball is not on the potting line. What is the correct decision?",[
     { key: "opt-a", label: "Pot Ball 1 — the angle is clean and the cue ball naturally follows toward the black.", tier: "optimal"    as const, rationale: "When a direct pot is genuinely on with a comfortable angle and natural position for the next ball, attacking is the correct decision. The red is not blocking.", risk: "low"    as const },
@@ -1358,7 +1482,7 @@ export const DRILLS: Drill[] = [
     { id: "Y1",  group: "yellow" as const, x: 25, y: 38, trainingLabel: "1", role: "target"  as const },
     { id: "OPP", group: "red"    as const, x: 65, y: 28, role: "obstacle" as const },
     { id: "BLK", group: "black"  as const, x: 45, y: 15, role: "black"   as const },
-  ] } },
+  ], tableMarkings: { showBaulkLine: true, showD: true } } },
 ];
 
 // ─── Clearances ───────────────────────────────────────────────────────────────

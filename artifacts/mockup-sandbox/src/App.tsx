@@ -8,7 +8,7 @@ import {
   buildSummary, classifyErrorChain, confidenceLabel, computeConfidence, computeRulesetConfidence,
   decisionValue, evaluatePlannedRoute, generateSession, isStale, limitingFactor,
   newProfile, sessionWeighting, trendFor,
-  validatePlayableDrillGeometry, diagramSignature,
+  validatePlayableDrillGeometry, diagramSignature, shuffleDecisionOptions, inferPrimaryShotAxis, validateUniqueDecisionOptions,
   type AimLine, type Attempt, type Clearance, type DecisionOption, type Drill, type GeneratedSession,
   type PocketId, type Profile, type RootCauseEvent, type RuleSetId, type RulesMode, type SessionSummary, type SkillId,
   type TableMarkings, type TrainingDiagram,
@@ -970,8 +970,12 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
   const [feedback, setFeedback]   = useState<{ option: DecisionOption; updated: Profile; value: number } | null>(null);
   // Reset transient state whenever the active drill changes (belt-and-suspenders: key prop is the primary guard)
   useEffect(() => { setErrorOpen(false); setFeedback(null); }, [drill.id]);
-  const activeOptions = drill.rulesetOptions?.[activeRuleset] ?? drill.options ?? [];
+  const resolvedOptions = drill.rulesetOptions?.[activeRuleset] ?? drill.options ?? [];
   const rulesetForBadge = drill.rulesContext ?? (drill.rulesetOptions ? activeRuleset : null);
+  // Shuffle decision options with a per-attempt seed so the optimal answer does not always appear first.
+  // The seed changes each attempt (based on attempts array length) so repeats see different orderings.
+  const shuffleSeed = drill.id + String((profile.skills[drill.skillId]?.attempts ?? []).length);
+  const activeOptions = useMemo(() => shuffleDecisionOptions(resolvedOptions, shuffleSeed), [drill.id, shuffleSeed]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const finish = (value: number, reportedError?: string) => {
     const rulesetTag = drill.rulesContext ?? null;
@@ -2095,7 +2099,7 @@ function TrainingDiagramAudit() {
     <div style={{ background: "#111", minHeight: "100vh", padding: "24px", fontFamily: "IBM Plex Mono, monospace" }}>
       <div style={{ marginBottom: 20 }}>
         <div style={{ color: "#F2F0E8", fontSize: 18, fontWeight: 700, marginBottom: 4 }}>
-          Training Diagram Audit — Phase 4.8
+          Training Diagram Audit — Phase 5
         </div>
         <div style={{ color: "#aaa", fontSize: 12 }}>
           {validCount}/{allItems.length} items pass geometry validation
@@ -2108,6 +2112,14 @@ function TrainingDiagramAudit() {
           const sig = diagramSignature(item.diagram);
           const isDupe = (sigCounts.get(sig) ?? 0) > 1;
           const borderColor = !vResult.valid ? "#f44336" : isDupe ? "#FF9800" : "#2F7D4C";
+          const drill = item.itemType === "drill" ? (item as unknown as import("./engine").Drill) : null;
+          const declaredAxis = drill?.shotAxis ?? null;
+          const inferredAxis = inferPrimaryShotAxis(item.diagram);
+          const axisValid = !declaredAxis || inferredAxis === declaredAxis;
+          const opts = drill?.options ?? [];
+          const optCount = opts.length;
+          const optimalPos = optCount > 0 ? shuffleDecisionOptions(opts, item.id + "1").findIndex(o => o.tier === "optimal") : -1;
+          const dupCheck = optCount > 0 ? validateUniqueDecisionOptions(opts) : { valid: true, errors: [] };
           return (
             <div key={item.id} style={{
               width: 280, background: "#1e1e1e", borderRadius: 8,
@@ -2128,6 +2140,17 @@ function TrainingDiagramAudit() {
                     ? `${item.skillId} · d${item.difficulty}`
                     : `clearance · stage ${item.clearanceStage ?? "?"}`}
                 </div>
+                {declaredAxis && (
+                  <div style={{ color: axisValid ? "#4caf50" : "#f44", fontSize: 10, marginTop: 2 }}>
+                    axis: {declaredAxis} / inferred: {inferredAxis} {axisValid ? "✓" : "✗"}
+                  </div>
+                )}
+                {optCount > 0 && (
+                  <div style={{ color: "#888", fontSize: 10, marginTop: 2 }}>
+                    {optCount} opts · optimal@[{optimalPos}] (seed=1)
+                    {!dupCheck.valid && <span style={{ color: "#f44" }}> · DUP KEYS</span>}
+                  </div>
+                )}
               </div>
             </div>
           );
