@@ -96,6 +96,34 @@ export function rulesetBadgeLabel(ruleset: RuleSetId): string {
   return ruleset === "blackball" ? "BLACKBALL" : "INTERNATIONAL";
 }
 
+/** Map a ball group to its display name for player-group headers. */
+export function groupDisplayName(group?: "red" | "yellow" | "black" | "cue" | null): string | null {
+  if (!group) return null;
+  switch (group) {
+    case "red":    return "REDS";
+    case "yellow": return "YELLOWS";
+    case "black":  return "BLACK";
+    case "cue":    return "CUE";
+    default:       return null;
+  }
+}
+
+/** Displays "YOU ARE: YELLOWS" or "YOU ARE: REDS" when a player group is relevant. */
+function PlayerGroupHeader({ playerGroup }: { playerGroup?: "red" | "yellow" | null }) {
+  const label = groupDisplayName(playerGroup);
+  if (!label) return null;
+  return (
+    <div style={{
+      color: COLORS.primaryDark, fontFamily: "'IBM Plex Mono', monospace",
+      fontSize: 10, letterSpacing: 1.2, marginBottom: SP.xs,
+      background: COLORS.surfaceTeal, borderRadius: R.sm,
+      padding: "3px 8px", display: "inline-block",
+    }}>
+      YOU ARE: {label}
+    </div>
+  );
+}
+
 /** Map FrameImpact to user-friendly language. */
 export function impactLabel(impact: FrameImpact): string {
   if (impact === "low")      return "Minor";
@@ -233,6 +261,7 @@ function PoolTable({
   diagram,
   balls: legacyBalls = [],
   selectedBall = null,
+  focusBallId = null,
   routeSegments = [],
 }: {
   width?: number;
@@ -241,6 +270,8 @@ function PoolTable({
   /** Legacy/fallback balls used only when diagram is absent (clearance screens). */
   balls?: BallSpec[];
   selectedBall?: string | null;
+  /** Ball ID to highlight with a gold outer ring (focus indicator). */
+  focusBallId?: string | null;
   routeSegments?: Array<{ fromBallId: string; toBallId: string; type: "cueBallRoute" | "objectBallRoute" }>;
 }) {
   // Authored diagram is always authoritative — never mixed with fallback balls
@@ -457,7 +488,14 @@ function PoolTable({
       </g>;
     })}
 
-    {/* ── 8. Route segments ── */}
+    {/* ── 8. Focus ball ring — gold outer ring on the designated focus ball ── */}
+    {focusBallId && balls.map((b, i) => {
+      if (b.label !== focusBallId) return null;
+      const bx = b.x * width, by = b.y * h;
+      return <circle key={`focus-${i}`} cx={bx} cy={by} r={ballR + 2.5} fill="none" stroke="#C79A38" strokeWidth={2} strokeOpacity={0.92} />;
+    })}
+
+    {/* ── 9. Route segments ── */}
     {routeSegments.map((seg, i) => {
       const fromSpec = balls.find(b => b.label === seg.fromBallId);
       const toSpec   = balls.find(b => b.label === seg.toBallId);
@@ -476,7 +514,7 @@ function PoolTable({
       />;
     })}
 
-    {/* ── 9. Target pocket emphasis — gold ring rendered above pocket ── */}
+    {/* ── 10. Target pocket emphasis — gold ring rendered above pocket ── */}
     {targetPocket && (() => {
       const [px, py] = pocketMap[targetPocket];
       return <>
@@ -952,7 +990,8 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
       </div>
       <Card>
         {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
-        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+        <PlayerGroupHeader playerGroup={drill.diagram?.playerGroup ?? drill.playerGroup ?? null} />
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs, marginTop: (drill.diagram?.playerGroup ?? drill.playerGroup) ? SP.xs : 0 }}>
           DIFFICULTY {drill.difficulty}/10 · {SKILL_MAP[drill.skillId].name.toUpperCase()}
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
@@ -985,9 +1024,13 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
 
   if (!feedback) {
     const hasLabels = drill.diagram?.balls.some(b => b.trainingLabel);
+    const focusBallId = drill.focusBallId ?? null;
+    const playerGroup = drill.diagram?.playerGroup ?? drill.playerGroup ?? null;
     return <div>
       <div style={{ display: "flex", justifyContent: "center", marginBottom: hasLabels ? SP.xs : SP.lg, padding: "0 8px" }}>
-        {drill.diagram ? <PoolTable width={260} diagram={drill.diagram} /> : <DecisionDrillDiagram />}
+        {drill.diagram
+          ? <PoolTable width={260} diagram={drill.diagram} focusBallId={focusBallId} />
+          : <DecisionDrillDiagram />}
       </div>
       {hasLabels && (
         <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 0.5, marginBottom: SP.md, textAlign: "center" }}>
@@ -996,7 +1039,8 @@ function DrillRunner({ drill, profile, source, activeRuleset, onComplete }: {
       )}
       <Card>
         {rulesetForBadge && <div style={{ marginBottom: SP.sm }}><RulesBadge ruleset={rulesetForBadge} /></div>}
-        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs }}>
+        <PlayerGroupHeader playerGroup={playerGroup} />
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.xs, marginTop: playerGroup ? SP.xs : 0 }}>
           DECISION · {SKILL_MAP[drill.skillId].name.toUpperCase()}
         </div>
         <div style={{ fontSize: 19, fontWeight: 700, marginBottom: SP.sm }}>{drill.name}</div>
@@ -1152,25 +1196,33 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
     });
   }, [clearance, potted]);
 
-  if (phase === "brief") return <Card>
-    {clearance.playerGroup && <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: SP.sm }}>YOU ARE: {clearance.playerGroup.toUpperCase()}S</div>}
-    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: clearance.objective ? SP.sm : SP.md }}>{clearance.name}</div>
-    {clearance.objective && <div style={{ marginBottom: SP.md }}>
-      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>OBJECTIVE</div>
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{clearance.objective}</div>
-    </div>}
-    <div style={{ marginBottom: SP.md }}>
-      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>HOW TO LOG IT</div>
-      <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65 }}>Tap the ball you intend to play, attempt the shot, then record Success or Failed. Adapt your route if position changes.</div>
-    </div>
-    {clearance.successCriteria && clearance.successCriteria.length > 0 && <div style={{ marginBottom: SP.lg }}>
-      <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>SUCCESS</div>
-      <ul style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, margin: 0, paddingLeft: 16 }}>
-        {clearance.successCriteria.map((c, i) => <li key={i}>{c}</li>)}
-      </ul>
-    </div>}
-    <Btn variant="primary" onClick={() => setPhase(clearance.planEligible ? "choose" : "play")}>Start Exercise <ChevronRight size={17} /></Btn>
-  </Card>;
+  if (phase === "brief") return <div>
+    <PlayerGroupHeader playerGroup={clearance.playerGroup} />
+    {clearance.playerGroup && <div style={{ height: SP.xs }} />}
+    <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.sm, padding: "0 2px" }}>{clearance.name}</div>
+    {clearance.diagram && (
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.md }}>
+        <PoolTable width={280} diagram={clearance.diagram} />
+      </div>
+    )}
+    <Card>
+      {clearance.objective && <div style={{ marginBottom: SP.md }}>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>OBJECTIVE</div>
+        <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.55 }}>{clearance.objective}</div>
+      </div>}
+      <div style={{ marginBottom: SP.md }}>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>HOW TO LOG IT</div>
+        <div style={{ color: C.dim, fontSize: 13, lineHeight: 1.65 }}>Tap the ball you intend to play, attempt the shot, then record Success or Failed. Adapt your route if position changes.</div>
+      </div>
+      {clearance.successCriteria && clearance.successCriteria.length > 0 && <div style={{ marginBottom: SP.lg }}>
+        <div style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 10, letterSpacing: 1, marginBottom: 3 }}>SUCCESS</div>
+        <ul style={{ color: C.dim, fontSize: 13, lineHeight: 1.6, margin: 0, paddingLeft: 16 }}>
+          {clearance.successCriteria.map((c, i) => <li key={i}>{c}</li>)}
+        </ul>
+      </div>}
+      <Btn variant="primary" onClick={() => setPhase(clearance.planEligible ? "choose" : "play")}>Start Exercise <ChevronRight size={17} /></Btn>
+    </Card>
+  </div>;
 
   if (phase === "choose") return <Card>
     <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.sm }}>{clearance.name}</div>
@@ -1181,7 +1233,15 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
     </div>
   </Card>;
 
-  if (phase === "plan") return <Card>
+  if (phase === "plan") return <div>
+    <PlayerGroupHeader playerGroup={clearance.playerGroup} />
+    {clearance.playerGroup && <div style={{ height: SP.xs }} />}
+    {clearance.diagram && (
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: SP.md }}>
+        <PoolTable width={280} diagram={clearance.diagram} />
+      </div>
+    )}
+    <Card>
     <div style={{ fontSize: 18, fontWeight: 700, marginBottom: SP.xs }}>Plan your order</div>
     <p style={{ color: C.dim, fontSize: 13, marginBottom: SP.md, lineHeight: 1.55 }}>Reorder to match your intended route. Your plan is scored against the authored route quality.</p>
     <div style={{ display: "grid", gap: SP.sm, marginBottom: SP.lg }}>
@@ -1205,7 +1265,8 @@ function ClearanceRunner({ clearance, profile, source, activeRuleset, onComplete
       }}>Confirm Plan</Btn>
       <Btn onClick={() => setPhase("play")}>Just Play</Btn>
     </div>
-  </Card>;
+    </Card>
+  </div>;
 
   if (adaptationOpen) return <Card>
     <div style={{ borderBottom: `1px solid ${C.line}`, marginBottom: SP.lg, paddingBottom: SP.md }}>

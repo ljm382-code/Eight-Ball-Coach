@@ -218,6 +218,8 @@ export type Drill = {
   scenarioPurpose?: string;
   /** Explicit visual requirements — validated by validatePlayableDrillGeometry. */
   visualContract?: VisualContract;
+  /** ID of the ball in diagram that should receive a focus highlight (gold outer ring). */
+  focusBallId?: string;
 };
 
 export type ClearanceBall = {
@@ -569,7 +571,7 @@ export function diagramDistance(
  * Pure function — no DOM, no React.
  */
 export function validatePlayableDrillGeometry(
-  item: { id: string; diagram?: TrainingDiagram; visualContract?: VisualContract },
+  item: { id: string; diagram?: TrainingDiagram; visualContract?: VisualContract; focusBallId?: string; playerGroup?: "red" | "yellow" },
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
   const id = item.id;
@@ -633,6 +635,21 @@ export function validatePlayableDrillGeometry(
     if (rackBalls.length < 15) {
       errors.push(`${id}: break drill rack has only ${rackBalls.length} balls (expected ≥ 15)`);
     }
+  }
+
+  // focusBallId: if set, the referenced ball must exist in diagram.balls
+  if (item.focusBallId) {
+    const focusBall = d.balls.find(b => b.id === item.focusBallId);
+    if (!focusBall) {
+      errors.push(`${id}: focusBallId "${item.focusBallId}" not found in diagram.balls`);
+    }
+  }
+
+  // playerGroup: if diagram has yellow target balls AND red balls, playerGroup must be declared
+  const hasYellowTargets = d.balls.some(b => b.group === "yellow" && b.role === "target");
+  const hasRedBalls      = d.balls.some(b => b.group === "red");
+  if (hasYellowTargets && hasRedBalls && !d.playerGroup) {
+    errors.push(`${id}: diagram has yellow targets and red balls but playerGroup is not set on diagram`);
   }
 
   return { valid: errors.length === 0, errors };
@@ -1215,12 +1232,12 @@ export const DRILLS: Drill[] = [
     { id: "OPP", group: "red"    as const, x: 78, y: 50, role: "obstacle" as const },
     { id: "BLK", group: "black"  as const, x: 50, y: 18, role: "black"   as const },
   ] } },
-  { ...decDrill("pbd2","problemBallDec",4,"When to Develop","Should you develop this ball now or leave it?",[
-    opt("Develop it now while you still have a safe route to it","optimal","Waiting risks losing the safe angle needed to move it.","low"),
-    opt("Leave it and hope a later shot opens it","acceptable","Sometimes true, but relies on luck rather than a plan.","medium"),
-    opt("Attack it directly as a full pot attempt","highrisk","High difficulty with little reward if it is genuinely awkward.","high"),
-    opt("Ignore it for the rest of the clearance","poor","It will still need addressing, likely on worse terms.","high"),
-  ]), visualContract: { cueBall: true }, diagram: { playerGroup: "yellow" as const, balls: [
+  { ...decDrill("pbd2","problemBallDec",4,"When to Develop","Ball 2 has restricted access. When should you develop it?",[
+    opt("Develop Ball 2 now while you still have a safe route to it","optimal","Waiting risks losing the safe angle needed to move Ball 2. The route exists now — act on it.","low"),
+    opt("Leave Ball 2 and hope a later shot opens it","acceptable","Sometimes true, but relies on luck rather than a plan.","medium"),
+    opt("Attack Ball 2 directly as a full pot attempt despite the poor angle","highrisk","High difficulty with little reward — Ball 2 is genuinely awkward from this position.","high"),
+    opt("Ignore Ball 2 for the rest of the clearance","poor","Ball 2 still needs addressing, likely on worse terms if left.","high"),
+  ]), focusBallId: "PROB", visualContract: { cueBall: true }, diagram: { playerGroup: "yellow" as const, balls: [
     { id: "CB",   group: "cue"    as const, x: 50, y: 62 },
     { id: "PROB", group: "yellow" as const, x: 18, y: 28, trainingLabel: "2", role: "target"   as const },
     { id: "Y1",   group: "yellow" as const, x: 58, y: 35, trainingLabel: "1", role: "target"   as const },
@@ -1252,11 +1269,11 @@ export const DRILLS: Drill[] = [
     { id: "OPP", group: "red"    as const, x: 72, y: 65, role: "obstacle" as const },
     { id: "BLK", group: "black"  as const, x: 45, y: 15, role: "black"   as const },
   ] } },
-  { ...decDrill("tac2","tactical",4,"Create a Snooker","Is a snooker the stronger option here?",[
-    opt("Yes — a clean snooker is available and no pot is realistic","optimal","Best use of the position when nothing better is on.","low"),
-    opt("Play a simple safety instead of a full snooker","acceptable","Safer to execute, with slightly lower tactical value.","low"),
-    opt("Attempt the pot even though it is not really on","highrisk","Low-percentage shot when a stronger option exists.","high"),
-    opt("Hit the cue ball with no plan","poor","Wastes the tactical opportunity entirely.","high"),
+  { ...decDrill("tac2","tactical",4,"Create a Snooker","You are YELLOWS. Is creating a snooker behind the red blocker stronger than attacking your available yellow?",[
+    opt("Yes — use Ball 1 to leave the cue ball behind the red blocker and hide the opponent's direct path","optimal","Best use of the position when nothing better is on.","low"),
+    opt("Play a containing safety without attempting the full snooker","acceptable","Safer to execute, with slightly lower tactical value.","low"),
+    opt("Attack Ball 1 despite the poor percentage","highrisk","Low-percentage shot when a stronger option exists.","high"),
+    opt("Play an uncontrolled shot without a defined safety or potting objective","poor","Wastes the tactical opportunity entirely.","high"),
   ]), visualContract: { cueBall: true }, diagram: { playerGroup: "yellow" as const, balls: [
     { id: "CB",    group: "cue"    as const, x: 48, y: 72 },
     { id: "B1",    group: "yellow" as const, x: 20, y: 22, trainingLabel: "1", role: "target"  as const },

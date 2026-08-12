@@ -2727,4 +2727,254 @@ const GEO = getEnglishPoolTableGeometry(260);
     `HQ: PLAYABLE_CLEARANCES must be 3 after Phase 4.8 (got ${PLAYABLE_CLEARANCES.length})`);
 }
 
-console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, Phase 4.7 FW–GP, and Phase 4.8 GQ–HQ all passed ✓");
+// ══════════════════════════════════════════════════════════════════════════════
+// Phase 4.9 — HR–IO: Missing cue balls, player group labels, sequence diagrams
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── HR: pbd1 contains exactly one cue ball ─────────────────────────────────
+{
+  const pbd1 = DRILLS.find(d => d.id === "pbd1");
+  assert.ok(pbd1, "HR: pbd1 must exist");
+  const cueBalls = pbd1!.diagram!.balls.filter(b => b.group === "cue");
+  assert.equal(cueBalls.length, 1,
+    `HR: pbd1 must have exactly 1 cue ball, found ${cueBalls.length}`);
+}
+
+// ── HS: pbd1 cue ball resolves canonical off-white ─────────────────────────
+{
+  const pbd1 = DRILLS.find(d => d.id === "pbd1")!;
+  const cueBall = pbd1.diagram!.balls.find(b => b.group === "cue");
+  assert.ok(cueBall, "HS: pbd1 must have a cue ball");
+  assert.equal(BALL_COLORS.cue, "#F2F0E8",
+    "HS: BALL_COLORS.cue must be canonical off-white #F2F0E8");
+}
+
+// ── HT: pbd1 has playerGroup yellow ───────────────────────────────────────
+{
+  const pbd1 = DRILLS.find(d => d.id === "pbd1")!;
+  assert.equal(pbd1.diagram!.playerGroup, "yellow",
+    "HT: pbd1 diagram.playerGroup must be yellow");
+}
+
+// ── HU: pbd2 contains exactly one cue ball ─────────────────────────────────
+{
+  const pbd2 = DRILLS.find(d => d.id === "pbd2")!;
+  const cueBalls = pbd2.diagram!.balls.filter(b => b.group === "cue");
+  assert.equal(cueBalls.length, 1,
+    `HU: pbd2 must have exactly 1 cue ball, found ${cueBalls.length}`);
+}
+
+// ── HV: pbd2 defines focusBallId ──────────────────────────────────────────
+{
+  const pbd2 = DRILLS.find(d => d.id === "pbd2")!;
+  assert.ok(pbd2.focusBallId,
+    "HV: pbd2 must define focusBallId");
+}
+
+// ── HW: pbd2 focusBallId exists in diagram ────────────────────────────────
+{
+  const pbd2 = DRILLS.find(d => d.id === "pbd2")!;
+  assert.ok(pbd2.focusBallId, "HW: pbd2.focusBallId must be set");
+  const ball = pbd2.diagram!.balls.find(b => b.id === pbd2.focusBallId);
+  assert.ok(ball,
+    `HW: pbd2.focusBallId "${pbd2.focusBallId}" must reference a ball in diagram`);
+}
+
+// ── HX: pbd2 question/options identify the focus ball explicitly ───────────
+{
+  const pbd2 = DRILLS.find(d => d.id === "pbd2")!;
+  const descHasBallRef = /ball\s*[0-9]/i.test(pbd2.desc);
+  assert.ok(descHasBallRef,
+    `HX: pbd2.desc must explicitly reference a numbered ball (got: "${pbd2.desc}")`);
+  const optionsHaveBallRef = pbd2.options!.some(o => /ball\s*[0-9]/i.test(o.label));
+  assert.ok(optionsHaveBallRef,
+    "HX: pbd2 options must explicitly reference a numbered ball");
+}
+
+// ── HY: tac2 defines playerGroup ─────────────────────────────────────────
+{
+  const tac2 = DRILLS.find(d => d.id === "tac2")!;
+  assert.ok(tac2.diagram!.playerGroup,
+    "HY: tac2 diagram.playerGroup must be defined");
+}
+
+// ── HZ: tac2 has exactly one cue ball ─────────────────────────────────────
+{
+  const tac2 = DRILLS.find(d => d.id === "tac2")!;
+  const cueBalls = tac2.diagram!.balls.filter(b => b.group === "cue");
+  assert.equal(cueBalls.length, 1,
+    `HZ: tac2 must have exactly 1 cue ball, found ${cueBalls.length}`);
+}
+
+// ── IA: tac2 player-group resolves to REDS or YELLOWS ─────────────────────
+{
+  const tac2 = DRILLS.find(d => d.id === "tac2")!;
+  const pg = tac2.diagram!.playerGroup;
+  assert.ok(pg === "red" || pg === "yellow",
+    `IA: tac2.diagram.playerGroup must be "red" or "yellow" (got "${pg}")`);
+}
+
+// ── IB: 3-Ball Yellow Sequence intro has an authored diagram ──────────────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3");
+  assert.ok(clr3, "IB: clr3 must exist");
+  assert.ok(clr3!.diagram,
+    "IB: clr3 must have a diagram (shown in intro before Start Exercise)");
+}
+
+// ── IC: 3-Ball Yellow Sequence diagram contains cue ball + Y1/Y2/Y3 ───────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3")!;
+  const balls = clr3.diagram!.balls;
+  assert.ok(balls.some(b => b.group === "cue"),
+    "IC: clr3 diagram must have a cue ball");
+  for (const id of ["Y1", "Y2", "Y3"]) {
+    assert.ok(balls.some(b => b.id === id),
+      `IC: clr3 diagram must have ball ${id}`);
+  }
+}
+
+// ── ID: 3-Ball Yellow Sequence has no black when includesBlack is false ────
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3")!;
+  assert.equal(clr3.includesBlack, false,
+    "ID: clr3.includesBlack must be false");
+  const blackBalls = clr3.diagram!.balls.filter(b => b.group === "black");
+  assert.equal(blackBalls.length, 0,
+    `ID: clr3 diagram must have no black balls when includesBlack=false (found ${blackBalls.length})`);
+}
+
+// ── IE: 3-Ball Yellow Sequence has a diagram so PoolTable is always visible
+{
+  const clr3 = CLEARANCES.find(c => c.id === "clr3")!;
+  assert.ok(clr3.diagram,
+    "IE: clr3 must have an authored diagram so PoolTable is visible in every state");
+}
+
+// ── IF: Yellow+Black clearance planning screen has an authored diagram ─────
+{
+  const clr5 = CLEARANCES.find(c => c.id === "clr5");
+  assert.ok(clr5, "IF: clr5 (4-yellow + black) must exist");
+  assert.ok(clr5!.diagram,
+    "IF: clr5 must have a diagram (shown during Plan Your Order)");
+}
+
+// ── IG: Yellow+Black diagram contains cue + Y1/Y2/Y3/Y4 + black ──────────
+{
+  const clr5 = CLEARANCES.find(c => c.id === "clr5")!;
+  const balls = clr5.diagram!.balls;
+  assert.ok(balls.some(b => b.group === "cue"),
+    "IG: clr5 diagram must have cue ball");
+  for (const id of ["Y1", "Y2", "Y3", "Y4"]) {
+    assert.ok(balls.some(b => b.id === id),
+      `IG: clr5 diagram must have ball ${id}`);
+  }
+  assert.ok(balls.some(b => b.group === "black"),
+    "IG: clr5 diagram must have a black ball");
+}
+
+// ── IH: Yellow+Black plan list IDs all exist in diagram ──────────────────
+{
+  const clr5 = CLEARANCES.find(c => c.id === "clr5")!;
+  const diagBallIds = new Set(clr5.diagram!.balls.map(b => b.id));
+  for (const id of clr5.preferredRoute) {
+    assert.ok(diagBallIds.has(id),
+      `IH: clr5 preferredRoute contains "${id}" which is not in diagram.balls`);
+  }
+}
+
+// ── II: Yellow+Black clearance playerGroup === yellow ─────────────────────
+{
+  const clr5 = CLEARANCES.find(c => c.id === "clr5")!;
+  assert.equal(clr5.playerGroup, "yellow",
+    "II: clr5.playerGroup must be yellow");
+}
+
+// ── IJ: Every group-dependent decision drill defines playerGroup ───────────
+{
+  const groupDrills = DRILLS.filter(d => {
+    if (!d.diagram) return false;
+    const balls = d.diagram.balls;
+    return balls.some(b => b.group === "yellow" && b.role === "target")
+        && balls.some(b => b.group === "red");
+  });
+  for (const d of groupDrills) {
+    assert.ok(d.diagram!.playerGroup,
+      `IJ: "${d.id}" has yellow targets and red balls but diagram.playerGroup is missing`);
+  }
+}
+
+// ── IK: Every decision drill with cueBall contract has exactly one cue ─────
+{
+  const decDrillsWithCueBall = DRILLS.filter(d => d.type === "decision" && d.visualContract?.cueBall);
+  for (const d of decDrillsWithCueBall) {
+    const cueBalls = d.diagram!.balls.filter(b => b.group === "cue");
+    assert.equal(cueBalls.length, 1,
+      `IK: "${d.id}" must have exactly 1 cue ball (found ${cueBalls.length})`);
+  }
+}
+
+// ── IL: Every group-dependent item has diagram.playerGroup set ────────────
+{
+  const allItems = [...DRILLS, ...CLEARANCES] as Array<{ id: string; diagram?: { balls: { group: string; role?: string }[]; playerGroup?: string } }>;
+  const groupItems = allItems.filter(item => {
+    if (!item.diagram) return false;
+    return item.diagram.balls.some(b => b.group === "yellow" && b.role === "target")
+        && item.diagram.balls.some(b => b.group === "red");
+  });
+  for (const item of groupItems) {
+    assert.ok(item.diagram!.playerGroup,
+      `IL: "${item.id}" has group-dependent content but diagram.playerGroup is not set`);
+  }
+}
+
+// ── IM: Every numbered route item maps to a trainingLabel in diagram ───────
+{
+  for (const clr of CLEARANCES) {
+    if (!clr.diagram) continue;
+    for (const ballId of clr.preferredRoute) {
+      const diagBall = clr.diagram.balls.find(b => b.id === ballId);
+      if (diagBall && diagBall.group === "yellow") {
+        assert.ok(diagBall.trainingLabel,
+          `IM: "${clr.id}" preferredRoute yellow ball "${ballId}" has no trainingLabel in diagram`);
+      }
+    }
+  }
+}
+
+// ── IN: focusBallId validation rejects missing references ─────────────────
+{
+  const fakeDrill = {
+    id: "test-focus-in",
+    diagram: {
+      balls: [
+        { id: "CB", group: "cue"    as const, x: 50, y: 50 },
+        { id: "Y1", group: "yellow" as const, x: 30, y: 30, role: "target" as const },
+      ],
+      playerGroup: "yellow" as const,
+    },
+    visualContract: { cueBall: true },
+    focusBallId: "NONEXISTENT_BALL",
+  };
+  const result = validatePlayableDrillGeometry(fakeDrill);
+  assert.ok(!result.valid,
+    "IN: validatePlayableDrillGeometry must fail when focusBallId references a missing ball");
+  assert.ok(result.errors.some(e => e.includes("focusBallId")),
+    `IN: error must mention focusBallId — got: ${result.errors.join("; ")}`);
+}
+
+// ── IO: All playable content still passes geometry/content validation ───────
+{
+  for (const d of PLAYABLE_DRILLS) {
+    const result = validatePlayableDrillGeometry(d);
+    assert.ok(result.valid,
+      `IO: PLAYABLE_DRILLS "${d.id}" must pass — ${result.errors.join("; ")}`);
+  }
+  for (const c of PLAYABLE_CLEARANCES) {
+    const result = validatePlayableDrillGeometry(c);
+    assert.ok(result.valid,
+      `IO: PLAYABLE_CLEARANCES "${c.id}" must pass — ${result.errors.join("; ")}`);
+  }
+}
+
+console.log("engine tests A–O, P–X, Y–AD, rules helpers, Phase 2.1 AE–AV, Phase 3 AW–BN, Phase 3.1 BO–BZ, Phase 4 CA–CJ, Phase 4.2 CK–CV, Phase 4.3 CW–DJ, Phase 4.4 DK–EF, Phase 4.5 EG–FD, Phase 4.6 FE–FV, Phase 4.7 FW–GP, Phase 4.8 GQ–HQ, and Phase 4.9 HR–IO all passed ✓");

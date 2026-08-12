@@ -1,0 +1,1127 @@
+PHASE 4.9 — FIX MISSING CUE BALLS, PLAYER GROUP LABELS, SEQUENCE DIAGRAMS & ROUTINE CONTEXT
+
+The current app has reached a point where table rendering is structurally consistent, but several PLAYER-FACING TRAINING SCREENS are still incomplete or ambiguous.
+
+This patch is NOT a redesign.
+
+Do NOT change:
+- adaptive rating logic
+- confidence logic
+- root-cause logic
+- match intelligence
+- Mixed Training allocation
+- rules legality
+- persistence
+- navigation
+- Sage–Teal theme
+- global table geometry
+- ball size
+- English red/yellow/black/cue palette
+
+This phase fixes ONLY the following confirmed live issues:
+
+1. Spot the Problem Ball is missing a visible white cue ball.
+2. 3-Ball Yellow Sequence has an instruction screen but the player starts the exercise without first seeing the actual table diagram.
+3. When to Develop does not make the specific problem/development ball sufficiently explicit.
+4. Create a Snooker does not clearly state whether the player is REDS or YELLOWS.
+5. Yellow/Black routine planning screen has no table diagram while asking the player to plan the sequence.
+6. Player group must be explicit on EVERY group-dependent drill.
+7. Every referenced ball must be visible and identifiable before the player is asked to decide.
+
+==================================================
+1. GLOBAL TRAINING RULE
+==================================================
+
+8-Ball Coach is a TRAINING APPLICATION.
+
+Before the player is asked:
+
+- Which ball?
+- Which order?
+- Develop now?
+- Attack or safety?
+- Create a snooker?
+- Plan your route?
+
+the player MUST be shown the exact table state required to answer the question.
+
+Never ask the player to make a table-reading decision without the relevant table diagram visible.
+
+==================================================
+2. GLOBAL PLAYER-GROUP RULE
+==================================================
+
+Any drill involving reds/yellows must explicitly state the player's group.
+
+Use one standard header:
+
+YOU ARE: YELLOWS
+
+or:
+
+YOU ARE: REDS
+
+This header must appear above the drill title or immediately above the scenario.
+
+Do not rely on ball colour alone.
+
+Do not assume the player remembers the group from a previous screen.
+
+==================================================
+3. ADD ONE DISPLAY HELPER
+==================================================
+
+Add a reusable helper in App.tsx or the existing UI helpers module:
+
+function groupDisplayName(
+  group?: "red" | "yellow" | "black" | "cue" | null
+): string | null {
+  if (!group) return null;
+
+  switch (group) {
+    case "red":
+      return "REDS";
+    case "yellow":
+      return "YELLOWS";
+    case "black":
+      return "BLACK";
+    case "cue":
+      return "CUE";
+    default:
+      return null;
+  }
+}
+
+Use this helper everywhere playerGroup is displayed.
+
+Do not hard-code "YELLOWS" inside individual React drill branches.
+
+==================================================
+4. CREATE ONE REUSABLE PLAYER-GROUP HEADER
+==================================================
+
+Create:
+
+function PlayerGroupHeader({
+  playerGroup,
+}: {
+  playerGroup?: "red" | "yellow";
+}) {
+  if (!playerGroup) return null;
+
+  return (
+    <div className="player-group-header">
+      YOU ARE: {groupDisplayName(playerGroup)}
+    </div>
+  );
+}
+
+Use existing styling tokens.
+
+Suggested visual treatment:
+
+- small uppercase mono label
+- dark teal text
+- subtle light teal/sage background or no box
+- clearly visible
+- not oversized
+
+Do not introduce new theme colours.
+
+==================================================
+5. PLAYER GROUP HEADER MUST APPEAR ON THESE DRILLS
+==================================================
+
+At minimum:
+
+- pat1
+- pat2
+- pat3
+- pat4
+- pbd1
+- pbd2
+- pbd3
+- tac1
+- tac2
+- tac3
+- tac4
+- tac5
+- tac6
+- tac7
+- all group-based clearances
+- Yellow/Black routine
+- 3-Ball Yellow Sequence
+
+and any other drill with:
+
+playerGroup === "red"
+
+or:
+
+playerGroup === "yellow"
+
+==================================================
+6. FIX pbd1 — SPOT THE PROBLEM BALL
+==================================================
+
+The current live diagram shows:
+
+- Yellow 1
+- Yellow 2
+- Yellow 3
+- red obstacle
+- black
+
+but the cue ball is absent / not clearly visible.
+
+This is invalid.
+
+The diagram must contain EXACTLY ONE cue ball.
+
+Add:
+
+{
+  id: "CB",
+  group: "cue",
+  role: "cue",
+  x: <authored position>,
+  y: <authored position>
+}
+
+Use a position that allows the player to understand the current table state without giving away the answer.
+
+Recommended approximate normalized position:
+
+x: 48
+y: 70
+
+Do not place it on top of another ball.
+
+Do not use arbitrary colour.
+
+Because group === "cue", PoolTable must render it canonical off-white.
+
+==================================================
+7. pbd1 REQUIRED LIVE CONTENT
+==================================================
+
+Player:
+
+YELLOWS
+
+Visible:
+
+- white cue ball
+- Yellow 1
+- Yellow 2
+- Yellow 3
+- red opponent obstacle
+- black
+
+Question:
+
+Which yellow is the key problem ball you need to plan around?
+
+Options must explicitly reference numbered balls.
+
+Example:
+
+Ball 2 — its position tight to the right cushion restricts its pocket options and makes future position more difficult.
+
+Ball 1 — it is closest to the cue ball, so play it first.
+
+Ball 3 — leave it until last because it has the clearest pocket.
+
+None — all three yellows are equally open.
+
+The correct option must match the actual authored geometry.
+
+==================================================
+8. FIX pbd2 — WHEN TO DEVELOP
+==================================================
+
+Current live issue:
+
+The table contains several balls, but the question:
+
+"Should you develop this ball now or leave it?"
+
+does not clearly tell the player WHICH ball is "this ball".
+
+This must be explicit.
+
+Choose one numbered yellow as the PROBLEM / DEVELOPMENT BALL.
+
+Example:
+
+Ball 3.
+
+Set:
+
+trainingLabel: "3"
+role: "problem"
+
+Add optional metadata:
+
+focusBallId: "Y3"
+
+or reuse a suitable existing field.
+
+==================================================
+9. pbd2 PLAYER-FACING WORDING
+==================================================
+
+Change the question from:
+
+Should you develop this ball now or leave it?
+
+to something explicit such as:
+
+Ball 3 is your problem ball. Do you develop Ball 3 now, or leave it for later?
+
+or:
+
+Ball 3 has restricted access. When should you develop it?
+
+The exact wording should correspond to the geometry.
+
+==================================================
+10. pbd2 DIAGRAM
+==================================================
+
+Must show:
+
+- YOU ARE: YELLOWS
+- white cue ball
+- Yellow 1
+- Yellow 2
+- Yellow 3
+- Ball 3 clearly numbered
+- actual obstacle/cluster geometry making Ball 3 a development problem
+- red opponent balls only when tactically relevant
+- black when relevant
+
+Do not use an open table while claiming Ball 3 needs development.
+
+The problem must be visible.
+
+==================================================
+11. pbd2 ANSWERS
+==================================================
+
+Make the options reference Ball 3 directly.
+
+Example:
+
+A.
+Develop Ball 3 now while you still have a simple route into the cluster.
+
+B.
+Leave Ball 3 until later and hope another shot opens it.
+
+C.
+Attack Ball 3 directly as a full pot attempt despite the poor angle.
+
+D.
+Ignore Ball 3 for the rest of the clearance.
+
+Do not use "it" without identifying the ball.
+
+==================================================
+12. FIX tac2 — CREATE A SNOOKER
+==================================================
+
+The current live drill does not tell the player which colour they own.
+
+This is unacceptable.
+
+Set an explicit playerGroup on tac2.
+
+Choose the player group that matches the current authored geometry.
+
+For example:
+
+playerGroup: "yellow"
+
+Then display:
+
+YOU ARE: YELLOWS
+
+above the title.
+
+==================================================
+13. tac2 DIAGRAM MUST MAKE GROUPS CLEAR
+==================================================
+
+If player is YELLOWS:
+
+- yellow balls = player's legal balls
+- red balls = opponent balls
+- white = cue
+- black = black
+
+Do not display one numbered yellow and multiple red balls without explaining ownership.
+
+==================================================
+14. tac2 SCENARIO TEXT
+==================================================
+
+Replace vague wording such as:
+
+Is a snooker the stronger option here?
+
+with:
+
+You are YELLOWS. Is creating a snooker behind the red/black blocker stronger than attacking your available yellow?
+
+or whatever precisely matches the authored geometry.
+
+Do not introduce a blocker in text unless it is visible.
+
+==================================================
+15. tac2 ANSWERS MUST MATCH THE TABLE
+==================================================
+
+Each answer must explain a real option visible in the diagram.
+
+Good:
+
+Yes — use Ball 1 to leave the cue ball behind the red blocker and hide the opponent's direct path.
+
+Acceptable:
+
+Play a containing safety without attempting the full snooker.
+
+High-risk:
+
+Attack Ball 1 despite the poor percentage.
+
+Poor:
+
+Play an uncontrolled shot without a defined safety or potting objective.
+
+Do not use generic nonsense distractors.
+
+==================================================
+16. FIX 3-BALL YELLOW SEQUENCE INTRO
+==================================================
+
+Current state:
+
+The exercise brief is good.
+
+But the player presses START EXERCISE before seeing the actual table layout.
+
+That is wrong for a physical training drill.
+
+The INTRO SCREEN MUST INCLUDE THE TABLE DIAGRAM.
+
+==================================================
+17. 3-BALL YELLOW SEQUENCE INTRO LAYOUT
+==================================================
+
+Required order:
+
+YOU ARE: YELLOWS
+
+3-BALL YELLOW SEQUENCE
+
+[POOL TABLE DIAGRAM]
+
+OBJECTIVE
+
+Pot Yellow 1, Yellow 2 and Yellow 3 in any order while maintaining cue-ball control.
+
+HOW TO LOG IT
+
+Tap the ball you intend to play.
+Play the shot.
+Record Success or Failed.
+Adapt your route if position changes.
+
+SUCCESS
+
+All three yellows potted.
+Cue ball remains in play.
+Route adapted where necessary.
+
+[ START EXERCISE ]
+
+==================================================
+18. 3-BALL YELLOW SEQUENCE DIAGRAM
+==================================================
+
+The intro diagram must show:
+
+- white cue ball
+- Yellow 1
+- Yellow 2
+- Yellow 3
+- labels 1 / 2 / 3
+- no black because this drill currently includesBlack === false
+- opponent obstacles only if genuinely part of the authored exercise
+
+The diagram shown in the intro must be THE SAME diagram used when the exercise begins.
+
+Do not show one setup and then start another.
+
+==================================================
+19. CLEARANCE/SEQUENCE RENDERING
+==================================================
+
+ClearanceRunner must render the authored diagram in BOTH:
+
+- intro/brief state
+- active exercise state
+
+Do not only render it after clicking Start.
+
+==================================================
+20. FIX ACTIVE 3-BALL SEQUENCE
+==================================================
+
+After START EXERCISE:
+
+The table should remain visible above:
+
+WHICH BALL?
+
+Ball 1
+Ball 2
+Ball 3
+
+The player must be able to look at the table while choosing.
+
+Never remove the table when asking which ball to play.
+
+==================================================
+21. FIX YELLOWS + BLACK ROUTINE / PLAN YOUR ORDER
+==================================================
+
+The current live screen:
+
+PLAN YOUR ORDER
+
+lists:
+
+Yellow 1
+Yellow 2
+Yellow 3
+Yellow 4
+8-ball
+
+but shows NO table.
+
+This makes route planning impossible.
+
+The table MUST remain visible during the planning stage.
+
+==================================================
+22. ROUTE-PLANNING SCREEN REQUIRED STRUCTURE
+==================================================
+
+Required layout:
+
+YOU ARE: YELLOWS
+
+[POOL TABLE DIAGRAM]
+
+PLAN YOUR ORDER
+
+Reorder to match your intended route.
+
+1. Yellow 1
+2. Yellow 2
+3. Yellow 3
+4. Yellow 4
+5. 8-ball
+
+[CONFIRM PLAN]
+[JUST PLAY]
+
+The player must see the table while reordering the balls.
+
+==================================================
+23. ROUTINE TABLE CONTENT
+==================================================
+
+The routine diagram must show:
+
+- white cue ball
+- Yellow 1
+- Yellow 2
+- Yellow 3
+- Yellow 4
+- black
+- labels 1 / 2 / 3 / 4 on yellows
+- black visually obvious but not numbered as a normal yellow
+- any obstacles authored for the routine
+
+If the routine says:
+
+YELLOWS + BLACK
+
+the black must physically appear.
+
+==================================================
+24. ROUTINE PLAYER GROUP
+==================================================
+
+Display:
+
+YOU ARE: YELLOWS
+
+on both:
+
+- routine intro
+- route-planning screen
+- active clearance screen if useful
+
+Do not make player infer ownership from the title.
+
+==================================================
+25. ROUTINE DIAGRAM MUST MATCH ORDER ARRAY
+==================================================
+
+Every selectable/reorderable item must correspond to an actual visible ball ID.
+
+Example:
+
+Yellow 1 → Y1
+Yellow 2 → Y2
+Yellow 3 → Y3
+Yellow 4 → Y4
+8-ball → BLK
+
+Validation must fail if the order array references a ball not present in the diagram.
+
+==================================================
+26. WHITE CUE BALL GLOBAL AUDIT
+==================================================
+
+Audit all 41 playable items again.
+
+For every physical drill/clearance/decision table where cue-ball position is meaningful:
+
+there must be exactly one:
+
+group: "cue"
+
+Ball colour must resolve to:
+
+BALL_COLORS.cue
+
+No exceptions.
+
+==================================================
+27. DECISION DRILLS REQUIRE CUE BALL WHEN POSITION MATTERS
+==================================================
+
+For:
+
+pattern
+problem-ball
+tactical
+safety
+
+the cue ball must be present whenever the player's current decision depends on current cue-ball position.
+
+Do not remove it just because the question is not an execution drill.
+
+==================================================
+28. NO DECISION WITHOUT TABLE
+==================================================
+
+Any decision question using:
+
+- Ball 1
+- Ball 2
+- Ball 3
+- problem ball
+- blocker
+- snooker
+- route
+- black access
+
+must keep the table visible while answer options are shown.
+
+==================================================
+29. TABLE MUST REMAIN VISIBLE AFTER FEEDBACK WHERE USEFUL
+==================================================
+
+For decision drills:
+
+after selection, keep the same diagram above the coaching feedback.
+
+If structured route feedback exists:
+
+overlay route lines.
+
+Do not replace the table with text-only feedback.
+
+==================================================
+30. ADD focusBallId SUPPORT
+==================================================
+
+Extend TrainingDiagram or Drill minimally with:
+
+focusBallId?: string
+
+Use this for drills such as:
+
+pbd2 When to Develop
+
+PoolTable may give that ball a subtle outer ring or marker.
+
+Do NOT change the ball colour.
+
+Example:
+
+gold outer ring
+or
+small "FOCUS" indicator
+
+==================================================
+31. FOCUS BALL VISUAL
+==================================================
+
+For focusBallId:
+
+render an OUTER ring:
+
+stroke: #C79A38
+strokeWidth: 2
+
+Do not enlarge the physical ball.
+
+Do not use selection styling that could imply the player has already chosen it.
+
+==================================================
+32. ADD CURRENT PLAYER TEXT TO DECISION CARD
+==================================================
+
+Decision drill card should generically show:
+
+PlayerGroupHeader
+
+if drill.playerGroup exists.
+
+Do this once in the generic decision renderer.
+
+Do NOT individually code:
+
+if drill.id === "tac2"
+
+==================================================
+33. ADD CURRENT PLAYER TEXT TO CLEARANCE CARD
+==================================================
+
+ClearanceRunner should generically show:
+
+YOU ARE: YELLOWS
+
+or:
+
+YOU ARE: REDS
+
+using clearance.playerGroup.
+
+==================================================
+34. ADD CURRENT PLAYER TEXT TO EXECUTION DRILL ONLY WHEN RELEVANT
+==================================================
+
+Execution drills normally do not need player group.
+
+But if an execution drill has playerGroup:
+
+display it.
+
+Do not invent groups for straight-pot drills where ownership is irrelevant.
+
+==================================================
+35. VALIDATION — PLAYER GROUP
+==================================================
+
+Update validatePlayableDrillGeometry or add content validation.
+
+For any drill with:
+
+yellow/red player balls + opposing group balls
+
+playerGroup MUST be present.
+
+Invalid otherwise.
+
+==================================================
+36. VALIDATION — CUE BALL
+==================================================
+
+If visualContract requires cueBall:
+
+diagram must contain exactly one cue group ball.
+
+Zero = invalid.
+More than one = invalid.
+
+==================================================
+37. VALIDATION — NUMBER LABEL MAPPING
+==================================================
+
+For any option or route-planning list referencing:
+
+Ball 1
+Ball 2
+Ball 3
+Ball 4
+
+the diagram must contain corresponding:
+
+trainingLabel: "1"
+trainingLabel: "2"
+trainingLabel: "3"
+trainingLabel: "4"
+
+==================================================
+38. VALIDATION — ROUTINE PLAN
+==================================================
+
+For the Yellow + Black routine:
+
+planned-route list IDs must exactly match diagram player-ball IDs + black.
+
+No phantom list items.
+
+No missing visible balls.
+
+==================================================
+39. VALIDATION — FOCUS BALL
+==================================================
+
+If drill.focusBallId exists:
+
+the referenced ball ID must exist in the diagram.
+
+Invalid otherwise.
+
+==================================================
+40. SPECIFIC TESTS — HR ONWARDS
+==================================================
+
+Preserve all existing 301 tests.
+
+Add:
+
+HR.
+pbd1 contains exactly one cue ball.
+
+HS.
+pbd1 cue ball renders canonical off-white.
+
+HT.
+pbd1 has playerGroup yellow.
+
+HU.
+pbd2 contains exactly one cue ball.
+
+HV.
+pbd2 defines focusBallId.
+
+HW.
+pbd2 focusBallId exists in diagram.
+
+HX.
+pbd2 question/options identify the focus ball explicitly.
+
+HY.
+tac2 defines playerGroup.
+
+HZ.
+tac2 has exactly one cue ball.
+
+IA.
+tac2 player-group header resolves to REDS or YELLOWS.
+
+IB.
+3-Ball Yellow Sequence intro contains its diagram.
+
+IC.
+3-Ball Yellow Sequence diagram contains cue + Y1/Y2/Y3.
+
+ID.
+3-Ball Yellow Sequence contains no black when includesBlack === false.
+
+IE.
+3-Ball Yellow Sequence active ball-selection state keeps PoolTable visible.
+
+IF.
+Yellow+Black planning screen renders its diagram.
+
+IG.
+Yellow+Black diagram contains cue + Y1/Y2/Y3/Y4 + black.
+
+IH.
+Yellow+Black plan list IDs all exist in diagram.
+
+II.
+Yellow+Black playerGroup === yellow.
+
+IJ.
+Every group-dependent decision drill defines playerGroup.
+
+IK.
+Every physical playable decision scenario needing cue position has exactly one cue.
+
+IL.
+No player-group drill relies solely on colour without PlayerGroupHeader metadata.
+
+IM.
+Every numbered route/list item maps to a trainingLabel.
+
+IN.
+focusBallId validation rejects missing references.
+
+IO.
+All playable content still passes geometry/content validation.
+
+==================================================
+41. TRAINING DIAGRAM AUDIT — EXTEND IT
+==================================================
+
+Extend the existing ?__audit development screen.
+
+For every item display:
+
+- ID
+- name
+- playerGroup
+- cueBall count
+- training labels
+- focusBallId
+- validation status
+
+Flag red if:
+
+playerGroup required but missing
+
+or
+
+cue ball missing
+
+or
+
+list references missing labels.
+
+==================================================
+42. MANUAL LIVE QA — REQUIRED
+==================================================
+
+Before commit, visually inspect these exact screens at ~390px:
+
+1. Spot the Problem Ball
+2. 3-Ball Yellow Sequence INTRO
+3. 3-Ball Yellow Sequence ACTIVE
+4. When to Develop
+5. Create a Snooker
+6. Yellow + Black routine PLAN YOUR ORDER
+
+==================================================
+43. SPOT THE PROBLEM BALL ACCEPTANCE
+==================================================
+
+Must show:
+
+YOU ARE: YELLOWS
+
+white cue ball
+
+Yellow 1
+Yellow 2
+Yellow 3
+
+red obstacle
+
+black
+
+If white cue is missing:
+FAIL.
+
+==================================================
+44. 3-BALL YELLOW SEQUENCE ACCEPTANCE
+==================================================
+
+INTRO:
+
+must visibly show table before Start Exercise.
+
+ACTIVE:
+
+must keep same table visible while asking:
+
+Which ball?
+
+If table disappears:
+FAIL.
+
+==================================================
+45. WHEN TO DEVELOP ACCEPTANCE
+==================================================
+
+Must show:
+
+YOU ARE: YELLOWS
+
+white cue
+
+numbered yellows
+
+problem ball visibly identified
+
+question explicitly names that numbered ball
+
+If question still says only "this ball":
+FAIL.
+
+==================================================
+46. CREATE A SNOOKER ACCEPTANCE
+==================================================
+
+Must show:
+
+YOU ARE: REDS
+
+or:
+
+YOU ARE: YELLOWS
+
+according to authored playerGroup.
+
+White cue must be visible.
+
+The snooker/blocker concept must be understandable from diagram.
+
+If player group is unstated:
+FAIL.
+
+==================================================
+47. YELLOW + BLACK ROUTINE ACCEPTANCE
+==================================================
+
+PLAN YOUR ORDER must show the table.
+
+Visible:
+
+white cue
+Yellow 1
+Yellow 2
+Yellow 3
+Yellow 4
+black
+
+Player header:
+
+YOU ARE: YELLOWS
+
+The plan list and diagram must correspond one-to-one.
+
+If route list appears without table:
+FAIL.
+
+==================================================
+48. DO NOT REINTRODUCE GENERIC FALLBACKS
+==================================================
+
+All existing Phase 4.8 rules remain:
+
+0 playable generic fallbacks.
+
+Do not solve a missing table by inserting ExecDrillDiagram or DecisionDrillDiagram.
+
+Use authored TrainingDiagram only.
+
+==================================================
+49. REGRESSION GATE
+==================================================
+
+All existing 301 tests must remain green.
+
+Add HR–IO tests.
+
+Run TypeScript.
+
+Run production build:
+
+PORT=3000
+BASE_PATH=/Eight-Ball-Coach/
+NODE_ENV=production
+
+Verify dist and asset paths.
+
+==================================================
+50. PLAYWRIGHT SCREENSHOT QA
+==================================================
+
+Capture the six required screens.
+
+Do not claim completion without inspecting them.
+
+Specifically confirm:
+
+Spot Problem Ball:
+cue visible
+
+3-Ball Sequence intro:
+diagram visible
+
+3-Ball Sequence active:
+diagram visible
+
+When to Develop:
+focus ball + cue visible
+
+Create a Snooker:
+player group visible
+
+Yellow+Black plan:
+diagram visible
+
+==================================================
+51. COMMIT
+==================================================
+
+Commit exact message:
+
+Fix missing diagrams and player group context
+
+Push to origin/main.
+
+Confirm GitHub Pages workflow triggers.
+
+==================================================
+52. FINAL REPORT
+==================================================
+
+Report ONLY:
+
+- pbd1 cue-ball fix
+- pbd2 focus-ball fix
+- pbd2 wording fix
+- tac2 playerGroup value
+- tac2 UI header verification
+- 3-Ball Yellow Sequence intro diagram
+- 3-Ball Yellow Sequence active diagram
+- Yellow+Black routine planning diagram
+- route-list/diagram ID validation
+- global PlayerGroupHeader implementation
+- cue-ball audit result
+- HR–IO test result
+- total test count
+- TypeScript
+- production build
+- Playwright verification for all 6 screens
+- commit SHA
+- push status
+- Pages status
+
+STOP.
+
+Do not begin another phase.
