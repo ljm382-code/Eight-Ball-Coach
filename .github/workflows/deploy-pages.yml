@@ -17,7 +17,10 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    env:
+      # Node.js 24 changed certificate validation; this tells it to trust the
+      # runner's system CA bundle so actions/configure-pages can reach the API.
+      NODE_OPTIONS: '--use-system-ca'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
