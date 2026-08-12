@@ -7,11 +7,14 @@ description: Phase completion status, test count, file locations, and key engine
 - Phases 1–4.7: complete and pushed (commit 65f9ac3)
 - Phase 4.8: complete and pushed (commit f0cea39 on origin/main)
   - Commit message: "Standardize geometry across all training drills"
+- Phase 4.9: complete and pushed (commit 5b51f94 on origin/main)
+  - Commit message: "Fix missing diagrams and player group context"
 
 ## Test suite
-- 301 tests total, all passing
+- 335 tests total, all passing
 - Tests A–GP = Phases 1–4.7
 - Tests GQ–HQ (33 new) = Phase 4.8 geometry completeness contract
+- Tests HR–IO (34 new) = Phase 4.9 missing cue balls, player group, sequence diagrams
 
 ## Phase 4.8 summary
 - Added `VisualContract` type to engine
